@@ -1,7 +1,7 @@
-const inboundDelivery = require('../services/InboundDeliveryService.js');
+const payment = require('../services/PaymentService.js');
 const { validationResult } = require('express-validator');
 
-async function createInboundDelivery(req, res, next) {
+async function createPayment(req, res, next) {
     try {
         const errorValidation = validationResult(req);
         if (errorValidation.errors.length > 0) {
@@ -14,7 +14,7 @@ async function createInboundDelivery(req, res, next) {
             });
         }
 
-        const data = await inboundDelivery.createInboundDelivery(req, next)
+        const data = await payment.createPayment(req, next)
         res.status(200).send(data)
     } catch (err) {
         next(err);
@@ -23,7 +23,7 @@ async function createInboundDelivery(req, res, next) {
 
 async function getInboundDeliveries(req, res, next) {
     try {
-        const data = await inboundDelivery.getInboundDeliveries()
+        const data = await payment.getInboundDeliveries()
         res.status(200).send(data)
     } catch (err) {
         next(err);
@@ -31,6 +31,6 @@ async function getInboundDeliveries(req, res, next) {
 }
 
 module.exports = {
-    createInboundDelivery,
+    createPayment,
     getInboundDeliveries
 };

@@ -1,11 +1,11 @@
 
-const db = require('../repositories/InboundDeliveryRepository.js');
+const db = require('../repositories/PaymentRepository.js');
 const databaseUtil = require('../utils/DatabaseUtil.js');
 
-async function createInboundDelivery(req) {
+async function createPayment(req) {
     const body = req.body;
     try {
-        return await databaseUtil.executeDatabaseOperation(db.createInboundDelivery, body);
+        return await databaseUtil.executeDatabaseOperation(db.createPayment, body);
     } catch (error) {
         throw error;
     }
@@ -20,6 +20,6 @@ async function getInboundDeliveries() {
 }
 
 module.exports = {
-    createInboundDelivery,
+    createPayment,
     getInboundDeliveries
 };

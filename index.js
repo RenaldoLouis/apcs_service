@@ -4,7 +4,7 @@ const bodyParser = require('body-parser')
 const ErrorHandler = require("./src/middlewares/ErrorHandlerMiddleware.js")
 var cors = require('cors')
 const port = 3001
-const inboundRoute = require('./src/routes/InboundDeliveryRoutes.js')
+const paymentRoute = require('./src/routes/PaymentRoute.js')
 const wasteRoute = require('./src/routes/WasteRoutes.js')
 
 app.use(cors())
@@ -15,8 +15,8 @@ app.use(
     })
 )
 
-app.use('/api/v1/delterra', inboundRoute)
-app.use('/api/v1/delterra', wasteRoute)
+app.use('/api/v1/apcs', paymentRoute)
+// app.use('/api/v1/apcs', wasteRoute)
 
 app.use(ErrorHandler)
 

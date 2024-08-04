@@ -12,11 +12,12 @@ const idUserValidation = [
     param('id', 'id has to be filled!').notEmpty(),
 ];
 
-const inboundDeliveryBodyValidation = [
-    body('organic_weight').notEmpty().withMessage("organic weight must be filled"),
-    body('rejected_weight').notEmpty().withMessage("rejected weight must be filled"),
-    body('inorganic_weight').notEmpty().withMessage("inorganic weight must be filled"),
-    body('license_plate').notEmpty().withMessage("license plate must be filled!")
+const paymentValidation = [
+    body('amount').notEmpty().withMessage("amount must be filled"),
+    body('currency').notEmpty().withMessage("currency must be filled"),
+    body('payment_method').notEmpty().withMessage("payment_method must be filled"),
+    body('confirmation_method').notEmpty().withMessage("confirmation_method must be filled!"),
+    body('confirm').notEmpty().withMessage("confirm must be filled!")
 ]
 
 const wasteBodyValidation = [
@@ -26,7 +27,7 @@ const wasteBodyValidation = [
 module.exports = {
     bodyUserValidation,
     idUserValidation,
-    inboundDeliveryBodyValidation,
+    paymentValidation,
     wasteBodyValidation
 }
 
