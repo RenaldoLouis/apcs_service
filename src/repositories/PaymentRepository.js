@@ -1,7 +1,7 @@
 const pool = require('../configs/DbConfig');
 const { InboundDeliveryDto } = require('../models/InboundDeliveryModel');
 const winston = require('winston');
-require('winston-daily-rotate-file');
+const DailyRotateFile = require('winston-daily-rotate-file');
 
 const { combine, timestamp, printf, colorize, align, json, errors } = winston.format;
 
@@ -17,20 +17,32 @@ const logger = winston.createLogger({
     level: "info",
     format: combine(errors({ stack: true }), timestamp(), json()),
     transports: [
-        new winston.transports.File({
-            filename: 'combined.log',
+        new DailyRotateFile({
+            filename: 'logs/combined-%DATE%.log',
+            datePattern: 'YYYY-MM-DD',
+            zippedArchive: true,
+            maxSize: '20m',
+            maxFiles: '14d'
         }),
-        new winston.transports.File({
-            filename: 'app-error.log',
+        new DailyRotateFile({
+            filename: 'logs/app-error-%DATE%.log',
+            datePattern: 'YYYY-MM-DD',
+            zippedArchive: true,
+            maxSize: '20m',
+            maxFiles: '14d',
             level: 'error',
-            format: combine(errorFilter(), timestamp(), json()),
+            format: combine(errorFilter(), timestamp(), json())
         }),
-        new winston.transports.File({
-            filename: 'app-info.log',
+        new DailyRotateFile({
+            filename: 'logs/app-info-%DATE%.log',
+            datePattern: 'YYYY-MM-DD',
+            zippedArchive: true,
+            maxSize: '20m',
+            maxFiles: '14d',
             level: 'info',
-            format: combine(infoFilter(), timestamp(), json()),
-        }),
-    ],
+            format: combine(infoFilter(), timestamp(), json())
+        })
+    ]
 });
 
 const createPayment = (params, callback) => {
