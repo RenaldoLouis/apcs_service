@@ -17,7 +17,11 @@ const createPayment = (params, callback) => {
     // return callback(null, results.rows[0]);
     logger.error(new Error("an error"));
 
-    return callback(null, []);
+    return callback(null, [
+        {
+            "messgae": "succes API"
+        }
+    ]);
     // }
 
     // return callback(new Error('Failed to create inbound delivery'));

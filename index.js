@@ -3,7 +3,7 @@ const app = express()
 const bodyParser = require('body-parser')
 const ErrorHandler = require("./src/middlewares/ErrorHandlerMiddleware.js")
 var cors = require('cors')
-const port = 3001
+const port = 8080
 const paymentRoute = require('./src/routes/PaymentRoute.js')
 const wasteRoute = require('./src/routes/WasteRoutes.js')
 
