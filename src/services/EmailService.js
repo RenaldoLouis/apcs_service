@@ -1,9 +1,9 @@
 
 const db = require('../repositories/PaymentRepository.js');
 const databaseUtil = require('../utils/DatabaseUtil.js');
-const { logger } = require('../utils/Logger');
 const nodemailer = require("nodemailer");
 const Queue = require('bull');
+const { logger } = require('../utils/Logger');
 
 const defaultJobOptions = {
     removeOnComplete: true,
@@ -37,38 +37,32 @@ const mailOptions = {
 };
 
 const sendNewEmail = async (email) => {
+    logger.info(`sending email To...${email.to}`);
     emailQueue.add({ ...email });
 };
 
 const processEmailQueue = async (job) => {
-
-    const { from, to, subject, text } = job.data;
-
-    console.log("Sending mail to %s", to);
-
-    const info = new Promise((resolve, reject) => {
-        transporter.sendMail(mailOptions, (error, info) => {
-            if (error) {
-                reject({ message: "email Fail" });
-            } else {
-                resolve({ message: "email" });
-            }
-        },
-            (error, info) => {
+    try {
+        const { to } = job.data;
+        const result = await new Promise((resolve, reject) => {
+            transporter.sendMail(mailOptions, (error, info) => {
                 if (error) {
                     reject(error);
                 } else {
                     resolve(info);
                 }
-            }
-        );
-    });
+            });
+        });
 
-    const result = await info;
-
-    console.log("Message sent: %s", result.messageId);
-    console.log("Preview URL: %s", nodemailer.getTestMessageUrl(result));
-};
+        logger.info(`Successfully sent email to ${to}`);
+        console.log("Message sent: %s", result.messageId);
+        console.log("Preview URL: %s", nodemailer.getTestMessageUrl(result));
+        return result;
+    } catch (error) {
+        logger.error(`Failed to send email to ${to}: ${error.message}`);
+        throw error;
+    }
+}
 
 emailQueue.process(processEmailQueue);
 
@@ -83,19 +77,22 @@ async function sendEmail(req) {
     // const sendMailPromise = new Promise((resolve, reject) => {
     //     transporter.sendMail(mailOptions, (error, info) => {
     //         if (error) {
-    //             reject({ message: "email Fail" });
+    //             reject({ message: "email Fail2" });
     //         } else {
-    //             resolve({ message: "email" });
+    //             resolve({ message: "email Succes2" });
     //         }
     //     });
     // });
 
     try {
         // await the result of the sendMailPromise
+        // logger.info(`Succes send email To...${mailOptions.to}`);
         // const result = await sendMailPromise;
+
         const result = { message: "email Sent" };
         return result;
     } catch (error) {
+        logger.error(`Failed send email To...${mailOptions.to}`);
         throw error;
     }
 }
