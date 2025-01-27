@@ -712,16 +712,15 @@ emailQueue.process(processEmailQueue);
 async function sendEmail(req) {
     const body = req.body;
 
-    body.forEach((data) => {
-        sendNewEmail(data.name);
-    });
-    console.log("Added to queue");
+    for (const data of body) {
+        await sendNewEmail(data.email); // Wait for each email to be added to the queue
+    }
 
     try {
-        const result = { message: "email Sent" };
+        const result = { message: "Emails sent successfully" };
         return result;
     } catch (error) {
-        logger.error(`Failed send email To...${mailOptions.to}`);
+        logger.error(`Failed to send email: ${error.message}`);
         throw error;
     }
 }
