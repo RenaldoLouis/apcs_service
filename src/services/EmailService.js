@@ -38,12 +38,21 @@ const transporter = nodemailer.createTransport({
     },
 });
 
-const mailOptions = {
-    from: "renaldolouis555@gmail.com",
-    to: "vayneaurelius5@gmail.com",
-    subject: "Hello from Nodemailer",
-    text: "This is a test email sent using Nodemailer.",
-    html: `<!DOCTYPE html>
+const sendNewEmail = async (email) => {
+    logger.info(`sending email To...${email}`);
+    emailQueue.add({ ...email });
+};
+
+const processEmailQueue = async (job) => {
+    try {
+        const { data } = job; // Extract the data object from the job
+        const to = Object.values(data).join(''); // Reconstruct the email address
+        const mailOptions = {
+            from: "renaldolouis555@gmail.com",
+            to: to,
+            subject: "Hello from Nodemailer",
+            text: "This is a test email sent using Nodemailer.",
+            html: `<!DOCTYPE html>
             <html xmlns:v="
             urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" lang="en">
 
@@ -677,16 +686,7 @@ const mailOptions = {
             </body>
 
             </html>`,
-};
-
-const sendNewEmail = async (email) => {
-    logger.info(`sending email To...${email.to}`);
-    emailQueue.add({ ...email });
-};
-
-const processEmailQueue = async (job) => {
-    try {
-        const { to } = job.data;
+        };
         const result = await new Promise((resolve, reject) => {
             transporter.sendMail(mailOptions, (error, info) => {
                 if (error) {
@@ -698,6 +698,7 @@ const processEmailQueue = async (job) => {
         });
 
         logger.info(`Successfully sent email to ${to}`);
+        console.log(`Message sent to ${to}`);
         console.log("Message sent: %s", result.messageId);
         console.log("Preview URL: %s", nodemailer.getTestMessageUrl(result));
         return result;
@@ -712,8 +713,9 @@ emailQueue.process(processEmailQueue);
 async function sendEmail(req) {
     const body = req.body;
 
-    await sendNewEmail(mailOptions);
-
+    body.forEach(async (data) => {
+        await sendNewEmail(data.name);
+    });
     console.log("Added to queue");
 
     // Wrap the sendMail function in a Promise
