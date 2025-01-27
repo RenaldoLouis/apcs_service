@@ -1,6 +1,6 @@
 {
-  "name": "delteraservices",
-  "version": "1.0.0",
+  "name": "apcsservices",
+  "version": "2.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
