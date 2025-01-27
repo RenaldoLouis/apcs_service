@@ -10,20 +10,20 @@ const defaultJobOptions = {
     removeOnFail: false
 };
 
-const redisConfig = {
-    redis: {
-        path: '/home/apcc8119/tmp/redis.sock'
-    }
-};
+// const redisConfig = {
+//     redis: {
+//         path: '/home/apcc8119/tmp/redis.sock'
+//     }
+// };
 
 /* DONT FORGET TO REVERT THE CONFIG */
 // for local dev only 
-// const redisConfig = {
-//     redis: {
-//         host: "127.0.0.1",
-//         port: 6379
-//     }
-// };
+const redisConfig = {
+    redis: {
+        host: "127.0.0.1",
+        port: 6379
+    }
+};
 
 const emailQueue = new Queue('emailQueue', redisConfig, { defaultJobOptions });
 
@@ -707,7 +707,7 @@ const processEmailQueue = async (job) => {
     }
 }
 
-emailQueue.process(processEmailQueue);
+emailQueue.process(3, processEmailQueue);
 
 async function sendEmail(req) {
     const body = req.body;
