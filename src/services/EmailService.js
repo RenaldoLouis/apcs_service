@@ -50,8 +50,7 @@ const processEmailQueue = async (job) => {
         const mailOptions = {
             from: "renaldolouis555@gmail.com",
             to: to,
-            subject: "Hello from Nodemailer",
-            text: "This is a test email sent using Nodemailer.",
+            subject: "Hello from APCS",
             html: `<!DOCTYPE html>
             <html xmlns:v="
             urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" lang="en">
@@ -713,27 +712,12 @@ emailQueue.process(processEmailQueue);
 async function sendEmail(req) {
     const body = req.body;
 
-    body.forEach(async (data) => {
-        await sendNewEmail(data.name);
+    body.forEach((data) => {
+        sendNewEmail(data.name);
     });
     console.log("Added to queue");
 
-    // Wrap the sendMail function in a Promise
-    // const sendMailPromise = new Promise((resolve, reject) => {
-    //     transporter.sendMail(mailOptions, (error, info) => {
-    //         if (error) {
-    //             reject({ message: "email Fail2" });
-    //         } else {
-    //             resolve({ message: "email Succes2" });
-    //         }
-    //     });
-    // });
-
     try {
-        // await the result of the sendMailPromise
-        // logger.info(`Succes send email To...${mailOptions.to}`);
-        // const result = await sendMailPromise;
-
         const result = { message: "email Sent" };
         return result;
     } catch (error) {
