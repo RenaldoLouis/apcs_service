@@ -40,7 +40,7 @@ const transporter = nodemailer.createTransport({
 
 const sendNewEmail = async (email) => {
     logger.info(`sending email To...${email}`);
-    emailQueue.add({ ...email });
+    emailQueue.add({ email });
 };
 
 const processEmailQueue = async (job) => {
