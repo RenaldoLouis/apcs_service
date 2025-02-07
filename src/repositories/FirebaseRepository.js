@@ -13,21 +13,40 @@ admin.initializeApp({
 });
 
 const bucket = admin.storage().bucket();
+
 const getGaleries = async (params, callback) => {
-    const { eventName } = params
-    logger.info(`Retrieivng Galeries ${eventName}`);
+    const { eventName } = params;
+    logger.info(`Retrieving Galeries ${eventName}`);
 
     const [files] = await bucket.getFiles({ prefix: `galery/turningPoint` });
 
     if (files.length === 0) {
         console.log("No files found in this folder.");
-        return;
+        return callback(null, []);
     }
 
-    let returnFiles = {}
+    async function generateSignedUrl(file) {
+        try {
+            const [url] = await file.getSignedUrl({
+                action: 'read',
+                expires: Date.now() + 60 * 60 * 1000, // 1 hour expiry
+            });
+            return url;
+        } catch (error) {
+            console.error("Error generating signed URL:", error);
+            return null;
+        }
+    }
 
-    return callback(null, files);
-}
+    const returnFiles = await Promise.all(
+        files.map(async (eachFile, index) => {
+            const file = bucket.file(eachFile.name);
+            return generateSignedUrl(file);
+        })
+    );
+    returnFiles.shift();
+    return callback(null, returnFiles);
+};
 
 module.exports = {
     getGaleries
