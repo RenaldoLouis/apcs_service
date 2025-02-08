@@ -16,9 +16,11 @@ const bucket = admin.storage().bucket();
 
 const getGaleries = async (params, callback) => {
     const { eventName } = params;
-    logger.info(`Retrieving Galeries ${eventName}`);
+    const normalizedNameEvent = eventName.replace(/\s+/g, '').toLowerCase()
 
-    const [files] = await bucket.getFiles({ prefix: `galery/turningPoint` });
+    logger.info(`Retrieving Galeries ${normalizedNameEvent}`);
+
+    const [files] = await bucket.getFiles({ prefix: `galery/${normalizedNameEvent}` });
 
     if (files.length === 0) {
         console.log("No files found in this folder.");

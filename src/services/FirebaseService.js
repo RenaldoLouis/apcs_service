@@ -3,9 +3,9 @@ const db = require('../repositories/FirebaseRepository.js');
 const databaseUtil = require('../utils/DatabaseUtil.js');
 
 async function getGaleries(req) {
-    const body = req.body;
+    const query = req.query;
     try {
-        return await databaseUtil.executeDatabaseOperation(db.getGaleries, body);
+        return await databaseUtil.executeDatabaseOperation(db.getGaleries, query);
     } catch (error) {
         throw error;
     }
