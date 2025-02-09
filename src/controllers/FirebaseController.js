@@ -10,6 +10,16 @@ async function getGaleries(req, res, next) {
     }
 }
 
+async function getVideos(req, res, next) {
+    try {
+        const data = await firebaseService.getVideos(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
-    getGaleries
+    getGaleries,
+    getVideos
 };

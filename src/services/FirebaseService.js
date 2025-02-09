@@ -11,6 +11,16 @@ async function getGaleries(req) {
     }
 }
 
+async function getVideos(req) {
+    const query = req.query;
+    try {
+        return await databaseUtil.executeDatabaseOperation(db.getVideos, query);
+    } catch (error) {
+        throw error;
+    }
+}
+
 module.exports = {
-    getGaleries
+    getGaleries,
+    getVideos
 };
