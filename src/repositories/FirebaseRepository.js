@@ -16,12 +16,10 @@ const s3 = new S3Client({
 const credentialsBuffer = Buffer.from(process.env.FIREBASE_JSON, "base64");
 const serviceAccount = JSON.parse(credentialsBuffer.toString());
 
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    storageBucket: "apcs-profile.appspot.com"
-});
-
-const bucket = admin.storage().bucket();
+// admin.initializeApp({
+//     credential: admin.credential.cert(serviceAccount),
+//     storageBucket: "apcs-profile.appspot.com"
+// });
 
 const getGaleries = async (params, callback) => {
     const { eventName } = params;
