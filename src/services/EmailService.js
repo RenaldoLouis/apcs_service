@@ -13,6 +13,10 @@ const defaultJobOptions = {
 const redisConfig = {
     redis: {
         path: '/home/apcc8119/tmp/redis.sock'
+    },
+    limiter: {
+        max: 5,         // Maximum number of jobs processed per duration
+        duration: 60000 // Time window in milliseconds (1 minute)
     }
 };
 
@@ -22,6 +26,10 @@ const redisConfig = {
 //     redis: {
 //         host: "127.0.0.1",
 //         port: 6379
+//     },
+//     limiter: {
+//         max: 5,         // Maximum number of jobs processed per duration
+//         duration: 60000 // Time window in milliseconds (1 minute)
 //     }
 // };
 
