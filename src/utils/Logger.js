@@ -11,6 +11,10 @@ const infoFilter = winston.format((info, opts) => {
     return info.level === 'info' ? info : false;
 });
 
+const warnFilter = winston.format((info, opts) => {
+    return info.level === 'warn' ? info : false;
+});
+
 const logger = winston.createLogger({
     level: "info",
     format: combine(errors({ stack: true }), timestamp(), json()),
@@ -39,7 +43,16 @@ const logger = winston.createLogger({
             maxFiles: '14d',
             level: 'info',
             format: combine(infoFilter(), timestamp(), json())
-        })
+        }),
+        new DailyRotateFile({
+            filename: 'logs/app-warn-%DATE%.log',
+            datePattern: 'YYYY-MM-DD',
+            zippedArchive: true,
+            maxSize: '20m',
+            maxFiles: '14d',
+            level: 'warn',
+            format: combine(warnFilter(), timestamp(), json())
+        }),
     ]
 });
 
