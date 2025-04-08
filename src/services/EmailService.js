@@ -122,6 +122,46 @@ const processEmailQueue = async (job) => {
     }
 };
 
+const sendEmailFunc = async (data) => {
+    logger.info(`Processing email: ${data.email}`);
+    const participant = data.name
+    const to = data.email
+    try {
+        const mailOptions = {
+            from: "hello@apcsmusic.com",
+            to: to,
+            subject: "APCS Gala Concert 2024 - Winner Announcement",
+            text: `
+            Dear ${participant},
+
+            Congratulations! You have won the Silver Category and earned the opportunity to perform at the APCS Gala Concert 2024, which will be held on:
+
+            Day/Date: Saturday, October 19, 2024
+            Location: Galeri Salihara, South Jakarta
+
+            Kindly take a moment to review the terms and conditions provided in the attached PDF file. If you have further questions, please contact the admin via the following WhatsApp:
+
+            Silver & Gold Admin: https://wa.me/6281528885132
+
+            See you at the event! :)
+            `,
+            attachments: [
+                {
+                    filename: 'license.txt',
+                    path: 'https://raw.github.com/nodemailer/nodemailer/master/LICENSE'
+                },
+            ]
+        };
+
+        const result = await transporter.sendMail(mailOptions);
+        logger.info(`Successfully sent email to ${to}`);
+        return result;
+    } catch (error) {
+        logger.error(`Failed to send email to ${to}: ${error.message}`);
+        throw error; // rethrow to allow Bull to handle retries
+    }
+}
+
 // Process email queue with concurrency of 3
 emailQueue.process(3, processEmailQueue);
 
@@ -130,7 +170,10 @@ async function sendEmail(req) {
         const emailsArray = req.body;
         if (Array.isArray(emailsArray) && emailsArray.length > 0) {
             // Bulk add email jobs to the queue
-            enqueueBulkEmails(emailsArray);
+            // enqueueBulkEmails(emailsArray);
+            for (const data of emailsArray) {
+                sendEmailFunc(data);
+            }
             logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
         } else {
             logger.warn("No emails provided to enqueue");
