@@ -277,7 +277,7 @@ const sendEmailFunc = async (data) => {
                                                                     <tr>
                                                                         <td class="pad">
                                                                             <div style="color:#393d47;font-family:Georgia,Times,'Times New Roman',serif;font-size:24px;line-height:120%;text-align:left;mso-line-height-alt:28.799999999999997px;">
-                                                                                <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word;">Find Your Space</span></p>
+                                                                                <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word;">Welcome To APCS!</span></p>
                                                                             </div>
                                                                         </td>
                                                                     </tr>
