@@ -130,7 +130,7 @@ const sendEmailFunc = async (data) => {
         const mailOptions = {
             from: "hello@apcsmusic.com",
             to: to,
-            subject: "APCS Gala Concert 2024 - Winner Announcement",
+            subject: "APCS Registration Confirmation",
             html: `<!DOCTYPE html>
             <html xmlns:v="
             urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" lang="en">
@@ -277,7 +277,7 @@ const sendEmailFunc = async (data) => {
                                                                     <tr>
                                                                         <td class="pad">
                                                                             <div style="color:#393d47;font-family:Georgia,Times,'Times New Roman',serif;font-size:24px;line-height:120%;text-align:left;mso-line-height-alt:28.799999999999997px;">
-                                                                                <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word;">Welcome To APCS!</span></p>
+                                                                                <div style="max-width: 126.667px;"><img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/APC_Logo-Black.png" style="display: block; height: auto; border: 0; width: 100%;" width="126.667" alt="Giving Tuesday Logo" title="Giving Tuesday Logo" height="auto"></div>
                                                                             </div>
                                                                         </td>
                                                                     </tr>
@@ -301,13 +301,13 @@ const sendEmailFunc = async (data) => {
                                                                             <div style="color:#393d47;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;text-align:left;">
                                                                                 <p style="margin: 0 0 16px 0;"><em>Dear <strong>${participant}</strong>,</em></p>
 
-                                                                                <p style="margin: 0 0 16px 0;">
+                                                                                <p style="margin: 0 0 16px 0; text-align:justify;">
                                                                                     Welcome to the APCS Family! We are pleased to confirm your registration for <strong>The Sound of Asia</strong>. 
                                                                                     We look forward to seeing you on the APCS stage as we celebrate music, culture, and extraordinary talent from around the world.
                                                                                 </p>
 
-                                                                                <p style="margin: 0 0 16px 0;">
-                                                                                    All winners will be notified via email, so please stay tuned. The <strong>Sapphire Winner</strong> will be announced live on stage during the APCS event, 
+                                                                                <p style="margin: 0 0 16px 0; text-align-last:justify; text-align:justify;">
+                                                                                    All winners will be notified via email, so please stay tuned. <strong>The Sapphire Winner</strong> will be announced live on stage during the APCS event, 
                                                                                     and we’re excited to celebrate every outstanding performance.
                                                                                 </p>
 
@@ -342,8 +342,8 @@ const sendEmailFunc = async (data) => {
                                                             <td class="column column-1" width="33.333333333333336%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-bottom: 10px; padding-left: 20px; padding-right: 20px; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
                                                                 <table class="image_block block-1" width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
                                                                     <tr>
-                                                                        <td class="pad" style="padding-left:30px;padding-right:30px;padding-top:10px;width:100%;">
-                                                                            <div class="alignment" align="center" style="line-height:10px">
+                                                                        <td class="pad" style="padding-right:30px;padding-top:10px;width:100%;">
+                                                                            <div class="alignment" align="left" style="line-height:10px;text-align:left;">
                                                                                 <div style="max-width: 126.667px;"><img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apc_logo.png" style="display: block; height: auto; border: 0; width: 100%;" width="126.667" alt="Giving Tuesday Logo" title="Giving Tuesday Logo" height="auto"></div>
                                                                             </div>
                                                                         </td>
@@ -352,12 +352,24 @@ const sendEmailFunc = async (data) => {
                                                                 <table class="social_block block-2" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
                                                                     <tr>
                                                                         <td class="pad">
-                                                                            <div class="alignment" align="center">
+                                                                            <div class="alignment" align="left">
                                                                                 <table class="social-table" width="108px" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; display: inline-block;">
                                                                                     <tr>
-                                                                                        <td style="padding:0 2px 0 2px;"><a href="https://www.facebook.com" target="_blank"><img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/facebook@2x.png" width="32" height="auto" alt="Facebook" title="facebook" style="display: block; height: auto; border: 0;"></a></td>
-                                                                                        <td style="padding:0 2px 0 2px;"><a href="https://www.twitter.com" target="_blank"><img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/twitter@2x.png" width="32" height="auto" alt="Twitter" title="twitter" style="display: block; height: auto; border: 0;"></a></td>
-                                                                                        <td style="padding:0 2px 0 2px;"><a href="https://www.instagram.com" target="_blank"><img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/instagram@2x.png" width="32" height="auto" alt="Instagram" title="instagram" style="display: block; height: auto; border: 0;"></a></td>
+                                                                                        <td style="padding:0 2px 0 2px;">
+                                                                                            <a href="https://www.youtube.com" target="_blank">
+                                                                                                <img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/youtube@2x.png" width="32" height="auto" alt="YouTube" title="youtube" style="display: block; height: auto; border: 0;">
+                                                                                            </a>
+                                                                                        </td>
+                                                                                        <td style="padding:0 2px 0 2px;">
+                                                                                            <a href="https://www.instagram.com" target="_blank">
+                                                                                                <img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/instagram@2x.png" width="32" height="auto" alt="Instagram" title="instagram" style="display: block; height: auto; border: 0;">
+                                                                                            </a>
+                                                                                        </td>
+                                                                                        <td style="padding:0 2px 0 2px;">
+                                                                                            <a href="https://www.whatsapp.com" target="_blank">
+                                                                                                <img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/whatsapp@2x.png" width="32" height="auto" alt="WhatsApp" title="whatsapp" style="display: block; height: auto; border: 0;">
+                                                                                            </a>
+                                                                                        </td>
                                                                                     </tr>
                                                                                 </table>
                                                                             </div>
@@ -365,11 +377,11 @@ const sendEmailFunc = async (data) => {
                                                                     </tr>
                                                                 </table>
                                                             </td>
-                                                            <td class="column column-3" width="33.333333333333336%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-bottom: 30px; padding-left: 10px; padding-right: 10px; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
+                                                            <td class="column column-2" width="33.333333333333336%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-bottom: 30px; padding-left: 10px; padding-right: 10px; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
                                                                 <table class="paragraph_block block-1" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word;">
                                                                     <tr>
                                                                         <td class="pad">
-                                                                            <div style="color:#ffffff;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:14px;line-height:120%;text-align:center;mso-line-height-alt:16.8px;">
+                                                                            <div style="color:#ffffff;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:14px;line-height:120%; mso-line-height-alt:16.8px;">
                                                                                 <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word;"><strong><span style="word-break: break-word;">Contact Us</span></strong></span></p>
                                                                             </div>
                                                                         </td>
@@ -378,7 +390,7 @@ const sendEmailFunc = async (data) => {
                                                                 <table class="paragraph_block block-2" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word;">
                                                                     <tr>
                                                                         <td class="pad">
-                                                                            <div style="color:#393d47;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:12px;line-height:120%;text-align:center;mso-line-height-alt:14.399999999999999px;">
+                                                                            <div style="color:#393d47;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:12px;line-height:120%;mso-line-height-alt:14.399999999999999px;">
                                                                                 <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word; color: #ffffff;">Your Street 12, 34567 AB CIity</span></p>
                                                                                 <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word; color: #ffffff;">info@example.com </span></p>
                                                                                 <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word; color: #ffffff;">(+1) 123 456 789</span></p>
@@ -386,6 +398,11 @@ const sendEmailFunc = async (data) => {
                                                                         </td>
                                                                     </tr>
                                                                 </table>
+                                                            </td>
+                                                        </tr>
+                                                        <tr>
+                                                            <td colspan="2"  align="center" style="padding: 20px 10px 30px 10px; text-align: center; color: #ffffff; font-family: Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif; font-size: 12px; line-height: 1.5;">
+                                                                ©️ 2025 APCS Music, All rights reserved.
                                                             </td>
                                                         </tr>
                                                     </tbody>
