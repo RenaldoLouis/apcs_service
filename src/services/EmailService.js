@@ -272,7 +272,7 @@ const sendEmailFunc = async (data) => {
                                                 <table class="row-content stack" align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; color: #000000; width: 680px; margin: 0 auto;" width="680">
                                                     <tbody>
                                                         <tr>
-                                                            <td class="column column-1" width="50%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; background-color: #f2f1eb; padding-left: 20px; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
+                                                            <td class="column column-1" width="50%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-left: 20px; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
                                                                 <table class="paragraph_block block-1" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word;">
                                                                     <tr>
                                                                         <td class="pad">
@@ -286,7 +286,7 @@ const sendEmailFunc = async (data) => {
                                                                     <tr>
                                                                         <td class="pad">
                                                                             <div class="alignment" align="left">
-                                                                                <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="30%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
+                                                                                <table border="0" cellpadding="0" cellspacing="0" role="presentation" width="100%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
                                                                                     <tr>
                                                                                         <td class="divider_inner" style="font-size: 1px; line-height: 1px; border-top: 3px solid #BBBBBB;"><span style="word-break: break-word;">&#8202;</span></td>
                                                                                     </tr>
@@ -299,11 +299,11 @@ const sendEmailFunc = async (data) => {
                                                                     <tr>
                                                                         <td class="pad">
                                                                             <div style="color:#393d47;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;text-align:left;">
-                                                                                <p style="margin: 0 0 16px 0;"><em>Dear ${participant},</em></p>
+                                                                                <p style="margin: 0 0 16px 0;"><em>Dear <strong>${participant}</strong>,</em></p>
 
                                                                                 <p style="margin: 0 0 16px 0;">
                                                                                     Welcome to the APCS Family! We are pleased to confirm your registration for <strong>The Sound of Asia</strong>. 
-                                                                                    We look forward to seeing you on the APCS stage as we celebrate music, culture, and extraordinary talent from around the world. 🎹🌍
+                                                                                    We look forward to seeing you on the APCS stage as we celebrate music, culture, and extraordinary talent from around the world.
                                                                                 </p>
 
                                                                                 <p style="margin: 0 0 16px 0;">
@@ -320,6 +320,68 @@ const sendEmailFunc = async (data) => {
                                                                                     Warm regards,<br>
                                                                                     <strong>The APCS Team</strong>
                                                                                 </p>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <table class="row row-9" align="center" width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
+                                    <tbody>
+                                        <tr>
+                                            <td>
+                                                <table class="row-content stack" align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; background-color: black; color: #000000; width: 680px; margin: 0 auto;" width="680">
+                                                    <tbody>
+                                                        <tr>
+                                                            <td class="column column-1" width="33.333333333333336%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-bottom: 10px; padding-left: 20px; padding-right: 20px; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
+                                                                <table class="image_block block-1" width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
+                                                                    <tr>
+                                                                        <td class="pad" style="padding-left:30px;padding-right:30px;padding-top:10px;width:100%;">
+                                                                            <div class="alignment" align="center" style="line-height:10px">
+                                                                                <div style="max-width: 126.667px;"><img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apc_logo.png" style="display: block; height: auto; border: 0; width: 100%;" width="126.667" alt="Giving Tuesday Logo" title="Giving Tuesday Logo" height="auto"></div>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                                <table class="social_block block-2" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
+                                                                    <tr>
+                                                                        <td class="pad">
+                                                                            <div class="alignment" align="center">
+                                                                                <table class="social-table" width="108px" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; display: inline-block;">
+                                                                                    <tr>
+                                                                                        <td style="padding:0 2px 0 2px;"><a href="https://www.facebook.com" target="_blank"><img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/facebook@2x.png" width="32" height="auto" alt="Facebook" title="facebook" style="display: block; height: auto; border: 0;"></a></td>
+                                                                                        <td style="padding:0 2px 0 2px;"><a href="https://www.twitter.com" target="_blank"><img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/twitter@2x.png" width="32" height="auto" alt="Twitter" title="twitter" style="display: block; height: auto; border: 0;"></a></td>
+                                                                                        <td style="padding:0 2px 0 2px;"><a href="https://www.instagram.com" target="_blank"><img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/instagram@2x.png" width="32" height="auto" alt="Instagram" title="instagram" style="display: block; height: auto; border: 0;"></a></td>
+                                                                                    </tr>
+                                                                                </table>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                            </td>
+                                                            <td class="column column-3" width="33.333333333333336%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-bottom: 30px; padding-left: 10px; padding-right: 10px; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
+                                                                <table class="paragraph_block block-1" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word;">
+                                                                    <tr>
+                                                                        <td class="pad">
+                                                                            <div style="color:#ffffff;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:14px;line-height:120%;text-align:center;mso-line-height-alt:16.8px;">
+                                                                                <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word;"><strong><span style="word-break: break-word;">Contact Us</span></strong></span></p>
+                                                                            </div>
+                                                                        </td>
+                                                                    </tr>
+                                                                </table>
+                                                                <table class="paragraph_block block-2" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word;">
+                                                                    <tr>
+                                                                        <td class="pad">
+                                                                            <div style="color:#393d47;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:12px;line-height:120%;text-align:center;mso-line-height-alt:14.399999999999999px;">
+                                                                                <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word; color: #ffffff;">Your Street 12, 34567 AB CIity</span></p>
+                                                                                <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word; color: #ffffff;">info@example.com </span></p>
+                                                                                <p style="margin: 0; word-break: break-word;"><span style="word-break: break-word; color: #ffffff;">(+1) 123 456 789</span></p>
                                                                             </div>
                                                                         </td>
                                                                     </tr>
