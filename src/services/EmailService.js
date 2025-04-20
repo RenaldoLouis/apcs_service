@@ -398,7 +398,7 @@ const sendEmailFunc = async (data) => {
                                                                             <div style="color:#393d47;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:12px;line-height:120%;mso-line-height-alt:14.399999999999999px;">
                                                                                 <p style="margin: 0; word-break: break-word;">
                                                                                     <a href="https://www.apcsmusic.com/" style="color: #ffffff; text-decoration: none;" target="_blank">
-                                                                                        https://www.apcsmusic.com/
+                                                                                        apcsmusic.com
                                                                                     </a>
                                                                                 </p>                                                                                
                                                                                 <p style="margin: 0; word-break: break-word;">
@@ -413,8 +413,20 @@ const sendEmailFunc = async (data) => {
                                                                 </table>
                                                             </td>
                                                         </tr>
+                                                    </tbody>
+                                                </table>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <table class="row row-9" align="center" width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
+                                    <tbody>
+                                        <tr>
+                                            <td>
+                                                <table class="row-content stackFooter" align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; background-color: black; color: #000000; width: 680px; margin: 0 auto;" width="680">
+                                                    <tbody>
                                                         <tr>
-                                                            <td colspan="1" align="left" style="padding: 0px 0px 10px 10px; text-align: left; color: #ffffff; font-family: Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif; font-size: 12px; line-height: 1.5;">
+                                                            <td colspan="1" width="100%" align="left" style="padding: 0px 0px 10px 10px; text-align: left; color: #ffffff; font-family: Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif; font-size: 12px; line-height: 1.5;">
                                                                 ©️ 2025 APCS Music, All rights reserved.
                                                             </td>
                                                         </tr>
