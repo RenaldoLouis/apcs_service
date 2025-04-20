@@ -214,6 +214,11 @@ const sendEmailFunc = async (data) => {
                             display: block;
                         }
 
+                        .stackFooter{
+                            width: 50% !important;
+                            display: table-cell !important
+                        }
+
                         .mobile_hide {
                             min-height: 0;
                             max-height: 0;
@@ -272,7 +277,7 @@ const sendEmailFunc = async (data) => {
                                                 <table class="row-content stack" align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; color: #000000; width: 680px; margin: 0 auto;" width="680">
                                                     <tbody>
                                                         <tr>
-                                                            <td class="column column-1" width="50%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-left: 20px; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
+                                                            <td class="column column-1" width="50%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
                                                                 <table class="paragraph_block block-1" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word;">
                                                                     <tr>
                                                                         <td class="pad">
@@ -336,10 +341,10 @@ const sendEmailFunc = async (data) => {
                                     <tbody>
                                         <tr>
                                             <td>
-                                                <table class="row-content stack" align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; background-color: black; color: #000000; width: 680px; margin: 0 auto;" width="680">
+                                                <table class="row-content stackFooter" align="center" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; background-color: black; color: #000000; width: 680px; margin: 0 auto;" width="680">
                                                     <tbody>
                                                         <tr>
-                                                            <td class="column column-1" width="33.333333333333336%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-bottom: 10px; padding-left: 20px; padding-right: 20px; padding-top: 10px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
+                                                            <td class="column column-1" width="50%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-bottom: 10px; padding-left: 10px; padding-right: 20px; padding-top: 10px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
                                                                 <table class="image_block block-1" width="100%" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
                                                                     <tr>
                                                                         <td class="pad" style="padding-right:30px;padding-top:10px;width:100%;">
@@ -377,7 +382,7 @@ const sendEmailFunc = async (data) => {
                                                                     </tr>
                                                                 </table>
                                                             </td>
-                                                            <td class="column column-2" width="33.333333333333336%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-bottom: 30px; padding-left: 10px; padding-right: 10px; padding-top: 20px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
+                                                            <td class="column column-2" width="50%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-bottom: 30px; padding-left: 10px; padding-right: 10px; padding-top: 20px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
                                                                 <table class="paragraph_block block-1" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word;">
                                                                     <tr>
                                                                         <td class="pad">
@@ -409,7 +414,7 @@ const sendEmailFunc = async (data) => {
                                                             </td>
                                                         </tr>
                                                         <tr>
-                                                            <td colspan="1"  align="left" style="padding: 0px 0px 10px 20px; text-align: left; color: #ffffff; font-family: Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif; font-size: 12px; line-height: 1.5;">
+                                                            <td colspan="1" align="left" style="padding: 0px 0px 10px 10px; text-align: left; color: #ffffff; font-family: Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif; font-size: 12px; line-height: 1.5;">
                                                                 ©️ 2025 APCS Music, All rights reserved.
                                                             </td>
                                                         </tr>
