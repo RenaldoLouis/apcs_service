@@ -360,19 +360,19 @@ const sendEmailFunc = async (data) => {
                                                                             <div class="alignment" align="left">
                                                                                 <table class="social-table" width="108px" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; display: inline-block;">
                                                                                     <tr>
-                                                                                        <td style="padding:0 2px 0 2px;">
+                                                                                        <td style="padding:0 4px 0 4px; background:transparent; border-radius:35px;">
                                                                                             <a href="https://www.youtube.com/@apcsmusic" target="_blank">
-                                                                                                <img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/youtube@2x.png" width="32" height="auto" alt="YouTube" title="youtube" style="display: block; height: auto; border: 0;">
+                                                                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/youtube.png" width="32" height="auto" alt="YouTube" title="youtube" style="background:white; border-radius:35px;display: block; height: auto; border: 0;">
                                                                                             </a>
                                                                                         </td>
-                                                                                        <td style="padding:0 2px 0 2px;">
+                                                                                        <td style="padding:0 4px 0 4px; background:transparent; border-radius:35px;">
                                                                                             <a href="https://www.instagram.com/apcs.music" target="_blank">
-                                                                                                <img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/instagram@2x.png" width="32" height="auto" alt="Instagram" title="instagram" style="display: block; height: auto; border: 0;">
+                                                                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/instagram.png" width="32" height="auto" alt="Instagram" title="instagram" style="background:white; border-radius:35px;display: block; height: auto; border: 0;">
                                                                                             </a>
                                                                                         </td>
-                                                                                        <td style="padding:0 2px 0 2px;">
+                                                                                        <td style="padding:0 4px 0 4px; background:transparent; border-radius:35px;">
                                                                                             <a href="https://api.whatsapp.com/send/?phone=6282213002686" target="_blank">
-                                                                                                <img src="https://app-rsrc.getbee.io/public/resources/social-networks-icon-sets/t-only-logo-white/whatsapp@2x.png" width="32" height="auto" alt="WhatsApp" title="whatsapp" style="display: block; height: auto; border: 0;">
+                                                                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/whatsapp.png" width="32" height="auto" alt="WhatsApp" title="whatsapp" style="background:white; border-radius:35px;display: block; height: auto; border: 0;">
                                                                                             </a>
                                                                                         </td>
                                                                                     </tr>
