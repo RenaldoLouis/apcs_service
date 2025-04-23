@@ -278,11 +278,11 @@ const sendEmailFunc = async (data) => {
                                                     <tbody>
                                                         <tr>
                                                             <td class="column column-1" width="50%" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; font-weight: 400; text-align: left; padding-top: 30px; vertical-align: top; border-top: 0px; border-right: 0px; border-bottom: 0px; border-left: 0px;">
-                                                                <table class="paragraph_block block-1" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word; background:black;">
+                                                                <table class="paragraph_block block-1" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word;">
                                                                     <tr>
                                                                         <td class="pad">
                                                                             <div style="color:#393d47;font-family:Georgia,Times,'Times New Roman',serif;font-size:24px;line-height:120%;text-align:left;mso-line-height-alt:28.799999999999997px;">
-                                                                                <div style="max-width: 126.667px;"><img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_BgBlack.png" style="display: block; height: auto; border: 0; width: 100%;" width="126.667" alt="APCS Logo" title="APCS Logo" height="auto"></div>
+                                                                                <div style="max-width: 126.667px;"><img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; border-radius:16px; height: auto; border: 0; width: 100%;" width="126.667" alt="APCS Logo" title="APCS Logo" height="auto"></div>
                                                                             </div>
                                                                         </td>
                                                                     </tr>
@@ -336,7 +336,7 @@ const sendEmailFunc = async (data) => {
                                                                     <tr>
                                                                         <td class="pad" style="padding-right:30px;padding-top:10px;width:100%;">
                                                                             <div class="alignment" align="left" style="line-height:10px;text-align:left;">
-                                                                                <div style="max-width: 126.667px;"><img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_BgBlack.png" style="display: block; height: auto; border: 0; width: 100%;" width="126.667" alt="APCS Logo" title="APCS Logo" height="auto"></div>
+                                                                                <div style="max-width: 126.667px;"><img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; border-radius:16px; height: auto; border: 0; width: 100%;" width="126.667" alt="APCS Logo" title="APCS Logo" height="auto"></div>
                                                                             </div>
                                                                         </td>
                                                                     </tr>
