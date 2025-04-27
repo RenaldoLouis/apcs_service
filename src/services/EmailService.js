@@ -343,23 +343,23 @@ const sendEmailFunc = async (data) => {
                                                                 </table>
                                                                 <table class="social_block block-2" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt;">
                                                                     <tr>
-                                                                        <td class="pad">
+                                                                        <td class="pad" style="padding-left:0px;">
                                                                             <div class="alignment" align="left">
                                                                                 <table class="social-table" width="108px" border="0" cellpadding="0" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; display: inline-block;">
                                                                                     <tr>
                                                                                         <td style="padding:0px 4px 0px 0px; background:transparent; border-radius:35px;">
                                                                                             <a href="https://www.youtube.com/@apcsmusic" target="_blank">
-                                                                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/youtube.png" width="32" height="auto" alt="YouTube" title="youtube" style="background:white; border-radius:35px;display: block; height: auto; border: 0;">
+                                                                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/icon-youtubewhite.png" width="32" height="auto" alt="YouTube" title="youtube" style="border-radius:35px;display: block; height: auto; border: 0;">
                                                                                             </a>
                                                                                         </td>
                                                                                         <td style="padding:0px 4px 0px 4px; background:transparent; border-radius:35px;">
                                                                                             <a href="https://www.instagram.com/apcs.music" target="_blank">
-                                                                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/instagram.png" width="32" height="auto" alt="Instagram" title="instagram" style="background:white; border-radius:35px;display: block; height: auto; border: 0;">
+                                                                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/icon-instagram.png" width="32" height="auto" alt="Instagram" title="instagram" style="border-radius:35px;display: block; height: auto; border: 0;">
                                                                                             </a>
                                                                                         </td>
                                                                                         <td style="padding:0px 4px 0px 4px; background:transparent; border-radius:35px;">
                                                                                             <a href="https://api.whatsapp.com/send/?phone=6282213002686" target="_blank">
-                                                                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/whatsapp.png" width="32" height="auto" alt="WhatsApp" title="whatsapp" style="background:white; border-radius:35px;display: block; height: auto; border: 0;">
+                                                                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/icon-whatsapp.png" width="32" height="auto" alt="WhatsApp" title="whatsapp" style="border-radius:35px;display: block; height: auto; border: 0;">
                                                                                             </a>
                                                                                         </td>
                                                                                     </tr>
