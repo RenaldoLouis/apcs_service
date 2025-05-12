@@ -20,7 +20,16 @@ async function getUploadUrl(req) {
     }
 }
 
+async function downloadFilesAws(params, res) {
+    try {
+        await db.downloadFilesAws(params, res); // Call it correctly
+    } catch (error) {
+        throw error;
+    }
+}
+
 module.exports = {
     postRegistrant,
     getUploadUrl,
+    downloadFilesAws,
 };

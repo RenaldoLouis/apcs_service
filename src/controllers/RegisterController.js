@@ -19,7 +19,16 @@ async function getUploadUrl(req, res, next) {
     }
 }
 
+async function downloadFilesAws(req, res, next) {
+    try {
+        await registerService.downloadFilesAws(req.body, res);
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     postRegistrant,
     getUploadUrl,
+    downloadFilesAws
 };

@@ -12,6 +12,7 @@ router.get('/getGaleries', FirebaseController.getGaleries)
 router.get('/getVideos', FirebaseController.getVideos)
 router.post('/register', RegisterController.postRegistrant)
 router.post('/signed-url-images', RegisterController.getUploadUrl)
+router.post('/download-files-aws', RegisterController.downloadFilesAws)
 // router.get('/inboundDelivery', paymentController.getInboundDeliveries)
 
 module.exports = router;

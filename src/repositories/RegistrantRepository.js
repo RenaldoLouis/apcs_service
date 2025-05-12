@@ -1,7 +1,9 @@
 const pool = require('../configs/DbConfig');
 const { logger } = require('../utils/Logger');
-const { S3Client, ListObjectsV2Command, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, ListObjectsV2Command, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const archiver = require('archiver');
+const { AppendFilesToZip } = require('../utils/awsDownload');
 
 const s3Admin = new S3Client({
     region: process.env.AWS_REGION,
@@ -39,7 +41,26 @@ const getUploadUrl = async (params, callback) => {
     }
 }
 
+const downloadFilesAws = async (params, res) => {
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename=documents.zip');
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.pipe(res);
+
+    try {
+        await AppendFilesToZip(archive, params);
+        await archive.finalize();
+    } catch (err) {
+        console.error('ZIP stream failed:', err);
+        res.status(500).send('Error creating ZIP file.');
+    }
+};
+
+
 module.exports = {
     postRegistrant,
-    getUploadUrl
+    getUploadUrl,
+    downloadFilesAws
 }
