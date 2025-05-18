@@ -304,7 +304,7 @@ const sendEmailFunc = async (data) => {
                                                                                 </p>
 
                                                                                 <p style="margin: 0 0 16px 0;">
-                                                                                    Thank you for being a part of this incredible experience.<br>
+                                                                                    Thank you for being a part of this incredible experience.<br><br>
                                                                                     We can’t wait to welcome you at the event!
                                                                                 </p>
 
