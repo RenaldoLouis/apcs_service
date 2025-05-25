@@ -446,6 +446,61 @@ const sendEmailFunc = async (data) => {
         throw error; // rethrow to allow Bull to handle retries
     }
 }
+const sendEmailWinnerFunc = async (data) => {
+    logger.info(`Processing email: ${data.email}`);
+    const winner = data.name
+    const to = data.email
+    try {
+        const mailOptions = {
+            from: "hello@apcsmusic.com",
+            to: to,
+            subject: "APCS The Sound Of Asia 2025 Winner",
+            html: `<!DOCTYPE html>
+                    <html>
+                    <body style="font-family: Arial, sans-serif; color: #000; font-size: 14px; line-height: 1.6; margin: 0; padding: 20px;">
+                        <p><strong>APCS Gala Concert 2024 – Winner Announcement – ${winner}</strong></p>
+
+                        <p>Dear <strong>${winner}</strong>,</p>
+
+                        <p>
+                        Selamat! Kamu telah memenangkan kategori Diamond dan dapat tampil pada panggung event 
+                        <strong>APCS Gala Concert 2024</strong> yang akan diselenggarakan pada:
+                        </p>
+
+                        <p>
+                        <strong>Hari/Tanggal:</strong> Sabtu, 19 Oktober <strong>2024</strong><br />
+                        <strong>Lokasi:</strong> Teater Salihara, Jakarta Selatan
+                        </p>
+
+                        <p>
+                        Pemenang diharapkan untuk membaca ketentuan yang terlampir pada email ini berupa attachment file PDF. 
+                        Apabila ada pertanyaan lebih lanjut, harap menghubungi admin melalui WhatsApp berikut:
+                        </p>
+
+                        <p>
+                        <strong>Diamond Admin:</strong> 
+                        <a href="https://wa.me/6282213002686" style="color: #1a73e8;">https://wa.me/6282213002686</a>
+                        </p>
+
+                        <p>See you at the event! :)</p>
+                    </body>
+                    </html>`,
+            attachments: [
+                {
+                    filename: 'Diamond-Winner.txt',
+                    path: 'https://raw.github.com/nodemailer/nodemailer/master/LICENSE'
+                },
+            ]
+        };
+
+        const result = await transporter.sendMail(mailOptions);
+        logger.info(`Successfully sent email to ${to}`);
+        return result;
+    } catch (error) {
+        logger.error(`Failed to send email to ${to}: ${error.message}`);
+        throw error; // rethrow to allow Bull to handle retries
+    }
+}
 
 // Process email queue with concurrency of 3
 emailQueue.process(3, processEmailQueue);
@@ -470,9 +525,29 @@ async function sendEmail(req) {
     }
 }
 
+async function sendEmailWinner(req) {
+    try {
+        const emailsArray = req.body;
+        if (Array.isArray(emailsArray) && emailsArray.length > 0) {
+            // Bulk add email jobs to the queue
+            // enqueueBulkEmails(emailsArray);
+            for (const data of emailsArray) {
+                sendEmailWinnerFunc(data);
+            }
+            logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
+        } else {
+            logger.warn("No emails provided to enqueue");
+        }
+        return { message: "Emails have been enqueued successfully" };
+    } catch (error) {
+        logger.error(`Failed to enqueue email jobs: ${error.message}`);
+        throw error;
+    }
+}
+
 module.exports = {
     sendEmail,
-    // Expose enqueue functions if needed for testing or further extensions
+    sendEmailWinner,
     enqueueEmailJob,
     enqueueBulkEmails
 };
