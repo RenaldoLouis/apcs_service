@@ -29,7 +29,17 @@ async function sendEmailWinner(req, res, next) {
         next(err);
     }
 }
+
+async function sendEmailMarketing(req, res, next) {
+    try {
+        const data = await email.sendEmailMarketingFunc(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
 module.exports = {
     sendEmail,
-    sendEmailWinner
+    sendEmailWinner,
+    sendEmailMarketing,
 };
