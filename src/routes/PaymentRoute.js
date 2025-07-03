@@ -4,6 +4,7 @@ const paymentController = require("../controllers/PaymentController");
 const EmailController = require("../controllers/EmailController");
 const FirebaseController = require("../controllers/FirebaseController");
 const RegisterController = require("../controllers/RegisterController");
+const BookingController = require("../controllers/BookingController");
 const { paymentValidation } = require('../utils/ValidationUtil');
 
 router.post('/createPayment', paymentValidation, paymentController.createPayment)
@@ -15,6 +16,8 @@ router.get('/getVideos', FirebaseController.getVideos)
 router.post('/register', RegisterController.postRegistrant)
 router.post('/signed-url-images', RegisterController.getUploadUrl)
 router.post('/download-files-aws', RegisterController.downloadFilesAws)
+router.post('/bookings', BookingController.createBooking)
+router.get('/bookings/status', BookingController.getBookingStatus)
 // router.get('/inboundDelivery', paymentController.getInboundDeliveries)
 
 module.exports = router;
