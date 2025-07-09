@@ -15,28 +15,30 @@ const QRIS_API_SECRET = process.env.QRIS_API_SECRET;
 const createBooking = async (body, callback) => {
     const { eventId, userEmail, ticketQuantity, selectedSeatIds, selectedAddOnIds } = body;
 
-    // --- 1. Server-Side Validation ---
-    if (!eventId || !userEmail || !ticketQuantity) {
-        // return res.status(400).json({ message: "Missing required booking information." });
-        callback(null, { message: "Missing required booking information." })
-    }
-    console.log("selectedSeatIds", selectedSeatIds)
-    if (selectedSeatIds && selectedSeatIds.length !== ticketQuantity) {
-        // return res.status(400).json({ message: "Number of selected seats must match ticket quantity." });
-        callback(null, { message: "Number of selected seats must match ticket quantity." })
-    }
+    // --- Define refs outside the try block to have access in the catch block ---
+    let bookingRef = null;
 
     try {
-        // --- 2. Securely Fetch Pricing Rules ---
+        // --- 1. Validation ---
+        if (!eventId || !userEmail || !ticketQuantity) {
+            throw new Error("Missing required booking information.");
+            // callback(null, { message: "Missing required booking information." })
+        }
+        if (selectedSeatIds && selectedSeatIds.length !== ticketQuantity) {
+            callback(null, { message: "Number of selected seats must match ticket quantity." })
+        }
+
+        // --- 2. Securely Fetch Pricing Rules & Re-Calculate Price ---
         const eventRef = db.collection('events').doc(eventId);
         const eventDoc = await eventRef.get();
         if (!eventDoc.exists) {
-            // return res.status(404).json({ message: "Event not found." });
-            callback(null, { message: "Event not found." })
+            throw new Error("Event not found.");
+            // callback(null, { message: "Event not found." })
+
         }
         const eventData = eventDoc.data();
 
-        // --- 3. Securely Re-Calculate Price ---
+        // (Calculation logic is the same)
         const items = [];
         let calculatedTotal = 0;
 
@@ -65,10 +67,9 @@ const createBooking = async (body, callback) => {
                 }
             }
         }
-
-        // --- 4. Run Firestore Transaction ---
-        console.log("hit firebase")
-        const bookingRef = db.collection("bookings").doc();
+        // --- 3. Run Firestore Transaction ---
+        console.log("Starting Firestore transaction to lock seats...");
+        bookingRef = db.collection("bookings").doc();
         await db.runTransaction(async (transaction) => {
             if (selectedSeatIds && selectedSeatIds.length > 0) {
                 for (const seatId of selectedSeatIds) {
@@ -84,22 +85,28 @@ const createBooking = async (body, callback) => {
                 eventId, userEmail, status: "pending", items,
                 summary: { totalPrice: calculatedTotal },
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                checkedIn: false, // For future use on event day
+                checkedIn: false,
             });
         });
+        console.log("Firestore transaction successful. Seats are locked.");
 
-        // --- 5. Call QRIS API ---
-        const qrisPayload = {
-            api_key: QRIS_API_KEY, secret_key: QRIS_API_SECRET,
-            merchant_ref: bookingRef.id, amount: calculatedTotal,
-        };
-        const qrisResponse = await axios.post(`${QRIS_API_URL}/create-invoice`, qrisPayload);
-        if (qrisResponse.data.status !== 'success') {
-            throw new Error(qrisResponse.data.message || "Failed to create QRIS invoice.");
-        }
+        // --- 4. Call QRIS API ---
+        // console.log("Calling QRIS API...");
+        // const qrisPayload = {
+        //     api_key: process.env.QRIS_API_KEY, secret_key: process.env.QRIS_API_SECRET,
+        //     merchant_ref: bookingRef.id, amount: calculatedTotal,
+        // };
+        // const qrisResponse = await axios.post(process.env.QRIS_API_URL, qrisPayload);
+        // if (qrisResponse.data.status !== 'success') {
+        //     // This will be caught by our catch block below
+        //     throw new Error(qrisResponse.data.message || "Failed to create QRIS invoice.");
+        // }
+        // console.log("QRIS API call successful.");
+
+        // Update booking with QRIS invoice ID
         await bookingRef.update({ qrisInvoiceId: qrisResponse.data.invoice_id });
 
-        // --- 6. Send Success Response ---
+        // --- 5. Return the final data ---
         // res.status(201).json({
         //     message: "Booking initiated successfully!",
         //     bookingId: bookingRef.id,
@@ -112,9 +119,27 @@ const createBooking = async (body, callback) => {
         })
 
     } catch (error) {
-        console.error("Booking failed:", error);
-        // Add rollback logic here if needed (though transactions handle much of it)
-        // res.status(500).json({ message: error.message || "Could not create booking." });
+        console.error("Booking failed:", error.message);
+
+        // --- THIS IS THE CRUCIAL ROLLBACK LOGIC ---
+        // If the error happened after seats were locked, we unlock them.
+        if (selectedSeatIds && selectedSeatIds.length > 0) {
+            console.log("An error occurred. Rolling back locked seats...");
+            // Use Promise.all to run all updates in parallel
+            const unlockPromises = selectedSeatIds.map(seatId => {
+                const seatRef = db.collection("seats").doc(seatId);
+                return seatRef.update({ status: "available" });
+            });
+            await Promise.all(unlockPromises);
+            console.log("Rollback complete. Seats have been unlocked.");
+        }
+
+        // If the booking document was created, we can also update its status to 'failed'
+        if (bookingRef && (await bookingRef.get()).exists) {
+            await bookingRef.update({ status: 'failed', error: error.message });
+        }
+
+        // Re-throw the error so the controller can send a 500 response
         callback(error)
     }
 }
