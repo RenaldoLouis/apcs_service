@@ -501,6 +501,7 @@ const sendEmailWinnerFunc = async (data) => {
         throw error; // rethrow to allow Bull to handle retries
     }
 }
+
 const sendEmailMarketingFunc = async (data) => {
     logger.info(`Processing email: ${data.email}`);
     const winner = data.name
@@ -556,6 +557,148 @@ const sendEmailMarketingFunc = async (data) => {
         throw error; // rethrow to allow Bull to handle retries
     }
 }
+
+
+const sendEmailPaymentRequest = async (data) => {
+    logger.info(`Sending payment request to: ${data.email}`);
+    const registrantName = data.name;
+    const to = data.email;
+
+    try {
+        const mailOptions = {
+            from: '"APCS Music" <hello@apcsmusic.com>',
+            to: to, // Sending to the user
+            subject: `Payment Required for Your APCS Registration`,
+            html: `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8">
+                        <style>
+                            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                            .email-wrapper { width: 100%; background-color: #f4f4f4; }
+                            .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                            .header { background-color: #e5cc92; color: #333333; padding: 40px; text-align: center; }
+                            .header h1 { margin: 0; }
+                            .content { padding: 30px; line-height: 1.6; color: #555555; }
+                            .content p { margin: 0 0 20px 0; }
+                            .payment-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
+                            .payment-details strong { display: block; margin-bottom: 5px; color: #333333; }
+                            .cta-button { display: inline-block; background-color: #3498db; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; }
+                            .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="email-wrapper">
+                            <div class="email-container">
+                                <div class="header">
+                                    <h1>Action Required: Complete Your Registration</h1>
+                                </div>
+                                <div class="content">
+                                    <p>Dear <strong>${registrantName}</strong>,</p>
+                                    <p>Thank you for registering for our event! We are thrilled to have you. To finalize your registration, the next step is to complete the payment.</p>
+                                    <p>Please refer to the registration guide PDF on our website for the exact fee corresponding to your category.</p>
+                                    
+                                    <div class="payment-details">
+                                        <strong>Bank Name:</strong> Bank Central Asia (BCA)
+                                        <strong>Account Name:</strong> APCS Music
+                                        <strong>Account Number:</strong> [YOUR_BCA_ACCOUNT_NUMBER]
+                                        <br><br>
+                                        <strong>For International Transfers:</strong>
+                                        <strong>SWIFT / BIC Code:</strong> CENAIDJA
+                                    </div>
+
+                                    <h3>What's Next?</h3>
+                                    <p>After you have made the transfer, please reply to this email or contact our admin via WhatsApp with your proof of payment (transfer receipt).</p>
+                                    <a href="https://wa.me/6282213002686" class="cta-button">Contact Admin on WhatsApp</a>
+
+                                    <p style="margin-top: 30px;">If you have any questions, please don't hesitate to reach out.</p>
+                                    <p>Best regards,<br>The APCS Music Team</p>
+                                </div>
+                                <div class="footer">
+                                    <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                                </div>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    `
+        };
+
+        const result = await transporter.sendMail(mailOptions);
+        logger.info(`Successfully sent payment request to ${to}`);
+        return result;
+    } catch (error) {
+        logger.error(`Failed to send payment request to ${to}: ${error.message}`);
+        throw error;
+    }
+}
+
+const sendEmailNotifyApcs = async (data) => {
+    logger.info(`Sending internal notification for: ${data.name}`);
+
+    try {
+        const mailOptions = {
+            from: '"APCS Registration System" <hello@apcsmusic.com>', // Sender name is helpful
+            to: "hello@apcsmusic.com", // Sending to your own company
+            subject: `New Registration: ${data.name} - ${data.competitionCategory}`,
+            html: `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8">
+                        <style>
+                            /* Basic styles for email clients */
+                            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+                            .container { width: 100%; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; border-radius: 8px; }
+                            .header { background-color: #2c3e50; color: #ffffff; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+                            .content { padding: 30px; background-color: #ffffff; }
+                            .info-item { margin-bottom: 15px; font-size: 16px; }
+                            .info-item strong { color: #34495e; }
+                            .footer { text-align: center; font-size: 12px; color: #7f8c8d; margin-top: 20px;}
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <div class="header">
+                                <h1>New Event Registration</h1>
+                            </div>
+                            <div class="content">
+                                <p style="font-size: 18px;">A new participant has registered for an APCS 2025 event.</p>
+                                <hr>
+                                <div class="info-item">
+                                    <strong>Participant Name:</strong> ${data.name}
+                                </div>
+                                <div class="info-item">
+                                    <strong>Email:</strong> <a href="mailto:${data.email}" style="color: #3498db;">${data.email}</a>
+                                </div>
+                                <div class="info-item">
+                                    <strong>Competition Category:</strong> ${data.competitionCategory || 'N/A'}
+                                </div>
+                                <div class="info-item">
+                                    <strong>Instrument:</strong> ${data.instrumentCategory || 'N/A'}
+                                </div>
+                                <div class="info-item">
+                                    <strong>Registration Time:</strong> ${new Date().toUTCString()}
+                                </div>
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} APCS Music. This is an automated notification.</p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    `
+        };
+
+        const result = await transporter.sendMail(mailOptions);
+        logger.info(`Successfully sent internal notification for ${data.name}`);
+        return result;
+    } catch (error) {
+        logger.error(`Failed to send internal notification: ${error.message}`);
+        throw error;
+    }
+};
 
 // Process email queue with concurrency of 3
 emailQueue.process(3, processEmailQueue);
@@ -620,11 +763,55 @@ async function sendEmailMarketing(req) {
     }
 }
 
+
+async function sendEmailPaymentRequestFunc(req) {
+    try {
+        const emailsArray = req.body;
+        if (Array.isArray(emailsArray) && emailsArray.length > 0) {
+            // Bulk add email jobs to the queue
+            // enqueueBulkEmails(emailsArray);
+            for (const data of emailsArray) {
+                sendEmailPaymentRequest(data);
+            }
+            logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
+        } else {
+            logger.warn("No emails provided to enqueue");
+        }
+        return { message: "Emails have been enqueued successfully" };
+    } catch (error) {
+        logger.error(`Failed to enqueue email jobs: ${error.message}`);
+        throw error;
+    }
+}
+
+
+async function sendEmailNotifyApcsFunc(req) {
+    try {
+        const emailsArray = req.body;
+        if (Array.isArray(emailsArray) && emailsArray.length > 0) {
+            // Bulk add email jobs to the queue
+            // enqueueBulkEmails(emailsArray);
+            for (const data of emailsArray) {
+                sendEmailNotifyApcs(data);
+            }
+            logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
+        } else {
+            logger.warn("No emails provided to enqueue");
+        }
+        return { message: "Emails have been enqueued successfully" };
+    } catch (error) {
+        logger.error(`Failed to enqueue email jobs: ${error.message}`);
+        throw error;
+    }
+}
 module.exports = {
     sendEmail,
     sendEmailWinner,
     enqueueEmailJob,
     enqueueBulkEmails,
     sendEmailMarketing,
-    sendEmailMarketingFunc
+    sendEmailMarketingFunc,
+    sendEmailPaymentRequestFunc,
+    sendEmailNotifyApcsFunc,
+
 };
