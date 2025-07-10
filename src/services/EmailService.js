@@ -578,7 +578,7 @@ const sendEmailPaymentRequest = async (data) => {
                         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
                         .email-wrapper { width: 100%; background-color: #f4f4f4; }
                         .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
-                        .header { background-color: #e5cc92; color: #333333; padding: 25px; text-align: center; }
+                        .header {color: #333333; text-align: center; }
                         .header h1 { margin: 0; font-size: 24px; }
                         .content { padding: 30px; line-height: 1.6; color: #555555; }
                         .content p { margin: 0 0 20px 0; }
@@ -595,8 +595,19 @@ const sendEmailPaymentRequest = async (data) => {
                 <body>
                     <div class="email-wrapper">
                         <div class="email-container">
-                            <div class="header">
-                                <h1>Payment Instructions</h1>
+                              <div class="header">
+                                <div style="color:#393d47;font-family:Georgia,Times,'Times New Roman',serif;font-size:24px;line-height:120%;text-align:left;mso-line-height-alt:28.799999999999997px;">
+
+                                    <div style="width: 100%;background: black;">
+
+                                        <img
+                                            src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png"
+                                            style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;"
+                                            alt="APCS Logo"
+                                            title="APCS Logo">
+
+                                    </div>
+                                </div>
                             </div>
                             <div class="content">
                                 <p>Dear <strong>${registrantName}</strong>,</p>
