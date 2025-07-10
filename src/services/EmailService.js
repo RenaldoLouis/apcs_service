@@ -567,62 +567,78 @@ const sendEmailPaymentRequest = async (data) => {
     try {
         const mailOptions = {
             from: '"APCS Music" <hello@apcsmusic.com>',
-            to: to, // Sending to the user
-            subject: `Payment Required for Your APCS Registration`,
+            to: to,
+            subject: `Payment Instructions – APCS Music Competition`, // Updated Subject
             html: `
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <style>
-                            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
-                            .email-wrapper { width: 100%; background-color: #f4f4f4; }
-                            .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
-                            .header { background-color: #e5cc92; color: #333333; padding: 40px; text-align: center; }
-                            .header h1 { margin: 0; }
-                            .content { padding: 30px; line-height: 1.6; color: #555555; }
-                            .content p { margin: 0 0 20px 0; }
-                            .payment-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
-                            .payment-details strong { display: block; margin-bottom: 5px; color: #333333; }
-                            .cta-button { display: inline-block; background-color: #3498db; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; }
-                            .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
-                        </style>
-                    </head>
-                    <body>
-                        <div class="email-wrapper">
-                            <div class="email-container">
-                                <div class="header">
-                                    <h1>Action Required: Complete Your Registration</h1>
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                        .email-wrapper { width: 100%; background-color: #f4f4f4; }
+                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                        .header { background-color: #e5cc92; color: #333333; padding: 25px; text-align: center; }
+                        .header h1 { margin: 0; font-size: 24px; }
+                        .content { padding: 30px; line-height: 1.6; color: #555555; }
+                        .content p { margin: 0 0 20px 0; }
+                        .content h3 { color: #333333; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
+                        .payment-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
+                        .payment-details div { margin-bottom: 10px; }
+                        .payment-details strong { color: #333333; width: 180px; display: inline-block; }
+                        .important-notes ul { padding-left: 20px; }
+                        .important-notes li { margin-bottom: 10px; }
+                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                        .ps-note { font-size: 12px; color: #7f8c8d; }
+                    </style>
+                </head>
+                <body>
+                    <div class="email-wrapper">
+                        <div class="email-container">
+                            <div class="header">
+                                <h1>Payment Instructions</h1>
+                            </div>
+                            <div class="content">
+                                <p>Dear <strong>${registrantName}</strong>,</p>
+                                <p>Thank you for registering for the APCS Music Competition.</p>
+                                <p>To complete your registration, please proceed with the payment. The fee for your category is listed in the <strong>Registration Guide PDF</strong> available on our <a href="https://www.apcsmusic.com/register" target="_blank" style="color: #3498db;">website</a>.</p>
+                                
+                                <h3>Payment Details</h3>
+                                <div class="payment-details">
+                                    <div><strong>Bank Name:</strong> Bank Central Asia (BCA)</div>
+                                    <div><strong>Account Number:</strong> 8200409915</div>
+                                    <div><strong>Account Holder Name:</strong> Michaela Sutejo</div>
+                                    <div><strong>SWIFT CODE:</strong> CENAIDJA</div>
+                                    <div><strong>Branch Address:</strong> BCA KCU Pematang Siantar, Indonesia</div>
+                                    <div><strong>Category:</strong> ${data.competitionCategory}</div>
+                                    <div><strong>Amount:</strong> ${data.price}</div>
+                                    <div><strong>Payment Reference:</strong> Your Full Name – Category</div>
+                                    <div style="font-size: 13px; color: #777;"><em>Example: Jason Smith – Piano</em></div>
                                 </div>
-                                <div class="content">
-                                    <p>Dear <strong>${registrantName}</strong>,</p>
-                                    <p>Thank you for registering for our event! We are thrilled to have you. To finalize your registration, the next step is to complete the payment.</p>
-                                    <p>Please refer to the registration guide PDF on our website for the exact fee corresponding to your category.</p>
-                                    
-                                    <div class="payment-details">
-                                        <strong>Bank Name:</strong> Bank Central Asia (BCA)
-                                        <strong>Account Name:</strong> APCS Music
-                                        <strong>Account Number:</strong> [YOUR_BCA_ACCOUNT_NUMBER]
-                                        <br><br>
-                                        <strong>For International Transfers:</strong>
-                                        <strong>SWIFT / BIC Code:</strong> CENAIDJA
-                                    </div>
 
-                                    <h3>What's Next?</h3>
-                                    <p>After you have made the transfer, please reply to this email or contact our admin via WhatsApp with your proof of payment (transfer receipt).</p>
-                                    <a href="https://wa.me/6282213002686" class="cta-button">Contact Admin on WhatsApp</a>
+                                <h3>Important Notes</h3>
+                                <div class="important-notes">
+                                    <ul>
+                                        <li>Please double-check that the account number is entered correctly.</li>
+                                        <li>For international transfers, ensure all associated bank fees are covered so we receive the full amount.</li>
+                                    </ul>
+                                </div>
 
-                                    <p style="margin-top: 30px;">If you have any questions, please don't hesitate to reach out.</p>
-                                    <p>Best regards,<br>The APCS Music Team</p>
-                                </div>
-                                <div class="footer">
-                                    <p>&copy; ${new Date().getFullYear()} APCS Music</p>
-                                </div>
+                                <h3>What's Next?</h3>
+                                <p>Once you've completed the transfer, kindly reply to this email with your payment proof (transfer receipt).</p>
+                                <p>If you have any questions, feel free to contact us.</p>
+                                <p>Best regards,<br>APCS Music Team</p>
+                                <br>
+                                <p class="ps-note">P.S. A confirmation email will be sent once your payment has been verified by our team.</p>
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
                             </div>
                         </div>
-                    </body>
-                    </html>
-                    `
+                    </div>
+                </body>
+                </html>
+                `
         };
 
         const result = await transporter.sendMail(mailOptions);
