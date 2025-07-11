@@ -563,6 +563,7 @@ const sendEmailPaymentRequest = async (data) => {
     logger.info(`Sending payment request to: ${data.email}`);
     const registrantName = data.name;
     const to = data.email;
+    const price = data.price ?? "Please Check PDF on website"
 
     try {
         const mailOptions = {
@@ -622,7 +623,7 @@ const sendEmailPaymentRequest = async (data) => {
                                     <div><strong>SWIFT CODE:</strong> CENAIDJA</div>
                                     <div><strong>Branch Address:</strong> BCA KCU Pematang Siantar, Indonesia</div>
                                     <div><strong>Category:</strong> ${data.competitionCategory}</div>
-                                    <div><strong>Amount:</strong> ${data.price}</div>
+                                    <div><strong>Amount:</strong> ${price}</div>
                                     <div><strong>Payment Reference:</strong> Your Full Name – Category</div>
                                     <div style="font-size: 13px; color: #777;"><em>Example: Jason Smith – Piano</em></div>
                                 </div>
