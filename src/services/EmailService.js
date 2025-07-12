@@ -625,7 +625,7 @@ const sendEmailPaymentRequest = async (data) => {
                                     <div><strong>Category:</strong> ${data.competitionCategory}</div>
                                     <div><strong>Amount:</strong> ${price}</div>
                                     <div><strong>Payment Reference:</strong> Your Full Name – Category</div>
-                                    <div style="font-size: 13px; color: #777;"><em>Example: Jason Smith – Piano</em></div>
+                                    <div style="font-size: 13px; color: #777;"><em>Example: Jason Smith – Violin</em></div>
                                 </div>
 
                                 <h3>Important Notes</h3>
