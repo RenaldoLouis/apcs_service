@@ -1,6 +1,11 @@
 const nodemailer = require("nodemailer");
 const Queue = require('bull');
 const { logger } = require('../utils/Logger');
+import jwt from 'jsonwebtoken';
+
+// IMPORTANT: Store this secret in your .env file!
+const JWT_SECRET = process.env.JWT_SECRET;
+
 
 const defaultJobOptions = {
     removeOnComplete: true,
@@ -728,6 +733,65 @@ const sendEmailNotifyApcs = async (data) => {
     }
 };
 
+
+/**
+ * Creates a secure, signed JWT for a registrant's ticket.
+ * @param {string} registrantId - The Firestore document ID of the registrant.
+ * @param {string} eventId - An identifier for the event (e.g., "APCS2025").
+ * @returns {string} The generated JSON Web Token.
+ */
+export const generateTicketToken = (registrantId, eventId) => {
+    const payload = {
+        registrantId: registrantId,
+        eventId: eventId,
+    };
+
+    // The token will be valid for 1 year. Adjust as needed.
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '365d' });
+
+    return token;
+};
+
+
+export const sendETicketEmail = async (registrantData) => {
+    // 1. Generate the unique token
+    const token = generateTicketToken(registrantData.id, "APCS2025");
+
+    // 2. Create the check-in URL that the QR code will point to
+    const checkinUrl = `https://www.yourwebsite.com/check-in?ticket=${token}`;
+
+    try {
+        // 3. Generate the QR code image from the URL
+        const qrCodeDataUrl = await qrcode.toDataURL(checkinUrl);
+
+        const mailOptions = {
+            from: '"APCS Music" <hello@apcsmusic.com>',
+            to: registrantData.email,
+            subject: 'Your E-Ticket for the APCS Event',
+            html: `
+                <!DOCTYPE html>
+                <html>
+                <body>
+                    <h1>Here is your E-Ticket</h1>
+                    <p>Dear ${registrantData.name},</p>
+                    <p>Please present this QR code at the event entrance for check-in.</p>
+                    
+                    <img src="${qrCodeDataUrl}" alt="Your E-Ticket QR Code">
+                    
+                    <p>We look forward to seeing you!</p>
+                </body>
+                </html>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        console.log(`E-Ticket sent successfully to ${registrantData.email}`);
+
+    } catch (error) {
+        console.error("Failed to send e-ticket:", error);
+    }
+};
+
 // Process email queue with concurrency of 3
 emailQueue.process(3, processEmailQueue);
 
@@ -813,6 +877,26 @@ async function sendEmailPaymentRequestFunc(req) {
 }
 
 
+async function sendEmailETicketFunc(req) {
+    try {
+        const emailsArray = req.body;
+        if (Array.isArray(emailsArray) && emailsArray.length > 0) {
+            // Bulk add email jobs to the queue
+            // enqueueBulkEmails(emailsArray);
+            for (const data of emailsArray) {
+                sendETicketEmail(data);
+            }
+            logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
+        } else {
+            logger.warn("No emails provided to enqueue");
+        }
+        return { message: "Emails have been enqueued successfully" };
+    } catch (error) {
+        logger.error(`Failed to enqueue email jobs: ${error.message}`);
+        throw error;
+    }
+}
+
 async function sendEmailNotifyApcsFunc(req) {
     try {
         const emailsArray = req.body;
@@ -841,5 +925,5 @@ module.exports = {
     sendEmailMarketingFunc,
     sendEmailPaymentRequestFunc,
     sendEmailNotifyApcsFunc,
-
+    sendEmailETicketFunc,
 };
