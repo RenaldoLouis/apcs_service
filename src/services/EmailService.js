@@ -1,7 +1,7 @@
 const nodemailer = require("nodemailer");
 const Queue = require('bull');
 const { logger } = require('../utils/Logger');
-import jwt from 'jsonwebtoken';
+const jwt = require('jsonwebtoken');
 
 // IMPORTANT: Store this secret in your .env file!
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -740,7 +740,7 @@ const sendEmailNotifyApcs = async (data) => {
  * @param {string} eventId - An identifier for the event (e.g., "APCS2025").
  * @returns {string} The generated JSON Web Token.
  */
-export const generateTicketToken = (registrantId, eventId) => {
+async function generateTicketToken(registrantId, eventId) {
     const payload = {
         registrantId: registrantId,
         eventId: eventId,
@@ -753,7 +753,7 @@ export const generateTicketToken = (registrantId, eventId) => {
 };
 
 
-export const sendETicketEmail = async (registrantData) => {
+async function sendETicketEmail(registrantData) {
     // 1. Generate the unique token
     const token = generateTicketToken(registrantData.id, "APCS2025");
 

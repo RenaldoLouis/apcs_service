@@ -1,7 +1,7 @@
 const pool = require('../configs/DbConfig');
 const { logger } = require('../utils/Logger');
 const { db, admin } = require('../configs/firebase-init');
-import jwt from 'jsonwebtoken';
+const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
