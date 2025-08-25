@@ -5,8 +5,8 @@ const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const verifyTicket = async (params, res) => {
-    const { token } = req.body;
+const verifyTicket = async (req, res) => {
+    const { token } = req;
 
     if (!token) {
         return res.status(400).json({ message: 'No ticket token provided.' });
@@ -55,7 +55,60 @@ const verifyTicket = async (params, res) => {
     }
 };
 
+const saveSeatBookProfileInfo = async (req, callback) => {
+    // We'll get the payload from the request body
+    const { eventId, userId, userEmail } = req;
+
+    // Basic validation
+    if (!eventId || !userId || !userEmail) {
+        return callback(null, "results.rows[0]");
+    }
+
+    try {
+        // 1. Prepare the data to be saved to Firestore
+        const dataToSave = {
+            ...req,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            seatSelectionToken: null, // Initialize token field
+        };
+
+        // 2. Save the data to a new document in the 'seatBook2025' collection
+        // .add() automatically generates a unique ID for the new document
+        const docRef = await db.collection('seatBook2025').add(dataToSave);
+        console.log(`New booking saved with ID: ${docRef.id}`);
+
+        // 3. Generate a secure token for the user to select their seat later
+        const tokenPayload = {
+            userId: userId,             // The ID of the registrant
+            bookingId: docRef.id,       // The ID of this specific booking document
+            eventId: eventId,
+        };
+
+        // The token will be valid for 7 days, giving the user time to pay and select a seat
+        const seatSelectionToken = jwt.sign(tokenPayload, "2Wh8w90fkoAyN4gYP7lLjkTGXujxQw59", { expiresIn: '7d' });
+
+        console.log("seatSelectionToken", seatSelectionToken)
+        // 4. (Optional but recommended) Save the generated token back to the booking document for reference
+        await docRef.update({
+            seatSelectionToken: seatSelectionToken
+        });
+
+        // 5. Send a success response back to the frontend, including the new ID and token
+        const returnData = {
+            message: 'Booking profile saved successfully.',
+            bookingId: docRef.id,
+            seatSelectionToken: seatSelectionToken,
+        }
+        callback(null, returnData);
+
+    } catch (error) {
+        console.error("Failed to save booking profile:", error);
+        res.status(500).json({ message: 'An error occurred while saving the booking.' });
+    }
+};
+
 
 module.exports = {
-    verifyTicket
+    verifyTicket,
+    saveSeatBookProfileInfo
 }

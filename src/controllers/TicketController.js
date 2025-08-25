@@ -8,7 +8,16 @@ async function verifyTicket(req, res, next) {
         next(err);
     }
 }
+async function saveSeatBookProfileInfo(req, res, next) {
+    try {
+        const data = await TicketService.saveSeatBookProfileInfo(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
 
 module.exports = {
-    verifyTicket
+    verifyTicket,
+    saveSeatBookProfileInfo
 };

@@ -10,7 +10,16 @@ async function verifyTicket(req) {
         throw error;
     }
 }
+async function saveSeatBookProfileInfo(req) {
+    const body = req.body;
+    try {
+        return await databaseUtil.executeDatabaseOperation(db.saveSeatBookProfileInfo, body);
+    } catch (error) {
+        throw error;
+    }
+}
 
 module.exports = {
-    verifyTicket
+    verifyTicket,
+    saveSeatBookProfileInfo
 };
