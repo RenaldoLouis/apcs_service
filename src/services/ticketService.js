@@ -18,8 +18,26 @@ async function saveSeatBookProfileInfo(req) {
         throw error;
     }
 }
+async function verifySeatSelectionToken(req) {
+    const body = req.body;
+    try {
+        return await databaseUtil.executeDatabaseOperation(db.verifySeatSelectionToken, body);
+    } catch (error) {
+        throw error;
+    }
+}
+async function confirmSeatSelection(req) {
+    const body = req.body;
+    try {
+        return await databaseUtil.executeDatabaseOperation(db.confirmSeatSelection, body);
+    } catch (error) {
+        throw error;
+    }
+}
 
 module.exports = {
     verifyTicket,
-    saveSeatBookProfileInfo
+    saveSeatBookProfileInfo,
+    verifySeatSelectionToken,
+    confirmSeatSelection
 };

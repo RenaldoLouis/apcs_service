@@ -24,6 +24,9 @@ router.post('/bookings', BookingController.createBooking)
 router.get('/bookings/status', BookingController.getBookingStatus)
 router.get('/verifyTicker', TicketController.verifyTicket)
 router.post('/saveSeatBookProfileInfo', TicketController.saveSeatBookProfileInfo)
-// router.get('/inboundDelivery', paymentController.getInboundDeliveries)
+// Verifies the token when the user first lands on the page
+router.post('/verify-seat-token', TicketController.verifySeatSelectionToken);
+// Saves the user's final seat selection
+router.post('/confirm-seats', TicketController.confirmSeatSelection);
 
 module.exports = router;

@@ -106,9 +106,100 @@ const saveSeatBookProfileInfo = async (req, callback) => {
         res.status(500).json({ message: 'An error occurred while saving the booking.' });
     }
 };
+const verifySeatSelectionToken = async (req, callback) => {
+    const { token } = req;
+
+    if (!token) {
+        callback(null, 'Token not provided.');
+    }
+
+    try {
+        // 1. Verify the JWT is valid and signed by us
+        const payload = jwt.verify(token, process.env.JWT_SECRET);
+        const { bookingId, eventId } = payload;
+
+        // 2. Fetch the corresponding booking from Firestore
+        const bookingRef = db.collection('seatBook2025').doc(bookingId);
+        const bookingDoc = await bookingRef.get();
+
+        if (!bookingDoc.exists) {
+            callback(null, 'Booking not found.');
+        }
+
+        const bookingData = bookingDoc.data();
+
+        // 3. Check if seats have already been selected for this booking
+        if (bookingData.seatsSelected) {
+            callback(null, 'Seats have already been selected for this booking.');
+        }
+
+        // 4. If all checks pass, fetch the seat layout for the event
+        const seatsSnapshot = await db.collection('seats').where('eventId', '==', eventId).get();
+        const seatLayout = seatsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // 5. Send the booking and seat data back to the frontend
+
+        const returnData = {
+            message: 'Token is valid.',
+            bookingData: { id: bookingDoc.id, ...bookingData },
+            seatLayout: seatLayout
+        }
+        callback(null, returnData);
+
+    } catch (error) {
+        // This will catch expired or invalid tokens
+        console.error("Seat selection token verification failed:", error);
+        callback(null, 'Link is invalid or has expired.');
+    }
+};
+
+const confirmSeatSelection = async (req, callback) => {
+    const { bookingId, selectedSeatIds } = req;
+
+    if (!bookingId || !selectedSeatIds || selectedSeatIds.length === 0) {
+        callback(null, 'error');
+    }
+
+    const bookingRef = db.collection('seatBook2025').doc(bookingId);
+
+    try {
+        // Use a transaction to ensure no one else takes the seats while we're booking them
+        await db.runTransaction(async (transaction) => {
+            const bookingDoc = await transaction.get(bookingRef);
+            if (!bookingDoc.exists) throw new Error("Booking not found.");
+            if (bookingDoc.data().seatsSelected) throw new Error("Seats have already been selected.");
+
+            for (const seatId of selectedSeatIds) {
+                const seatRef = db.collection('seats').doc(seatId);
+                const seatDoc = await transaction.get(seatRef);
+                if (seatDoc.data().status !== 'available') {
+                    throw new Error(`Sorry, seat ${seatDoc.data().seatLabel} is no longer available.`);
+                }
+                // Reserve the seat
+                transaction.update(seatRef, { status: 'reserved' });
+            }
+
+            // Update the booking to finalize the selection
+            transaction.update(bookingRef, {
+                seatsSelected: true,
+                selectedSeats: selectedSeatIds // Store the selected seat IDs
+            });
+        });
+
+
+        callback(null, 'Your seats have been successfully reserved!');
+
+    } catch (error) {
+        console.error("Failed to confirm seat selection:", error);
+        callback(null, 'An error occurred while reserving your seats.');
+
+    }
+};
 
 
 module.exports = {
     verifyTicket,
-    saveSeatBookProfileInfo
+    saveSeatBookProfileInfo,
+    verifySeatSelectionToken,
+    confirmSeatSelection
 }

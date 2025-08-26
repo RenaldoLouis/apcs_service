@@ -668,102 +668,91 @@ const sendEmailPaymentRequest = async (data) => {
 }
 
 const sendSeatBookingEmail = async (data) => {
-    logger.info(`Sending payment request to: ${data.userEmail}`);
+    // data is the 'emailPayload' from your onFormSubmit function
+    logger.info(`Sending seat booking email to: ${data.userEmail}`);
     const registrantName = data.userName;
     const to = data.userEmail;
+
+    // Helper to summarize the tickets purchased
+    const ticketSummary = data.tickets
+        .map(ticket => `${ticket.quantity}x ${ticket.name} Ticket`)
+        .join(', ');
+
+    // Construct the unique seat selection link for the user
+    const seatSelectionLink = `https://www.apcsmusic.com/select-seat?token=${data.seatSelectionToken}`;
 
     try {
         const mailOptions = {
             from: '"APCS Music" <hello@apcsmusic.com>',
-            // TODO : change this later
-            to: "renaldolouis555@gmail.com",
-            subject: `Payment Instructions – APCS Music Competition`, // Updated Subject
+            to: "renaldolouis555@gmail.com", // Changed from hardcoded email to the user's email
+            subject: `Your APCS Booking Confirmation & Seat Selection`,
             html: `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <style>
-                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
-                        .email-wrapper { width: 100%; background-color: #f4f4f4; }
-                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
-                        .header {color: #333333; text-align: center; }
-                        .header h1 { margin: 0; font-size: 24px; }
-                        .content { padding: 30px; line-height: 1.6; color: #555555; }
-                        .content p { margin: 0 0 20px 0; }
-                        .content h3 { color: #333333; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
-                        .payment-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
-                        .payment-details div { margin-bottom: 10px; }
-                        .payment-details strong { color: #333333; width: 180px; display: inline-block; }
-                        .important-notes ul { padding-left: 20px; }
-                        .important-notes li { margin-bottom: 10px; }
-                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
-                        .ps-note { font-size: 12px; color: #7f8c8d; }
-                    </style>
-                </head>
-                <body>
-                    <div class="email-wrapper">
-                        <div class="email-container">
-                              <div class="header">
-                                <div style="color:#393d47;font-family:Georgia,Times,'Times New Roman',serif;font-size:24px;line-height:120%;text-align:left;mso-line-height-alt:28.799999999999997px;">
-
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8">
+                        <style>
+                            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                            .email-wrapper { width: 100%; background-color: #f4f4f4; }
+                            .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                            .header {color: #333333; text-align: center; }
+                            .content { padding: 30px; line-height: 1.6; color: #555555; }
+                            .content p { margin: 0 0 20px 0; }
+                            .content h3 { color: #333333; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
+                            .booking-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
+                            .booking-details div { margin-bottom: 10px; }
+                            .booking-details strong { color: #333333; width: 120px; display: inline-block; }
+                            .cta-button { display: inline-block; background-color: #e5cc92; color: #2c3e50; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; }
+                            .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="email-wrapper">
+                            <div class="email-container">
+                                <div class="header">
                                     <div style="width: 100%;background: black;">
-
-                                        <img
-                                            src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png"
-                                            style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;"
-                                            alt="APCS Logo"
-                                            title="APCS Logo">
-
+                                        <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo" title="APCS Logo">
                                     </div>
                                 </div>
-                            </div>
-                            <div class="content">
-                                <p>Dear <strong>${registrantName}</strong>,</p>
-                                <p>Thank you for registering for the APCS Music Competition.</p>
-                                <p>To complete your registration, please proceed with the payment. The fee for your category is listed in the <strong>Registration Guide PDF</strong> available on our <a href="https://www.apcsmusic.com/register" target="_blank" style="color: #3498db;">website</a>.</p>
-                                
-                                <h3>Payment Details</h3>
-                                <div class="payment-details">
-                                    <div><strong>Bank Name:</strong> Bank Central Asia (BCA)</div>
-                                    <div><strong>Account Number:</strong> 8200409915</div>
-                                    <div><strong>Account Holder Name:</strong> Michaela Sutejo</div>
-                                    <div><strong>SWIFT CODE:</strong> CENAIDJA</div>
-                                    <div><strong>Branch Address:</strong> BCA KCU Pematang Siantar, Indonesia</div>
-                                    <div><strong>Payment Reference:</strong> Your Full Name – Category</div>
-                                    <div style="font-size: 13px; color: #777;"><em>Example: Jason Smith – Violin</em></div>
-                                </div>
+                                <div class="content">
+                                    <p>Dear <strong>${registrantName}</strong>,</p>
+                                    <p>Thank you for your booking! We have successfully received your order details and are excited for you to join us at the event.</p>
+                                    
+                                    <h3>Your Booking Details</h3>
+                                    <div class="booking-details">
+                                        <div><strong>Venue:</strong> ${data.venue}</div>
+                                        <div><strong>Date:</strong> ${data.date ? new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
+                                        <div><strong>Session:</strong> ${data.session || 'N/A'}</div>
+                                        <div><strong>Tickets:</strong> ${ticketSummary}</div>
+                                    </div>
 
-                                <h3>Important Notes</h3>
-                                <div class="important-notes">
-                                    <ul>
-                                        <li>Please double-check that the account number is entered correctly.</li>
-                                        <li>For international transfers, ensure all associated bank fees are covered so we receive the full amount.</li>
-                                    </ul>
+                                    <h3>Select Your Seats</h3>
+                                    <p>As part of your order, you've chosen to select your specific seats. Please click the button below to open the seating map and make your selection. This will ensure you get the best spot available!</p>
+                                    <p style="text-align:center; margin-top: 30px; margin-bottom: 30px;">
+                                        <a href="${seatSelectionLink}" target="_blank" class="cta-button">
+                                            Click Here to Select Your Seat
+                                        </a>
+                                    </p>
+                                    <p style="font-size: 12px; text-align: center; color: #777;">Please note: This link is unique to you and will expire in 7 days.</p>
+                                    
+                                    <p style="margin-top: 30px;">If you have any questions, please don't hesitate to contact us.</p>
+                                    <p>Best regards,<br>The APCS Music Team</p>
                                 </div>
-
-                                <h3>What's Next?</h3>
-                                <p>Once you've completed the transfer, kindly reply to this email with your payment proof (transfer receipt).</p>
-                                <p>If you have any questions, feel free to contact us.</p>
-                                <p>Best regards,<br>APCS Music Team</p>
-                                <br>
-                                <p class="ps-note">P.S. A confirmation email will be sent once your payment has been verified by our team.</p>
-                            </div>
-                            <div class="footer">
-                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                                <div class="footer">
+                                    <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </body>
-                </html>
-                `
+                    </body>
+                    </html>
+                    `
         };
 
         const result = await transporter.sendMail(mailOptions);
-        logger.info(`Successfully sent payment request to ${to}`);
+        logger.info(`Successfully sent seat booking email to ${to}`);
         return result;
     } catch (error) {
-        logger.error(`Failed to send payment request to ${to}: ${error.message}`);
+        logger.error(`Failed to send seat booking email to ${to}: ${error.message}`);
         throw error;
     }
 }
