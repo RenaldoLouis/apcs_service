@@ -668,10 +668,9 @@ const sendEmailPaymentRequest = async (data) => {
 }
 
 const sendSeatBookingEmail = async (data) => {
-    logger.info(`Sending payment request to: ${data.email}`);
-    const registrantName = data.name;
-    const to = data.email;
-    const price = data.price ?? "Please Check PDF on website"
+    logger.info(`Sending payment request to: ${data.userEmail}`);
+    const registrantName = data.userName;
+    const to = data.userEmail;
 
     try {
         const mailOptions = {
@@ -731,8 +730,6 @@ const sendSeatBookingEmail = async (data) => {
                                     <div><strong>Account Holder Name:</strong> Michaela Sutejo</div>
                                     <div><strong>SWIFT CODE:</strong> CENAIDJA</div>
                                     <div><strong>Branch Address:</strong> BCA KCU Pematang Siantar, Indonesia</div>
-                                    <div><strong>Category:</strong> ${data.competitionCategory}</div>
-                                    <div><strong>Amount:</strong> ${price}</div>
                                     <div><strong>Payment Reference:</strong> Your Full Name – Category</div>
                                     <div style="font-size: 13px; color: #777;"><em>Example: Jason Smith – Violin</em></div>
                                 </div>
@@ -983,16 +980,19 @@ async function sendEmailPaymentRequestFunc(req) {
 async function sendSeatBookingEmailFunc(req) {
     try {
         const emailsArray = req.body;
-        if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-            // Bulk add email jobs to the queue
-            // enqueueBulkEmails(emailsArray);
-            for (const data of emailsArray) {
-                sendSeatBookingEmail(data);
-            }
-            logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
-        } else {
-            logger.warn("No emails provided to enqueue");
-        }
+        logger.info(`sending seat link email to ${emailsArray.length}`);
+        sendSeatBookingEmail(emailsArray);
+        logger.info(`Send to ${emailsArray.userName} email successfully`);
+        // if (Array.isArray(emailsArray) && emailsArray.length > 0) {
+        //     // Bulk add email jobs to the queue
+        //     // enqueueBulkEmails(emailsArray);
+        //     for (const data of emailsArray) {
+        //         sendSeatBookingEmail(data);
+        //     }
+        //     logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
+        // } else {
+        //     logger.warn("No emails provided to enqueue");
+        // }
         return { message: "Emails have been enqueued successfully" };
     } catch (error) {
         logger.error(`Failed to enqueue email jobs: ${error.message}`);
