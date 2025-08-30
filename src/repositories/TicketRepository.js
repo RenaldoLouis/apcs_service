@@ -106,7 +106,8 @@ const saveSeatBookProfileInfo = async (req, callback) => {
         res.status(500).json({ message: 'An error occurred while saving the booking.' });
     }
 };
-const verifySeatSelectionToken = async (req, callback) => {
+
+const verifySeatSelectionToken = async (req, callback) => { // Using req, res for standard Express
     const { token } = req;
 
     if (!token) {
@@ -133,12 +134,19 @@ const verifySeatSelectionToken = async (req, callback) => {
             callback(null, 'Seats have already been selected for this booking.');
         }
 
-        // 4. If all checks pass, fetch the seat layout for the event
-        const seatsSnapshot = await db.collection('seats').where('eventId', '==', eventId).get();
+        // --- THIS IS THE KEY CHANGE ---
+        // 4. Fetch the seat layout for the SPECIFIC session the user booked.
+        // We construct the sessionId from the booking data.
+        const sessionId = `${bookingData.date}_${bookingData.session}`;
+
+        const trimmedSessionId = sessionId.replace(/\s+/g, '');
+        // Query the main 'seats' collection, filtering by the exact sessionId.
+        const seatsSnapshot = await db.collection(`seats${eventId}`).where('sessionId', '==', trimmedSessionId).get();
         const seatLayout = seatsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // --- END OF CHANGE ---
+
 
         // 5. Send the booking and seat data back to the frontend
-
         const returnData = {
             message: 'Token is valid.',
             bookingData: { id: bookingDoc.id, ...bookingData },
@@ -147,7 +155,6 @@ const verifySeatSelectionToken = async (req, callback) => {
         callback(null, returnData);
 
     } catch (error) {
-        // This will catch expired or invalid tokens
         console.error("Seat selection token verification failed:", error);
         callback(null, 'Link is invalid or has expired.');
     }
