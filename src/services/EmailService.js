@@ -684,7 +684,8 @@ const sendSeatBookingEmail = async (data) => {
     try {
         const mailOptions = {
             from: '"APCS Music" <hello@apcsmusic.com>',
-            to: "renaldolouis555@gmail.com", // Changed from hardcoded email to the user's email
+            // TODO : update to use real TO email
+            to: "renaldolouis555@gmail.com",
             subject: `Your APCS Booking Confirmation & Seat Selection`,
             html: `
                     <!DOCTYPE html>
