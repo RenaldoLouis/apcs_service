@@ -2,6 +2,7 @@ const pool = require('../configs/DbConfig');
 const { logger } = require('../utils/Logger');
 const { db, admin } = require('../configs/firebase-init');
 const jwt = require('jsonwebtoken');
+const email = require('../services/EmailService.js');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -168,6 +169,7 @@ const confirmSeatSelection = async (req, callback) => {
     }
 
     const bookingRef = db.collection('seatBook2025').doc(bookingId);
+    let finalBookingData = null; // Variable to hold booking data for the email
 
     try {
         await db.runTransaction(async (transaction) => {
@@ -177,7 +179,9 @@ const confirmSeatSelection = async (req, callback) => {
             console.log("Read Phase: Getting booking and seat documents...");
             const bookingDoc = await transaction.get(bookingRef);
             if (!bookingDoc.exists) throw new Error("Booking not found.");
-            if (bookingDoc.data().seatsSelected) throw new Error("Seats have already been selected for this booking.");
+            // if (bookingDoc.data().seatsSelected) throw new Error("Seats have already been selected for this booking.");
+            finalBookingData = bookingDoc.data(); // Store the data
+            if (finalBookingData.seatsSelected) throw new Error("Seats have already been selected.");
 
             // Create references for all selected seats
             const seatRefs = selectedSeatIds.map(seatId => db.collection(`seats${eventId}`).doc(seatId));
@@ -211,12 +215,42 @@ const confirmSeatSelection = async (req, callback) => {
             });
         });
 
+        // --- TRIGGER THE CONFIRMATION EMAIL AFTER TRANSACTION SUCCEEDS ---
+        if (finalBookingData) {
+            // We need the human-readable seat labels for the email, not just the IDs.
+            // Let's fetch the full seat documents.
+            const seatRefs = selectedSeatIds.map(seatId => db.collection('seats').doc(seatId));
+            const finalSeatDocs = await db.getAll(...seatRefs);
+            console.log("finalSeatDocs", finalSeatDocs)
+            const selectedSeatLabels = finalSeatDocs.map(doc => doc.data().seatLabel);
+
+            // Call the new email function
+            await email.sendEmailConfirmSeatSelectionFunc(finalBookingData, selectedSeatLabels)
+
+        }
+        // -----------------------------------------------------------------
+
         // If the transaction completes without errors, send success
         console.log("Transaction successful.");
         callback(null, 'Your seats have been successfully reserved!');
 
     } catch (error) {
         console.error("Failed to confirm seat selection:", error);
+
+        // --- Step 4: CRITICAL ROLLBACK LOGIC ---
+        // If the error happened AFTER seats were reserved (i.e., email failed), we undo the reservation.
+        if (finalBookingData && !finalBookingData.seatsSelected) {
+            console.log("Email failed after seats were reserved. Rolling back...");
+            const rollbackBatch = db.batch();
+            selectedSeatIds.forEach(seatId => {
+                const seatRef = db.collection(`seats${eventId}`).doc(seatId);
+                rollbackBatch.update(seatRef, { status: 'available', bookingId: null });
+            });
+            rollbackBatch.update(bookingRef, { seatsSelected: false, selectedSeats: [] });
+            await rollbackBatch.commit();
+            console.log("Rollback successful.");
+        }
+
         callback(error); // Pass the actual error back
     }
 };
