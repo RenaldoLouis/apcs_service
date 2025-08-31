@@ -20,8 +20,6 @@ router.get('/getVideos', FirebaseController.getVideos)
 router.post('/register', RegisterController.postRegistrant)
 router.post('/signed-url-images', RegisterController.getUploadUrl)
 router.post('/download-files-aws', RegisterController.downloadFilesAws)
-router.post('/bookings', BookingController.createBooking)
-router.get('/bookings/status', BookingController.getBookingStatus)
 router.get('/verifyTicker', TicketController.verifyTicket)
 router.post('/saveSeatBookProfileInfo', TicketController.saveSeatBookProfileInfo)
 // Verifies the token when the user first lands on the page

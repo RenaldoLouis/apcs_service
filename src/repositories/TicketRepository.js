@@ -161,45 +161,63 @@ const verifySeatSelectionToken = async (req, callback) => { // Using req, res fo
 };
 
 const confirmSeatSelection = async (req, callback) => {
-    const { bookingId, selectedSeatIds } = req;
+    const { eventId, bookingId, selectedSeatIds } = req; // Assuming you're using Express req/res
 
     if (!bookingId || !selectedSeatIds || selectedSeatIds.length === 0) {
-        callback(null, 'error');
+        return callback(new Error('Booking ID and selected seats are required.'));
     }
 
     const bookingRef = db.collection('seatBook2025').doc(bookingId);
 
     try {
-        // Use a transaction to ensure no one else takes the seats while we're booking them
         await db.runTransaction(async (transaction) => {
+            // --- 1. READ PHASE ---
+            // First, read all the documents you need to check.
+
+            console.log("Read Phase: Getting booking and seat documents...");
             const bookingDoc = await transaction.get(bookingRef);
             if (!bookingDoc.exists) throw new Error("Booking not found.");
-            if (bookingDoc.data().seatsSelected) throw new Error("Seats have already been selected.");
+            if (bookingDoc.data().seatsSelected) throw new Error("Seats have already been selected for this booking.");
 
-            for (const seatId of selectedSeatIds) {
-                const seatRef = db.collection('seats').doc(seatId);
-                const seatDoc = await transaction.get(seatRef);
+            // Create references for all selected seats
+            const seatRefs = selectedSeatIds.map(seatId => db.collection(`seats${eventId}`).doc(seatId));
+
+            // Get all seat documents in one go
+            const seatDocs = await transaction.getAll(...seatRefs);
+
+            // Now, check the status of each seat
+            for (const seatDoc of seatDocs) {
+                if (!seatDoc.exists) {
+                    throw new Error(`One of the selected seats does not exist.`);
+                }
                 if (seatDoc.data().status !== 'available') {
                     throw new Error(`Sorry, seat ${seatDoc.data().seatLabel} is no longer available.`);
                 }
-                // Reserve the seat
-                transaction.update(seatRef, { status: 'reserved' });
             }
 
-            // Update the booking to finalize the selection
+            // --- 2. WRITE PHASE ---
+            // If all the reads and checks above passed, we can now safely write.
+
+            console.log("Write Phase: Updating booking and seat documents...");
+            // Update all the seats to 'reserved'
+            seatRefs.forEach(ref => {
+                transaction.update(ref, { status: 'reserved' });
+            });
+
+            // Update the main booking document
             transaction.update(bookingRef, {
                 seatsSelected: true,
-                selectedSeats: selectedSeatIds // Store the selected seat IDs
+                selectedSeats: selectedSeatIds
             });
         });
 
-
+        // If the transaction completes without errors, send success
+        console.log("Transaction successful.");
         callback(null, 'Your seats have been successfully reserved!');
 
     } catch (error) {
         console.error("Failed to confirm seat selection:", error);
-        callback(null, 'An error occurred while reserving your seats.');
-
+        callback(error); // Pass the actual error back
     }
 };
 

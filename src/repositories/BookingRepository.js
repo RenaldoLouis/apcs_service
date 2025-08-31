@@ -144,6 +144,7 @@ const createBooking = async (body, callback) => {
     }
 }
 
+//UNUSED API WHEN TESTING FOR PAYMENT INTEGRATION
 const getBookingStatus = async (params, res) => {
     try {
         const { bookingId } = params;
