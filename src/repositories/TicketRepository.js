@@ -219,7 +219,7 @@ const confirmSeatSelection = async (req, callback) => {
         if (finalBookingData) {
             // We need the human-readable seat labels for the email, not just the IDs.
             // Let's fetch the full seat documents.
-            const seatRefs = selectedSeatIds.map(seatId => db.collection('seats').doc(seatId));
+            const seatRefs = selectedSeatIds.map(seatId => db.collection(`seats${eventId}`).doc(seatId));
             const finalSeatDocs = await db.getAll(...seatRefs);
             console.log("finalSeatDocs", finalSeatDocs)
             const selectedSeatLabels = finalSeatDocs.map(doc => doc.data().seatLabel);

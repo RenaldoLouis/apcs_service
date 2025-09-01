@@ -758,6 +758,85 @@ const sendSeatBookingEmail = async (data) => {
     }
 }
 
+const sendEmailConfirmSeatSelection = async (bookingData, selectedSeatLabels) => {
+    logger.info(`Sending seat confirmation email to: ${bookingData.userEmail}`);
+    const registrantName = bookingData.userName;
+    const to = bookingData.userEmail;
+
+    // Format the list of selected seats for display
+    const seatSummary = selectedSeatLabels.join(', ');
+
+    try {
+        const mailOptions = {
+            from: '"APCS Music" <hello@apcsmusic.com>',
+            // TODO : update to use real TO email
+            to: "renaldolouis555@gmail.com",
+            subject: `✅ Your Seats are Confirmed for the APCS Event!`,
+            html: `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8">
+                        <style>
+                            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                            .email-wrapper { width: 100%; background-color: #f4f4f4; }
+                            .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                            .header {color: #333333; text-align: center; }
+                            .content { padding: 30px; line-height: 1.6; color: #555555; }
+                            .content p { margin: 0 0 20px 0; }
+                            .content h3 { color: #333333; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
+                            .booking-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
+                            .booking-details div { margin-bottom: 10px; }
+                            .booking-details strong { color: #333333; width: 140px; display: inline-block; }
+                            .seats-confirmed { font-size: 18px; font-weight: bold; color: #27ae60; }
+                            .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="email-wrapper">
+                            <div class="email-container">
+                                <div class="header">
+                                    <div style="width: 100%;background: black;">
+                                        <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo" title="APCS Logo">
+                                    </div>
+                                </div>
+                                <div class="content">
+                                    <p>Dear <strong>${registrantName}</strong>,</p>
+                                    <p>This email confirms that your seats for the APCS event have been successfully reserved. We are delighted to have you join us!</p>
+                                    
+                                    <h3>Your Confirmed Booking</h3>
+                                    <div class="booking-details">
+                                        <div><strong>Venue:</strong> ${bookingData.venue}</div>
+                                        <div><strong>Date:</strong> ${bookingData.date ? new Date(bookingData.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
+                                        <div><strong>Session:</strong> ${bookingData.session || 'N/A'}</div>
+                                        <div class="seats-confirmed"><strong>Confirmed Seats:</strong> ${seatSummary}</div>
+                                    </div>
+
+                                    <h3>What's Next?</h3>
+                                    <p>Your booking is now fully confirmed. You will receive your final E-Ticket with a QR code for entry in a separate email closer to the event date. Please keep an eye on your inbox.</p>
+                                    
+                                    <p style="margin-top: 30px;">If you have any questions about your booking, please reply to this email.</p>
+                                    <p>Best regards,<br>The APCS Music Team</p>
+                                </div>
+                                <div class="footer">
+                                    <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                                </div>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                `
+        };
+
+        const result = await transporter.sendMail(mailOptions);
+        logger.info(`Successfully sent seat confirmation email to ${to}`);
+        return result;
+    } catch (error) {
+        logger.error(`Failed to send seat confirmation email to ${to}: ${error.message}`);
+        throw error;
+    }
+}
+
 const sendEmailNotifyApcs = async (data) => {
     logger.info(`Sending internal notification for: ${data.name}`);
 
@@ -990,6 +1069,18 @@ async function sendSeatBookingEmailFunc(req) {
     }
 }
 
+async function sendEmailConfirmSeatSelectionFunc(bookingData, selectedSeatLabels) {
+    try {
+        logger.info(`sending seat confirmation email to ${bookingData.userEmail}`);
+        sendEmailConfirmSeatSelection(bookingData, selectedSeatLabels);
+        logger.info(`Send to ${bookingData.userEmail}.userName} email successfully`);
+        return { message: "Emails have been enqueued successfully" };
+    } catch (error) {
+        logger.error(`Failed to enqueue email jobs: ${error.message}`);
+        throw error;
+    }
+}
+
 
 async function sendEmailETicketFunc(req) {
     try {
@@ -1039,6 +1130,7 @@ module.exports = {
     sendEmailMarketingFunc,
     sendEmailPaymentRequestFunc,
     sendSeatBookingEmailFunc,
+    sendEmailConfirmSeatSelectionFunc,
     sendEmailNotifyApcsFunc,
     sendEmailETicketFunc,
 };
