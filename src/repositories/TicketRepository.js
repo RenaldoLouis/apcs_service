@@ -139,10 +139,11 @@ const verifySeatSelectionToken = async (req, callback) => { // Using req, res fo
         // 4. Fetch the seat layout for the SPECIFIC session the user booked.
         // We construct the sessionId from the booking data.
         const sessionId = `${bookingData.date}_${bookingData.session}`;
+        const venueId = bookingData.venue; // Get the venue from the booking data
 
         const trimmedSessionId = sessionId.replace(/\s+/g, '');
         // Query the main 'seats' collection, filtering by the exact sessionId.
-        const seatsSnapshot = await db.collection(`seats${eventId}`).where('sessionId', '==', trimmedSessionId).get();
+        const seatsSnapshot = await db.collection(`seats${eventId}`).where('sessionId', '==', trimmedSessionId).where('venueId', '==', venueId).get();
         const seatLayout = seatsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         // --- END OF CHANGE ---
 

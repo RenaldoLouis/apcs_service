@@ -681,6 +681,8 @@ const sendSeatBookingEmail = async (data) => {
     // Construct the unique seat selection link for the user
     const seatSelectionLink = `https://www.apcsmusic.com/select-seat?token=${data.seatSelectionToken}`;
 
+    console.log("to", to)
+
     try {
         const mailOptions = {
             from: '"APCS Music" <hello@apcsmusic.com>',
