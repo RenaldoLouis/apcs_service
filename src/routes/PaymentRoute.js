@@ -17,6 +17,7 @@ router.post('/sendEmailPaymentRequest', EmailController.sendEmailPaymentRequest)
 router.post('/sendSeatBookingEmail', EmailController.sendSeatBookingEmail)
 router.post('/sendEmailConfirmSeatSelection', EmailController.sendEmailConfirmSeatSelection);
 router.post('/sendEmailNotifyApcs', EmailController.sendEmailNotifyApcs)
+router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNotifyBulkUpdateRegistrant)
 
 router.get('/getGaleries', FirebaseController.getGaleries)
 router.get('/getVideos', FirebaseController.getVideos)

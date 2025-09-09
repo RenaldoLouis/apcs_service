@@ -74,6 +74,15 @@ async function sendEmailNotifyApcs(req, res, next) {
         next(err);
     }
 }
+
+async function sendEmailNotifyBulkUpdateRegistrant(req, res, next) {
+    try {
+        const data = await email.sendEmailNotifyBulkUpdateRegistrantFunc(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
 module.exports = {
     sendEmail,
     sendEmailWinner,
@@ -81,5 +90,6 @@ module.exports = {
     sendEmailPaymentRequest,
     sendSeatBookingEmail,
     sendEmailConfirmSeatSelection,
-    sendEmailNotifyApcs
+    sendEmailNotifyApcs,
+    sendEmailNotifyBulkUpdateRegistrant,
 };
