@@ -25,6 +25,7 @@ router.get('/getVideos', FirebaseController.getVideos)
 router.post('/register', RegisterController.postRegistrant)
 router.post('/signed-url-images', RegisterController.getUploadUrl)
 router.post('/download-files-aws', RegisterController.downloadFilesAws)
+router.post('/download-all-files-aws', RegisterController.downloadAllFiles)
 
 router.get('/verifyTicker', TicketController.verifyTicket)
 router.post('/saveSeatBookProfileInfo', TicketController.saveSeatBookProfileInfo)

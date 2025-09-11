@@ -27,8 +27,17 @@ async function downloadFilesAws(req, res, next) {
     }
 }
 
+async function downloadAllFiles(req, res, next) {
+    try {
+        await registerService.downloadAllFiles(req.body, res);
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     postRegistrant,
     getUploadUrl,
-    downloadFilesAws
+    downloadFilesAws,
+    downloadAllFiles,
 };
