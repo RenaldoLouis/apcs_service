@@ -222,7 +222,6 @@ const confirmSeatSelection = async (req, callback) => {
             // Let's fetch the full seat documents.
             const seatRefs = selectedSeatIds.map(seatId => db.collection(`seats${eventId}`).doc(seatId));
             const finalSeatDocs = await db.getAll(...seatRefs);
-            console.log("finalSeatDocs", finalSeatDocs)
             const selectedSeatLabels = finalSeatDocs.map(doc => doc.data().seatLabel);
 
             // Call the new email function
