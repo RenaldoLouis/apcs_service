@@ -678,6 +678,10 @@ const sendSeatBookingEmail = async (data) => {
         .map(ticket => `${ticket.quantity}x ${ticket.name} Ticket`)
         .join(', ');
 
+    const ticketAdsonSummary = data.tickets
+        .map(ticket => `${ticket.seatQuantity}x ${ticket.name} Ticket`)
+        .join(', ');
+
     // Construct the unique seat selection link for the user
     const seatSelectionLink = `https://www.apcsmusic.com/select-seat?token=${data.seatSelectionToken}`;
 
@@ -727,6 +731,7 @@ const sendSeatBookingEmail = async (data) => {
                                         <div><strong>Date:</strong> ${data.date ? new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
                                         <div><strong>Session:</strong> ${data.session || 'N/A'}</div>
                                         <div><strong>Tickets:</strong> ${ticketSummary}</div>
+                                        <div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>
                                     </div>
 
                                     <h3>Select Your Seats</h3>
