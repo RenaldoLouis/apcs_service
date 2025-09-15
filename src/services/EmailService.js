@@ -913,29 +913,34 @@ const sendEmailNotifyApcs = async (data) => {
 const sendEmailNotifyBulkUpdateRegistrant = async (data) => {
     // --- NEW LOGIC TO HANDLE SINGLE OR MULTIPLE NAMES ---
     let greetingName = 'Participant';
-    let participantListHtml = '';
+    const teacherName = data.teacherName;
     const to = data.email
 
-    if (data.names && data.names.length > 1) {
-        // If there are multiple names, create a list
-        greetingName = 'Teacher/Parent'; // Or a more generic greeting
-        participantListHtml = `
-            <p style="margin: 0 0 16px 0; text-align:justify;">
-                We are pleased to confirm the registration for the following participants under your email:
-            </p>
-            <ul style="padding-left: 20px;">
-                ${data.names.map(name => `<li><strong>${name}</strong></li>`).join('')}
-            </ul>
-        `;
-    } else {
-        // If there is only one name, use it directly
-        greetingName = data.names[0] || 'Participant';
-        participantListHtml = `
-            <p style="margin: 0 0 16px 0; text-align:justify;">
-                Welcome to the APCS Family! We are pleased to confirm your registration for <strong>The Sound of Asia</strong>. 
-            </p>
-        `;
-    }
+    console.log("data.names", data.names)
+
+    // if (data.names && data.names.length > 1) {
+    // If there are multiple names, create a list
+    greetingName = 'Teacher/Parent'; // Or a more generic greeting
+    const participantListHtml = `
+        <p style="margin: 0 0 16px 0; text-align:justify;">
+            Welcome to the APCS Family! We are pleased to confirm your registration for The Sound of Asia. We look forward to seeing you on the APCS stage as we celebrate music, culture, and extraordinary talent from around the world.
+        </p>
+        <p style="margin: 0 0 16px 0; text-align:justify;">
+            <strong>Registered Students</strong>:
+        </p>
+        <ul style="padding-left: 20px;">
+            ${data.names.map(name => `<li>${name}</li>`).join('')}
+        </ul>
+    `;
+    // } else {
+    //     // If there is only one name, use it directly
+    //     greetingName = data.names[0] || 'Participant';
+    //     participantListHtml = `
+    //         <p style="margin: 0 0 16px 0; text-align:justify;">
+    //             Welcome to the APCS Family! We are pleased to confirm your registration for <strong>The Sound of Asia</strong>. 
+    //         </p>
+    //     `;
+    // }
     // --- END OF NEW LOGIC ---
 
     try {
@@ -1102,14 +1107,23 @@ const sendEmailNotifyBulkUpdateRegistrant = async (data) => {
                                                                 <table class="paragraph_block block-3" width="100%" border="0" cellpadding="10" cellspacing="0" role="presentation" style="mso-table-lspace: 0pt; mso-table-rspace: 0pt; word-break: break-word;">
                                                                     <tr>
                                                                         <td class="pad" style="padding-top:4px;">
-                                                                            <div style="color:#393d47;font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;text-align:left;">
-                                                                                <p style="margin: 0 0 16px 0;"><em>Dear <strong>${greetingName}</strong>,</em></p>
+                                                                            <div style="font-family:Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;text-align:left;">
+                                                                                <p style="margin: 0 0 16px 0;"><em>Dear <strong>${teacherName}</strong>,</em></p>
 
                                                                                 ${participantListHtml}
 
                                                                                 <p style="margin: 0 0 16px 0; text-align-last:justify; text-align:justify;">
-                                                                                    All winners will be notified via email, so please stay tuned. <strong>The Sapphire Winner</strong> will be announced live on stage during the APCS event.
-                                                                                </p>
+                                                                                    (Kindly review the list and let us know if any names or spellings need updating.)<br><br>
+                                                                                    All winners will be notified via email, so please stay tuned. <strong>The Sapphire Winner</strong> will be announced live on stage during the APCS event, and we’re excited to celebrate every outstanding performance.
+                                                                                </p>  
+
+                                                                                <p style="margin: 0 0 16px 0;">
+                                                                                    Thank you for being a part of this incredible experience.
+                                                                                </p>  
+
+                                                                                <p style="margin: 0 0 16px 0;">
+                                                                                    We can’t wait to welcome you at the event!
+                                                                                </p>  
                                                                                 <p style="margin: 0;">Warm regards,<br><strong>The APCS Team</strong></p>
                                                                             </div>
                                                                         </td>
