@@ -163,75 +163,66 @@ const verifySeatSelectionToken = async (req, callback) => { // Using req, res fo
 };
 
 const confirmSeatSelection = async (req, callback) => {
-    const { eventId, bookingId, selectedSeatIds } = req; // Assuming you're using Express req/res
+    const { eventId, bookingId, selectedSeatIds } = req;
 
-    if (!bookingId || !selectedSeatIds || selectedSeatIds.length === 0) {
+    if (!bookingId || !selectedSeatIds || !selectedSeatIds.length) {
         return callback(new Error('Booking ID and selected seats are required.'));
     }
 
     const bookingRef = db.collection('seatBook2025').doc(bookingId);
-    let finalBookingData = null; // Variable to hold booking data for the email
+    let finalBookingData = null;
+    let transactionSucceeded = false;
 
     try {
         await db.runTransaction(async (transaction) => {
-            // --- 1. READ PHASE ---
-            // First, read all the documents you need to check.
-
-            console.log("Read Phase: Getting booking and seat documents...");
             const bookingDoc = await transaction.get(bookingRef);
             if (!bookingDoc.exists) throw new Error("Booking not found.");
-            // if (bookingDoc.data().seatsSelected) throw new Error("Seats have already been selected for this booking.");
-            finalBookingData = bookingDoc.data(); // Store the data
-            if (finalBookingData.seatsSelected) throw new Error("Seats have already been selected.");
 
-            // Create references for all selected seats
+            const bookingData = bookingDoc.data();
+            finalBookingData = bookingData; // Store for the email function
+            if (bookingData.seatsSelected) throw new Error("Seats have already been selected.");
+
             const seatRefs = selectedSeatIds.map(seatId => db.collection(`seats${eventId}`).doc(seatId));
-
-            // Get all seat documents in one go
             const seatDocs = await transaction.getAll(...seatRefs);
 
-            // Now, check the status of each seat
             for (const seatDoc of seatDocs) {
-                if (!seatDoc.exists) {
-                    throw new Error(`One of the selected seats does not exist.`);
+                if (!seatDoc.exists || seatDoc.data().status !== 'available') {
+                    throw new Error(`Sorry, seat ${seatDoc.data()?.seatLabel} is no longer available.`);
                 }
-                if (seatDoc.data().status !== 'available') {
-                    throw new Error(`Sorry, seat ${seatDoc.data().seatLabel} is no longer available.`);
-                }
+
+                // --- THIS IS THE NEW SEAT UPDATE LOGIC ---
+                // Add the registrant's details to the seat itself
+                transaction.update(seatDoc.ref, {
+                    status: 'reserved',
+                    bookingId: bookingId,
+                    assignedTo: {
+                        registrantId: bookingData.userId,
+                        registrantName: bookingData.userName,
+                        registrantEmail: bookingData.userEmail
+                    }
+                });
             }
 
-            // --- 2. WRITE PHASE ---
-            // If all the reads and checks above passed, we can now safely write.
-
-            console.log("Write Phase: Updating booking and seat documents...");
-            // Update all the seats to 'reserved'
-            seatRefs.forEach(ref => {
-                transaction.update(ref, { status: 'reserved' });
-            });
-
-            // Update the main booking document
+            // --- THIS IS THE NEW BOOKING UPDATE LOGIC ---
+            // Add the isEmailSent flag to the main booking document
             transaction.update(bookingRef, {
                 seatsSelected: true,
-                selectedSeats: selectedSeatIds
+                selectedSeats: selectedSeatIds,
+                isEmailSent: true // The new flag
             });
         });
 
-        // --- TRIGGER THE CONFIRMATION EMAIL AFTER TRANSACTION SUCCEEDS ---
+        transactionSucceeded = true;
+
+        // --- Trigger the confirmation email after transaction succeeds ---
         if (finalBookingData) {
-            // We need the human-readable seat labels for the email, not just the IDs.
-            // Let's fetch the full seat documents.
             const seatRefs = selectedSeatIds.map(seatId => db.collection(`seats${eventId}`).doc(seatId));
             const finalSeatDocs = await db.getAll(...seatRefs);
             const selectedSeatLabels = finalSeatDocs.map(doc => doc.data().seatLabel);
 
-            // Call the new email function
             await email.sendEmailConfirmSeatSelectionFunc(finalBookingData, selectedSeatLabels)
-
         }
-        // -----------------------------------------------------------------
 
-        // If the transaction completes without errors, send success
-        console.log("Transaction successful.");
         callback(null, 'Your seats have been successfully reserved!');
 
     } catch (error) {
