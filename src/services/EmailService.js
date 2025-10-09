@@ -2,6 +2,7 @@ const nodemailer = require("nodemailer");
 const Queue = require('bull');
 const { logger } = require('../utils/Logger');
 const jwt = require('jsonwebtoken');
+const path = require('path');
 
 // IMPORTANT: Store this secret in your .env file!
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -68,6 +69,10 @@ transporter.verify((error, success) => {
         logger.info("SMTP Connection Successful on startup!");
     }
 });
+
+const EXCEL_FILE_PATH = './winners.xlsx';
+const ATTACHMENT_FILE_PATH = path.join(__dirname, 'attachments/SILVER_WINNER.pdf');
+const ATTACHMENT_FILENAME = 'SILVER_WINNER.pdf';
 
 // Enqueue a single email job (if needed)
 const enqueueEmailJob = (data) => {
@@ -452,7 +457,7 @@ const sendEmailFunc = async (data) => {
     }
 }
 const sendEmailWinnerFunc = async (data) => {
-    logger.info(`Processing email: ${data.email}`);
+    logger.info(`Processing email Winner: ${data.email}`);
     const winner = data.name
     const to = data.email
     try {
@@ -492,9 +497,9 @@ const sendEmailWinnerFunc = async (data) => {
                     </html>`,
             attachments: [
                 {
-                    filename: 'Diamond-Winner.txt',
-                    path: 'https://raw.github.com/nodemailer/nodemailer/master/LICENSE'
-                },
+                    filename: ATTACHMENT_FILENAME,
+                    path: ATTACHMENT_FILE_PATH
+                }
             ]
         };
 
@@ -1337,22 +1342,41 @@ async function sendEmail(req) {
 }
 
 async function sendEmailWinner(req) {
+    const winners = req.body;
+
+    logger.info("sending email winner...");
+
     try {
-        const emailsArray = req.body;
-        if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-            // Bulk add email jobs to the queue
-            // enqueueBulkEmails(emailsArray);
-            for (const data of emailsArray) {
-                sendEmailWinnerFunc(data);
-            }
-            logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
-        } else {
-            logger.warn("No emails provided to enqueue");
+        if (winners.length === 0) {
+            logger.info("No winners found. Exiting.");
+            return;
         }
-        return { message: "Emails have been enqueued successfully" };
+
+        logger.info(`Found ${winners.length} winners to email.`);
+
+        // Loop through each winner and send an email
+        for (const winner of winners) {
+            const winnerName = winner['Name'];
+            const winnerEmail = winner['Email'];
+
+            const data = {
+                name: winnerName,
+                email: winnerEmail
+            }
+
+            console.log('data', data)
+
+            if (data) {
+                await sendEmailWinnerFunc(data);
+                // Add a short delay between emails to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 250)); // 1-second delay
+            }
+        }
+
+        logger.info("🎉 Email campaign finished!");
+
     } catch (error) {
-        logger.error(`Failed to enqueue email jobs: ${error.message}`);
-        throw error;
+        logger.error("An error occurred during the campaign:", error);
     }
 }
 
