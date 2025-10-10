@@ -449,59 +449,154 @@ const sendEmailFunc = async (data) => {
         throw error; // rethrow to allow Bull to handle retries
     }
 }
+
 const sendEmailWinnerFunc = async (data) => {
     logger.info(`Processing email Winner: ${data.email}`);
-    const winner = data.name
-    const to = data.email
+    const winner = data.name;
+    const to = data.email;
+    const award = data.award;
+    const isFail = data?.isFail ?? false
+
+    let mailOptions;
+
     try {
-        const mailOptions = {
-            from: "hello@apcsmusic.com",
-            to: to,
-            subject: "APCS The Sound Of Asia 2025 Winner",
-            html: `<!DOCTYPE html>
-                    <html>
-                    <body style="font-family: Arial, sans-serif; color: #000; font-size: 14px; line-height: 1.6; margin: 0; padding: 20px;">
-                        <p><strong>APCS Gala Concert 2024 – Winner Announcement – ${winner}</strong></p>
-
-                        <p>Dear <strong>${winner}</strong>,</p>
-
-                        <p>
-                        Selamat! Kamu telah memenangkan kategori Diamond dan dapat tampil pada panggung event 
-                        <strong>APCS Gala Concert 2024</strong> yang akan diselenggarakan pada:
-                        </p>
-
-                        <p>
-                        <strong>Hari/Tanggal:</strong> Sabtu, 19 Oktober <strong>2024</strong><br />
-                        <strong>Lokasi:</strong> Teater Salihara, Jakarta Selatan
-                        </p>
-
-                        <p>
-                        Pemenang diharapkan untuk membaca ketentuan yang terlampir pada email ini berupa attachment file PDF. 
-                        Apabila ada pertanyaan lebih lanjut, harap menghubungi admin melalui WhatsApp berikut:
-                        </p>
-
-                        <p>
-                        <strong>Diamond Admin:</strong> 
-                        <a href="https://wa.me/6282213002686" style="color: #1a73e8;">https://wa.me/6282213002686</a>
-                        </p>
-
-                        <p>See you at the event! :)</p>
-                    </body>
-                    </html>`,
-            attachments: [
-                {
-                    filename: ATTACHMENT_FILENAME,
-                    path: ATTACHMENT_FILE_PATH
-                }
-            ]
-        };
-
+        if (!isFail) {
+            mailOptions = {
+                from: '"APCS Music" <hello@apcsmusic.com>',
+                to: to,
+                subject: "APCS The Sound Of Asia 2025 Winner",
+                html: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color:#000000; }
+                        .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                        .header { line-height: 0; }
+                        .content { padding: 30px; line-height: 1.6; }
+                        .content p { margin: 0 0 16px 0; }
+                        .content strong { color: #333333; }
+                        .info-box { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin: 25px 0; }
+                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="email-wrapper">
+                        <div class="email-container">
+                            <div class="header">
+                                <div style="width: 100%; background: black;">
+                                    <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo" title="APCS Logo">
+                                </div>
+                            </div>
+                            <div class="content">
+                                <p style="font-size: 16px;"><strong>APCS Gala Concert 2024 – Winner Announcement</strong></p>
+                                <p>Dear <strong>${winner}</strong>,</p>
+                                <p>Congratulations!</p>
+                                <p>
+                                    You have been awarded as a <strong>${award}</strong>  and are invited to perform at the<strong> Gala Concert APCS The Sound of Asia 2025</strong> , which will be held on:
+                                </p>
+                                <div class="info-box">
+                                    <p style="margin: 0;"><strong>Date:</strong> Sunday, November 2, 2025</p>
+                                    <p style="margin: 5px 0 0 0;"><strong>Venue:</strong> Jakarta Intercultural School</p>
+                                    <p style="margin: 5px 0 0 0;"><strong>Address:</strong> Jl. Terogong Raya No. 33, Cilandak Barat, Kec. Cilandak, Kota Jakarta Selatan, DKI Jakarta 12430 </p>
+                                </div>
+                                <p>
+                                    Please take a moment to carefully read the attached PDF file for important guidelines and event details.
+                                </p>
+                                <p>
+                                    If you have any further questions, feel free to contact our admin via <a href="https://wa.me/6282213002686" style="color: #1a73e8; text-decoration: none;">WhatsApp</a>
+                                </p>
+                                <p>
+                                    We look forward to welcoming you at the event! 
+                                </p>
+                                <p>
+                                    <strong>Best regards,</strong> <br><strong>APCS Team</strong> 
+                                </p>
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>`,
+                attachments: [
+                    {
+                        filename: ATTACHMENT_FILENAME, // e.g., 'APCS_Winner_Information.pdf'
+                        path: ATTACHMENT_FILE_PATH     // e.g., './attachments/winner_guide.pdf'
+                    }
+                ]
+            };
+        } else {
+            mailOptions = {
+                from: '"APCS Music" <hello@apcsmusic.com>',
+                to: to,
+                subject: "APCS The Sound Of Asia 2025 Winner",
+                html: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color:#000000; }
+                        .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                        .header { line-height: 0; }
+                        .content { padding: 30px; line-height: 1.6; }
+                        .content p { margin: 0 0 16px 0; }
+                        .content strong { color: #333333; }
+                        .info-box { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin: 25px 0; }
+                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="email-wrapper">
+                        <div class="email-container">
+                            <div class="header">
+                                <div style="width: 100%; background: black;">
+                                    <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo" title="APCS Logo">
+                                </div>
+                            </div>
+                            <div class="content">
+                                <p style="font-size: 16px;"><strong>APCS Gala Concert 2024 – Winner Announcement</strong></p>
+                                <p>Dear <strong>${winner}</strong>,</p>
+                                <p>Thank you for your participation in <strong>APCS – The Sound of Asia.</strong></p>
+                                <p>
+                                    We regret to inform you that your preliminary performance did not qualify for the <strong>Gala Concert APCS The Sound of Asia 2025.</strong> However, we sincerely appreciate your hard work, dedication, and the passion you have shown throughout this competition. Each performance represents valuable progress in your musical journey, and we hope you take pride in your effort and growth.
+                                </p>
+                                <p>
+                                    The comment sheets from the preliminary juries, along with your average score, are attached to this email for your reference. Your <strong>E-Certificate</strong> will be delivered on <strong>19 November 2025.</strong>                                
+                                </p>
+                                <p>
+                                    We encourage you to continue pursuing your musical goals with the same enthusiasm and commitment. You have done an excellent job, and we look forward to seeing you again at our future events.
+                                </p>
+                                <p>
+                                    <strong>Best regards,</strong> <br><strong>APCS Team</strong> 
+                                </p>
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>`,
+                attachments: [
+                    {
+                        filename: ATTACHMENT_FILENAME, // e.g., 'APCS_Winner_Information.pdf'
+                        path: ATTACHMENT_FILE_PATH     // e.g., './attachments/winner_guide.pdf'
+                    }
+                ]
+            };
+        }
         const result = await transporter.sendMail(mailOptions);
         logger.info(`Successfully sent email to ${to}`);
         return result;
     } catch (error) {
         logger.error(`Failed to send email to ${to}: ${error.message}`);
-        throw error; // rethrow to allow Bull to handle retries
+        throw error;
     }
 }
 
@@ -528,7 +623,7 @@ const sendEmailMarketingFunc = async (data) => {
 
                         <p>
                         <strong>Hari/Tanggal:</strong> Sabtu, 19 Oktober <strong>2024</strong><br />
-                        <strong>Lokasi:</strong> Teater Salihara, Jakarta Selatan
+                        <strong>Lokasi:</strong> Jakarta Intercultural School
                         </p>
 
                         <p>
@@ -1421,10 +1516,12 @@ async function sendEmailWinner(req) {
         for (const winner of winners) {
             const winnerName = winner['Name'];
             const winnerEmail = winner['Email'];
+            const winnerAwards = winner['AWARDS'];
 
             const data = {
                 name: winnerName,
-                email: winnerEmail
+                email: winnerEmail,
+                award: winnerAwards
             }
 
             console.log('data', data)
