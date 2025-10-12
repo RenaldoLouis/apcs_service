@@ -1007,6 +1007,103 @@ const sendEmailConfirmSeatSelection = async (bookingData, selectedSeatLabels) =>
     }
 }
 
+export const sendGeneralSeatingEmail = async (bookingData) => {
+    logger.info(`Sending seating email to: ${bookingData.userEmail}`);
+    const registrantName = bookingData.userName;
+    const to = bookingData.userEmail;
+
+    let subject = 'Your APCS Gala Concert Seating Information';
+    let contentHtml = '';
+
+    // --- NEW LOGIC: Check if seats have been assigned ---
+    if (bookingData.selectedSeats && bookingData.selectedSeats.length > 0) {
+        // CASE 1: Seats ARE assigned. List them in the email.
+        subject = '✅ Your APCS Gala Concert Seats are Confirmed!';
+
+        // Extract the human-readable seat label (e.g., "F11") from the seat ID
+        const seatSummary = bookingData.selectedSeats.map(seatId => {
+            return seatId.split('_')[0].split('-').slice(1).join('-'); // Extracts "F11" from "lento-F11_..."
+        }).join(', ');
+
+        contentHtml = `
+            <h3>Your Confirmed Seats</h3>
+            <div class="booking-details">
+                <p class="seats-confirmed" style="margin: 0;"><strong>Seat Number(s):</strong> ${seatSummary}</p>
+            </div>
+            <h3>What's Next?</h3>
+            <p>Your booking is now fully confirmed. Simply present this email (or a screenshot) at the registration desk upon arrival to receive your entry pass.</p>
+        `;
+
+    } else {
+        // CASE 2: No seats assigned yet. Send the general seating info.
+        contentHtml = `
+            <h3>Your Seating Information</h3>
+            <p>You have been assigned <strong>General Seating</strong> for this event. This means you may choose any available seat within the ticket categories you have purchased upon arrival.</p>
+            <p>Simply present this email (or a screenshot) at the registration desk to receive your entry pass.</p>
+        `;
+    }
+    // --- END OF NEW LOGIC ---
+
+    try {
+        const mailOptions = {
+            from: '"APCS Music" <hello@apcsmusic.com>',
+            to: to,
+            subject: subject,
+            html: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        /* Use the same professional styles from your other emails */
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                        .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                        .header { line-height: 0; }
+                        .content { padding: 30px; line-height: 1.6; color: #555555; }
+                        .content p { margin: 0 0: 16px 0; }
+                        .content h3 { color: #333333; margin-top: 25px; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
+                        .booking-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
+                        .booking-details strong { color: #333333; }
+                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="email-wrapper">
+                        <div class="email-container">
+                            <div class="header">
+                                <div style="width: 100%; background: black;">
+                                    <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" alt="APCS Logo" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;">
+                                </div>
+                            </div>
+                            <div class="content">
+                                <p>Dear <strong>${registrantName}</strong>,</p>
+                                <p>Thank you for your booking! Your tickets for the APCS Gala Concert are confirmed.</p>
+                                
+                                ${contentHtml}
+                                
+                                <p style="margin-top: 30px;">We look forward to seeing you at the event!</p>
+                                <p>Best regards,<br>The APCS Music Team</p>
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        logger.info(`Successfully sent seating email to ${to}`);
+        return true;
+    } catch (error) {
+        logger.error(`Failed to send seating email to ${to}: ${error.message}`);
+        return false;
+    }
+}
+
 const sendEmailNotifyApcs = async (data) => {
     logger.info(`Sending internal notification for: ${data.name}`);
 
@@ -1616,6 +1713,18 @@ async function sendEmailConfirmSeatSelectionFunc(bookingData, selectedSeatLabels
     }
 }
 
+async function sendGeneralSeatingEmailFunc(bookingData) {
+    try {
+        logger.info(`sending General seat confirmation email to ${bookingData.userEmail}`);
+        sendGeneralSeatingEmail(bookingData);
+        logger.info(`Send to ${bookingData.userEmail}.userName} email successfully`);
+        return { message: "Emails have been enqueued successfully" };
+    } catch (error) {
+        logger.error(`Failed to enqueue email jobs: ${error.message}`);
+        throw error;
+    }
+}
+
 
 async function sendEmailETicketFunc(req) {
     try {
@@ -1686,6 +1795,7 @@ module.exports = {
     sendEmailPaymentRequestFunc,
     sendSeatBookingEmailFunc,
     sendEmailConfirmSeatSelectionFunc,
+    sendGeneralSeatingEmailFunc,
     sendEmailNotifyApcsFunc,
     sendEmailNotifyBulkUpdateRegistrantFunc,
     sendEmailETicketFunc,
