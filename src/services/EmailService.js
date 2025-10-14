@@ -70,8 +70,8 @@ transporter.verify((error, success) => {
     }
 });
 
-const ATTACHMENT_FILE_PATH = path.join(__dirname, 'attachments/SILVER_WINNER.pdf');
-const ATTACHMENT_FILENAME = 'SILVER_WINNER.pdf';
+const ATTACHMENT_FILE_PATH = path.join(__dirname, 'attachments/APCS_WINNER_ANNOUNCEMENT.pdf');
+const ATTACHMENT_FILENAME = 'APCS_WINNER_ANNOUNCEMENT.pdf';
 
 // Enqueue a single email job (if needed)
 const enqueueEmailJob = (data) => {
@@ -455,7 +455,7 @@ const sendEmailWinnerFunc = async (data) => {
     const winner = data.name;
     const to = data.email;
     const award = data.award;
-    const isFail = data?.isFail ?? false
+    const isFail = award === "FAIL"
 
     let mailOptions;
 
@@ -495,21 +495,21 @@ const sendEmailWinnerFunc = async (data) => {
                                 <p>Dear <strong>${winner}</strong>,</p>
                                 <p>Congratulations!</p>
                                 <p>
-                                    You have been awarded as a <strong>${award}</strong>  and are invited to perform at the<strong> Gala Concert APCS The Sound of Asia 2025</strong> , which will be held on:
+                                    You have been awarded as a <strong>${award}</strong> Winner and are invited to perform at the<strong> Gala Concert APCS The Sound of Asia 2025</strong> , which will be held on:
                                 </p>
                                 <div class="info-box">
-                                    <p style="margin: 0;"><strong>Date:</strong> Sunday, November 2, 2025</p>
+                                    <p style="margin: 0;"><strong>Date:</strong> Sunday, 2 November 2025</p>
                                     <p style="margin: 5px 0 0 0;"><strong>Venue:</strong> Jakarta Intercultural School</p>
                                     <p style="margin: 5px 0 0 0;"><strong>Address:</strong> Jl. Terogong Raya No. 33, Cilandak Barat, Kec. Cilandak, Kota Jakarta Selatan, DKI Jakarta 12430 </p>
                                 </div>
                                 <p>
-                                    Please take a moment to carefully read the attached PDF file for important guidelines and event details.
+                                    Please take a moment to <strong>carefully read the attached PDF file for important guidelines</strong> and event details.
                                 </p>
                                 <p>
-                                    If you have any further questions, feel free to contact our admin via <a href="https://wa.me/6282213002686" style="color: #1a73e8; text-decoration: none;">WhatsApp</a>
+                                    If you have any further questions, feel free to contact our admin via <a href="https://wa.me/6282213002686" style="color: #1a73e8; text-decoration: none;">WhatsApp.</a>
                                 </p>
                                 <p>
-                                    We look forward to welcoming you at the event! 
+                                    We look forward to welcoming you at the event & See you at APCS The Sound of Asia 2025!
                                 </p>
                                 <p>
                                     <strong>Best regards,</strong> <br><strong>APCS Team</strong> 
@@ -529,7 +529,7 @@ const sendEmailWinnerFunc = async (data) => {
                     }
                 ]
             };
-        } else {
+        } else if (isFail) {
             mailOptions = {
                 from: '"APCS Music" <hello@apcsmusic.com>',
                 to: to,
@@ -567,7 +567,7 @@ const sendEmailWinnerFunc = async (data) => {
                                     We regret to inform you that your preliminary performance did not qualify for the <strong>Gala Concert APCS The Sound of Asia 2025.</strong> However, we sincerely appreciate your hard work, dedication, and the passion you have shown throughout this competition. Each performance represents valuable progress in your musical journey, and we hope you take pride in your effort and growth.
                                 </p>
                                 <p>
-                                    The comment sheets from the preliminary juries, along with your average score, are attached to this email for your reference. Your <strong>E-Certificate</strong> will be delivered on <strong>19 November 2025.</strong>                                
+                                    The comment sheets from the preliminary juries, along with your average score. Your <strong>E-Certificate and E-Comment Sheet</strong> will be delivered on <strong>30 October 2025 By Email.</strong>                                
                                 </p>
                                 <p>
                                     We encourage you to continue pursuing your musical goals with the same enthusiasm and commitment. You have done an excellent job, and we look forward to seeing you again at our future events.
@@ -582,13 +582,7 @@ const sendEmailWinnerFunc = async (data) => {
                         </div>
                     </div>
                 </body>
-                </html>`,
-                attachments: [
-                    {
-                        filename: ATTACHMENT_FILENAME, // e.g., 'APCS_Winner_Information.pdf'
-                        path: ATTACHMENT_FILE_PATH     // e.g., './attachments/winner_guide.pdf'
-                    }
-                ]
+                </html>`
             };
         }
         const result = await transporter.sendMail(mailOptions);
@@ -1007,7 +1001,7 @@ const sendEmailConfirmSeatSelection = async (bookingData, selectedSeatLabels) =>
     }
 }
 
-export const sendGeneralSeatingEmail = async (bookingData) => {
+const sendGeneralSeatingEmail = async (bookingData) => {
     logger.info(`Sending seating email to: ${bookingData.userEmail}`);
     const registrantName = bookingData.userName;
     const to = bookingData.userEmail;
