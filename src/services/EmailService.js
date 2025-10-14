@@ -935,7 +935,7 @@ const sendEmailConfirmSeatSelection = async (bookingData, selectedSeatLabels) =>
             from: '"APCS Music" <hello@apcsmusic.com>',
             // TODO : update to use real TO email
             to: "renaldolouis555@gmail.com",
-            subject: `✅ Your Seats are Confirmed for the APCS Event!`,
+            subject: `Your E-Ticket for the APCS Event is Here!`,
             html: `
                     <!DOCTYPE html>
                     <html>
@@ -954,6 +954,8 @@ const sendEmailConfirmSeatSelection = async (bookingData, selectedSeatLabels) =>
                             .booking-details strong { color: #333333; width: 140px; display: inline-block; }
                             .seats-confirmed { font-size: 18px; font-weight: bold; color: #27ae60; }
                             .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                            .e-ticket { border: 2px dashed #EBBC64; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: left; }
+                            .e-ticket h2 { text-align: center; color: #EBBC64; margin-top: 0; }
                         </style>
                     </head>
                     <body>
@@ -966,20 +968,22 @@ const sendEmailConfirmSeatSelection = async (bookingData, selectedSeatLabels) =>
                                 </div>
                                 <div class="content">
                                     <p>Dear <strong>${registrantName}</strong>,</p>
-                                    <p>This email confirms that your seats for the APCS event have been successfully reserved. We are delighted to have you join us!</p>
-                                    
-                                    <h3>Your Confirmed Booking</h3>
-                                    <div class="booking-details">
-                                        <div><strong>Venue:</strong> ${bookingData.venue}</div>
-                                        <div><strong>Date:</strong> ${bookingData.date ? new Date(bookingData.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
-                                        <div><strong>Session:</strong> ${bookingData.session || 'N/A'}</div>
-                                        <div class="seats-confirmed"><strong>Confirmed Seats:</strong> ${seatSummary}</div>
-                                    </div>
+                                    <p>Your seat selection is confirmed! This email is your official E-Ticket. Please present it at the venue entrance for verification.</p>
 
-                                    <h3>What's Next?</h3>
-                                    <p>Your booking is now fully confirmed. You will receive your final E-Ticket with a QR code for entry in a separate email closer to the event date. Please keep an eye on your inbox.</p>
-                                    
-                                    <p style="margin-top: 30px;">If you have any questions about your booking, please reply to this email.</p>
+                                    <div class="e-ticket">
+                                        <h2>Your E-Ticket / Entry Pass</h2>
+                                        <div class="booking-details" style="background-color: #fff; margin-bottom: 0;">
+                                            <div><strong>Booking ID:</strong> ${bookingData.id}</div>
+                                            <div><strong>Name:</strong> ${registrantName}</div>
+                                            <hr style="border: 1px solid #eee; margin: 10px 0;">
+                                            <div><strong>Venue:</strong> ${bookingData.venue}</div>
+                                            <div><strong>Date:</strong> ${bookingData.date ? new Date(bookingData.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
+                                            <div><strong>Session:</strong> ${bookingData.session || 'N/A'}</div>
+                                            <div class="seats-confirmed"><strong>Seats:</strong> ${seatSummary}</div>
+                                        </div>
+                                    </div>
+                                
+                                    <p style="margin-top: 30px;">We look forward to seeing you at the event!</p>
                                     <p>Best regards,<br>The APCS Music Team</p>
                                 </div>
                                 <div class="footer">
@@ -1002,46 +1006,28 @@ const sendEmailConfirmSeatSelection = async (bookingData, selectedSeatLabels) =>
 }
 
 const sendGeneralSeatingEmail = async (bookingData) => {
-    logger.info(`Sending seating email to: ${bookingData.userEmail}`);
+    logger.info(`Sending E-Ticket email to: ${bookingData.userEmail}`);
     const registrantName = bookingData.userName;
     const to = bookingData.userEmail;
 
-    let subject = 'Your APCS Gala Concert Seating Information';
-    let contentHtml = '';
+    let subject = 'Your APCS Gala Concert E-Ticket & Seating Information';
+    let seatingInfoText = '';
 
-    // --- NEW LOGIC: Check if seats have been assigned ---
+    // Check if specific seats have been assigned and create the summary text
     if (bookingData.selectedSeats && bookingData.selectedSeats.length > 0) {
-        // CASE 1: Seats ARE assigned. List them in the email.
         subject = '✅ Your APCS Gala Concert Seats are Confirmed!';
-
-        // Extract the human-readable seat label (e.g., "F11") from the seat ID
-        const seatSummary = bookingData.selectedSeats.map(seatId => {
+        seatingInfoText = bookingData.selectedSeats.map(seatId => {
             return seatId.split('_')[0].split('-').slice(1).join('-'); // Extracts "F11" from "lento-F11_..."
         }).join(', ');
-
-        contentHtml = `
-            <h3>Your Confirmed Seats</h3>
-            <div class="booking-details">
-                <p class="seats-confirmed" style="margin: 0;"><strong>Seat Number(s):</strong> ${seatSummary}</p>
-            </div>
-            <h3>What's Next?</h3>
-            <p>Your booking is now fully confirmed. Simply present this email (or a screenshot) at the registration desk upon arrival to receive your entry pass.</p>
-        `;
-
     } else {
-        // CASE 2: No seats assigned yet. Send the general seating info.
-        contentHtml = `
-            <h3>Your Seating Information</h3>
-            <p>You have been assigned <strong>General Seating</strong> for this event. This means you may choose any available seat within the ticket categories you have purchased upon arrival.</p>
-            <p>Simply present this email (or a screenshot) at the registration desk to receive your entry pass.</p>
-        `;
+        seatingInfoText = 'General Seating';
     }
-    // --- END OF NEW LOGIC ---
 
     try {
         const mailOptions = {
             from: '"APCS Music" <hello@apcsmusic.com>',
-            to: to,
+            //TODO: Update to real email
+            to: "renaldolouis555@gmail.com",
             subject: subject,
             html: `
                 <!DOCTYPE html>
@@ -1049,16 +1035,18 @@ const sendGeneralSeatingEmail = async (bookingData) => {
                 <head>
                     <meta charset="utf-8">
                     <style>
-                        /* Use the same professional styles from your other emails */
                         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
                         .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
                         .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
                         .header { line-height: 0; }
                         .content { padding: 30px; line-height: 1.6; color: #555555; }
-                        .content p { margin: 0 0: 16px 0; }
-                        .content h3 { color: #333333; margin-top: 25px; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
-                        .booking-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
+                        .content p { margin: 0 0 16px 0; }
+                        .content h3 { color: #333333; margin-top: 25px; margin-bottom: 15px; }
+                        .e-ticket { border: 2px dashed #EBBC64; padding: 20px; border-radius: 8px; margin-top: 25px; text-align: left; }
+                        .e-ticket h2 { text-align: center; color: #EBBC64; margin-top: 0; margin-bottom: 20px; }
+                        .booking-details div { margin-bottom: 10px; font-size: 16px; }
                         .booking-details strong { color: #333333; }
+                        .seats-info { font-size: 18px; font-weight: bold; color: #27ae60; }
                         .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
                     </style>
                 </head>
@@ -1072,9 +1060,20 @@ const sendGeneralSeatingEmail = async (bookingData) => {
                             </div>
                             <div class="content">
                                 <p>Dear <strong>${registrantName}</strong>,</p>
-                                <p>Thank you for your booking! Your tickets for the APCS Gala Concert are confirmed.</p>
+                                <p>Your tickets for the APCS Gala Concert are confirmed! This email is your official E-Ticket. Please present it at the venue entrance for verification.</p>
                                 
-                                ${contentHtml}
+                                <div class="e-ticket">
+                                    <h2>Your E-Ticket / Entry Pass</h2>
+                                    <div class="booking-details" style="background-color: #fff; margin: 0; padding: 0; border: none;">
+                                        <div><strong>Booking ID:</strong> ${bookingData.id}</div>
+                                        <div><strong>Name:</strong> ${registrantName}</div>
+                                        <hr style="border: 0; border-top: 1px solid #eeeeee; margin: 15px 0;">
+                                        <div><strong>Venue:</strong> ${bookingData.venue}</div>
+                                        <div><strong>Date:</strong> ${new Date(bookingData.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                                        <div><strong>Session:</strong> ${bookingData.session}</div>
+                                        <div class="seats-info"><strong>Seats:</strong> ${seatingInfoText}</div>
+                                    </div>
+                                </div>
                                 
                                 <p style="margin-top: 30px;">We look forward to seeing you at the event!</p>
                                 <p>Best regards,<br>The APCS Music Team</p>
@@ -1090,10 +1089,10 @@ const sendGeneralSeatingEmail = async (bookingData) => {
         };
 
         await transporter.sendMail(mailOptions);
-        logger.info(`Successfully sent seating email to ${to}`);
+        logger.info(`Successfully sent E-Ticket to ${to}`);
         return true;
     } catch (error) {
-        logger.error(`Failed to send seating email to ${to}: ${error.message}`);
+        logger.error(`Failed to send E-Ticket to ${to}: ${error.message}`);
         return false;
     }
 }
@@ -1695,10 +1694,13 @@ async function sendSeatBookingEmailFunc(req) {
     }
 }
 
-async function sendEmailConfirmSeatSelectionFunc(bookingData, selectedSeatLabels) {
+// TODO: remove might not be used
+async function sendEmailConfirmSeatSelectionFunc(req) {
+    const bookingData = req.body;
+
     try {
         logger.info(`sending seat confirmation email to ${bookingData.userEmail}`);
-        sendEmailConfirmSeatSelection(bookingData, selectedSeatLabels);
+        sendEmailConfirmSeatSelection(bookingData, bookingData.selectedSeatLabels);
         logger.info(`Send to ${bookingData.userEmail}.userName} email successfully`);
         return { message: "Emails have been enqueued successfully" };
     } catch (error) {
@@ -1707,7 +1709,9 @@ async function sendEmailConfirmSeatSelectionFunc(bookingData, selectedSeatLabels
     }
 }
 
-async function sendGeneralSeatingEmailFunc(bookingData) {
+async function sendGeneralSeatingEmailFunc(req) {
+    const bookingData = req.body;
+
     try {
         logger.info(`sending General seat confirmation email to ${bookingData.userEmail}`);
         sendGeneralSeatingEmail(bookingData);
