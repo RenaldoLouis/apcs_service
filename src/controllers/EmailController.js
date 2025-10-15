@@ -30,6 +30,15 @@ async function sendEmailWinner(req, res, next) {
     }
 }
 
+async function sendEmailSessionWinner(req, res, next) {
+    try {
+        const data = await email.sendEmailSessionWinner(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function sendEmailMarketing(req, res, next) {
     try {
         const data = await email.sendEmailMarketingFunc(req, next)
@@ -95,6 +104,7 @@ async function sendEmailNotifyBulkUpdateRegistrant(req, res, next) {
 module.exports = {
     sendEmail,
     sendEmailWinner,
+    sendEmailSessionWinner,
     sendEmailMarketing,
     sendEmailPaymentRequest,
     sendSeatBookingEmail,

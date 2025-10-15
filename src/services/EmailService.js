@@ -594,6 +594,80 @@ const sendEmailWinnerFunc = async (data) => {
     }
 }
 
+const sendEmailWinnerSessionFunc = async (data) => {
+    logger.info(`Processing email Winner: ${data.email}`);
+    const winner = data.name;
+    const to = data.email;
+
+    let mailOptions;
+
+    try {
+        mailOptions = {
+            from: '"APCS Music" <hello@apcsmusic.com>',
+            to: "renaldolouis555@gmail.com",
+            subject: "APCS The Sound of Asia – Rundown (1–2 November 2025)",
+            html: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color:#000000; }
+                        .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                        .header { line-height: 0; }
+                        .content { padding: 30px; line-height: 1.6; }
+                        .content p { margin: 0 0 16px 0; }
+                        .content strong { color: #333333; }
+                        .info-box { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin: 25px 0; }
+                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="email-wrapper">
+                        <div class="email-container">
+                            <div class="header">
+                                <div style="width: 100%; background: black;">
+                                    <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo" title="APCS Logo">
+                                </div>
+                            </div>
+                            <div class="content">
+                                <p>Dear <strong>${winner}</strong>,</p>
+                                <p>
+                                    Thank you for confirming your participation in the APCS Stage.
+                                    Please find attached the Rundown for APCS The Sound of Asia (1–2 November 2025).                               
+                                </p>
+                                <p>
+                                    We look forward to welcoming you and celebrating your achievements at the APCS Gala Concert 2025, which will be held at Jakarta Intercultural School.
+                                </p>
+                                <p>
+                                    <strong>Best regards,</strong> <br><strong>APCS Team</strong> 
+                                </p>
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>`,
+            attachments: [
+                {
+                    filename: ATTACHMENT_FILENAME, // e.g., 'APCS_Winner_Information.pdf'
+                    path: ATTACHMENT_FILE_PATH     // e.g., './attachments/winner_guide.pdf'
+                }
+            ]
+        };
+
+        const result = await transporter.sendMail(mailOptions);
+        logger.info(`Successfully sent email to ${to}`);
+        return result;
+    } catch (error) {
+        logger.error(`Failed to send email to ${to}: ${error.message}`);
+        throw error;
+    }
+}
+
 const sendEmailMarketingFunc = async (data) => {
     logger.info(`Processing email: ${data.email}`);
     const winner = data.name
@@ -1630,6 +1704,45 @@ async function sendEmailWinner(req) {
     }
 }
 
+async function sendEmailSessionWinner(req) {
+    const winners = req.body;
+
+    logger.info("sending email winner Session...");
+
+    try {
+        if (winners.length === 0) {
+            logger.info("No winners found. Exiting.");
+            return;
+        }
+
+        logger.info(`Found ${winners.length} winners to email.`);
+
+        // Loop through each winner and send an email
+        for (const winner of winners) {
+            const winnerName = winner['Name'];
+            const winnerEmail = winner['Email'];
+
+            const data = {
+                name: winnerName,
+                email: winnerEmail
+            }
+
+            console.log('data', data)
+
+            if (data) {
+                await sendEmailWinnerSessionFunc(data);
+                // Add a short delay between emails to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 250)); // 1-second delay
+            }
+        }
+
+        logger.info("🎉 Email campaign finished!");
+
+    } catch (error) {
+        logger.error("An error occurred during the campaign:", error);
+    }
+}
+
 async function sendEmailMarketing(req) {
     try {
         const emailsArray = req.body;
@@ -1786,6 +1899,7 @@ async function sendEmailNotifyBulkUpdateRegistrantFunc(req) {
 module.exports = {
     sendEmail,
     sendEmailWinner,
+    sendEmailSessionWinner,
     enqueueEmailJob,
     enqueueBulkEmails,
     sendEmailMarketing,
