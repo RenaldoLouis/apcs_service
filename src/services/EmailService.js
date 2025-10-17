@@ -975,7 +975,7 @@ const sendSeatBookingEmail = async (data) => {
                                     </div>
 
                                     <h3>Your Seat Assignment</h3>
-                                    <p>Your seat(s) will be assigned to you automatically. You will receive a separate email for your seat number(s) on <strong>October 29, 2025</strong>.</p>
+                                    <p>Your seat(s) will be assigned to you automatically. You will receive a separate email for your seat number(s) on <strong>October 30, 2025</strong>.</p>
                                     
                                     <p style="margin-top: 30px;">If you have any questions, please don't hesitate to contact us.</p>
                                     <p>Best regards,<br>The APCS Music Team</p>
@@ -1003,82 +1003,110 @@ const sendSeatBookingEmail = async (data) => {
 
 const sendEmailConfirmSeatSelection = async (bookingId, bookingData, selectedSeatLabels) => {
     logger.info(`Sending seat confirmation email to: ${bookingData.userEmail}`);
-    const registrantName = bookingData.userName;
-    const to = bookingData.userEmail;
-
-    // Format the list of selected seats for display
-    const seatSummary = selectedSeatLabels.join(', ');
 
     try {
+        const registrantName = bookingData.userName;
+        const to = bookingData.userEmail;
+        const seatSummary = selectedSeatLabels?.join(', ');
         const mailOptions = {
             from: '"APCS Music" <hello@apcsmusic.com>',
             to: to,
             subject: `Your E-Ticket for the APCS Event is Here!`,
             html: `
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <style>
-                            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
-                            .email-wrapper { width: 100%; background-color: #f4f4f4; }
-                            .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
-                            .header {color: #333333; text-align: center; }
-                            .content { padding: 30px; line-height: 1.6; color: #555555; }
-                            .content p { margin: 0 0 20px 0; }
-                            .content h3 { color: #333333; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
-                            .booking-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
-                            .booking-details div { margin-bottom: 10px; }
-                            .booking-details strong { color: #333333; width: 140px; display: inline-block; }
-                            .seats-confirmed { font-size: 18px; font-weight: bold; color: #27ae60; }
-                            .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
-                            .e-ticket { border: 2px dashed #EBBC64; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: left; }
-                            .e-ticket h2 { text-align: center; color: #EBBC64; margin-top: 0; }
-                        </style>
-                    </head>
-                    <body>
-                        <div class="email-wrapper">
-                            <div class="email-container">
-                                <div class="header">
-                                    <div style="width: 100%;background: black;">
-                                        <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo" title="APCS Logo">
-                                    </div>
-                                </div>
-                                <div class="content">
-                                    <p>Dear <strong>${registrantName}</strong>,</p>
-                                    <p>Your seat selection is confirmed! This email is your official E-Ticket. Please present it at the venue entrance for verification.</p>
-
-                                    <div class="e-ticket">
-                                        <h2>Your E-Ticket / Entry Pass</h2>
-                                        <div class="booking-details" style="background-color: #fff; margin-bottom: 0;">
-                                            <div><strong>Booking ID:</strong> ${bookingId}</div>
-                                            <div><strong>Name:</strong> ${registrantName}</div>
-                                            <hr style="border: 1px solid #eee; margin: 10px 0;">
-                                            <div><strong>Venue:</strong> ${bookingData.venue === "Venue1" ? "Jatayu" : "Melati"}</div>
-                                            <div><strong>Date:</strong> ${bookingData.date ? new Date(bookingData.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
-                                            <div><strong>Session:</strong> ${bookingData.session || 'N/A'}</div>
-                                            <div class="seats-confirmed"><strong>Seats:</strong> ${seatSummary}</div>
-                                        </div>
-                                    </div>
-                                
-                                    <p style="margin-top: 30px;">We look forward to seeing you at the event!</p>
-                                    <p>Best regards,<br>The APCS Music Team</p>
-                                </div>
-                                <div class="footer">
-                                    <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                        .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                        .header { line-height: 0; }
+                        .content { padding: 30px; line-height: 1.6; color: #555555; }
+                        .content p { margin: 0 0 20px 0; }
+                        .content h3 { color: #333333; margin-top: 30px; margin-bottom: 15px; }
+                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                        
+                        /* --- UPDATED E-TICKET STYLES --- */
+                        .e-ticket {
+                            border: 2px dashed #EBBC64;
+                            border-radius: 8px;
+                            margin-top: 30px;
+                            background-color: #1E1E1E; /* Dark background for the ticket */
+                            color: #ffffff; /* White text for contrast */
+                            padding: 20px;
+                            text-align: left;
+                        }
+                        .e-ticket h2 {
+                            text-align: center;
+                            color: #EBBC64; /* Golden color for the title */
+                            margin-top: 0;
+                            margin-bottom: 20px;
+                            font-size: 20px;
+                            font-weight: bold;
+                        }
+                        .e-ticket .booking-details div {
+                            margin-bottom: 12px;
+                            font-size: 16px;
+                        }
+                        .e-ticket .booking-details strong {
+                            color: #aaa; /* Lighter gray for labels */
+                            width: 120px;
+                            display: inline-block;
+                        }
+                        .e-ticket .seats-confirmed strong {
+                            color: #aaa; /* Keep labels consistent */
+                        }
+                        .e-ticket .seats-confirmed {
+                            font-size: 18px;
+                            font-weight: bold;
+                            color: #ffffff; /* Make the seat numbers bright white */
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="email-wrapper">
+                        <div class="email-container">
+                            <div class="header">
+                                <div style="width: 100%;background: black;">
+                                    <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo">
                                 </div>
                             </div>
+                            <div class="content">
+                                <p>Dear <strong>${registrantName}</strong>,</p>
+                                <p>Your seat selection is confirmed! This email is your official E-Ticket. Please present it at the venue entrance for verification.</p>
+                                
+                                <div class="e-ticket">
+                                    <h2>APCS ENTRY PASS PARTICIPANTS & AUDIENCE</h2>
+                                    <div class="booking-details">
+                                        <div><strong>Booking ID:</strong> ${bookingId}</div>
+                                        <div><strong>Name:</strong> ${registrantName}</div>
+                                        <hr style="border: 0; border-top: 1px solid #444; margin: 15px 0;">
+                                        <div><strong>Venue:</strong> ${bookingData.venue === "Venue1" ? "Jatayu" : "Melati"}</div>
+                                        <div><strong>Date:</strong> ${bookingData.date ? new Date(bookingData.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
+                                        <div><strong>Session:</strong> ${bookingData.session || 'N/A'}</div>
+                                        <div class="seats-confirmed"><strong>Seats:</strong> ${seatSummary}</div>
+                                    </div>
+                                </div>
+                                
+                                <p style="margin-top: 30px;">We look forward to seeing you at the event!</p>
+                                <p>Best regards,<br>The APCS Music Team</p>
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                            </div>
                         </div>
-                    </body>
-                    </html>
-                `
+                    </div>
+                </body>
+                </html>
+            `
         };
 
         const result = await transporter.sendMail(mailOptions);
-        logger.info(`Successfully sent seat confirmation email to ${to}`);
+        logger.info(`Successfully sent E-Ticket to ${to}`);
         return result;
     } catch (error) {
-        logger.error(`Failed to send seat confirmation email to ${to}: ${error.message}`);
+        logger.error(`Failed to send E-Ticket to ${to}: ${error.message}`);
         throw error;
     }
 }
@@ -1091,11 +1119,11 @@ const sendGeneralSeatingEmail = async (bookingData) => {
     let subject = 'Your APCS Gala Concert E-Ticket & Seating Information';
     let seatingInfoText = '';
 
-    // Check if specific seats have been assigned and create the summary text
+    // Check if specific seats have been assigned
     if (bookingData.selectedSeats && bookingData.selectedSeats.length > 0) {
         subject = '✅ Your APCS Gala Concert Seats are Confirmed!';
         seatingInfoText = bookingData.selectedSeats.map(seatId => {
-            return seatId.split('_')[0].split('-').slice(1).join('-'); // Extracts "F11" from "lento-F11_..."
+            return seatId.split('_')[0].split('-').slice(1).join('-');
         }).join(', ');
     } else {
         seatingInfoText = 'General Seating';
@@ -1119,12 +1147,43 @@ const sendGeneralSeatingEmail = async (bookingData) => {
                         .content { padding: 30px; line-height: 1.6; color: #555555; }
                         .content p { margin: 0 0 16px 0; }
                         .content h3 { color: #333333; margin-top: 25px; margin-bottom: 15px; }
-                        .e-ticket { border: 2px dashed #EBBC64; padding: 20px; border-radius: 8px; margin-top: 25px; text-align: left; }
-                        .e-ticket h2 { text-align: center; color: #EBBC64; margin-top: 0; margin-bottom: 20px; }
-                        .booking-details div { margin-bottom: 10px; font-size: 16px; }
-                        .booking-details strong { color: #333333; }
-                        .seats-info { font-size: 18px; font-weight: bold; color: #27ae60; }
                         .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                        
+                        /* --- UPDATED E-TICKET STYLES --- */
+                        .e-ticket {
+                            border: 2px dashed #EBBC64;
+                            border-radius: 8px;
+                            margin-top: 30px;
+                            background-color: #1E1E1E; /* Dark background */
+                            color: #ffffff;           /* White text */
+                            padding: 20px;
+                            text-align: left;
+                        }
+                        .e-ticket h2 {
+                            text-align: center;
+                            color: #EBBC64; /* Golden color for the title */
+                            margin-top: 0;
+                            margin-bottom: 20px;
+                            font-size: 20px;
+                            font-weight: bold;
+                        }
+                        .e-ticket .booking-details div {
+                            margin-bottom: 12px;
+                            font-size: 16px;
+                        }
+                        .e-ticket .booking-details strong {
+                            color: #aaa; /* Lighter gray for labels */
+                            width: 120px;
+                            display: inline-block;
+                        }
+                        .e-ticket .seats-info {
+                            font-size: 18px;
+                            font-weight: bold;
+                            color: #ffffff; /* Make the seat info bright white */
+                        }
+                        .e-ticket .seats-info strong {
+                            color: #aaa; /* Keep label color consistent */
+                        }
                     </style>
                 </head>
                 <body>
@@ -1140,11 +1199,11 @@ const sendGeneralSeatingEmail = async (bookingData) => {
                                 <p>Your tickets for the APCS Gala Concert are confirmed! This email is your official E-Ticket. Please present it at the venue entrance for verification.</p>
                                 
                                 <div class="e-ticket">
-                                    <h2>Your E-Ticket / Entry Pass</h2>
-                                    <div class="booking-details" style="background-color: #fff; margin: 0; padding: 0; border: none;">
+                                    <h2>APCS ENTRY PASS PARTICIPANTS & AUDIENCE</h2>
+                                    <div class="booking-details">
                                         <div><strong>Booking ID:</strong> ${bookingData.id}</div>
                                         <div><strong>Name:</strong> ${registrantName}</div>
-                                        <hr style="border: 0; border-top: 1px solid #eeeeee; margin: 15px 0;">
+                                        <hr style="border: 0; border-top: 1px solid #444; margin: 15px 0;">
                                         <div><strong>Venue:</strong> ${bookingData.venue === "Venue1" ? "Jatayu" : "Melati"}</div>
                                         <div><strong>Date:</strong> ${new Date(bookingData.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
                                         <div><strong>Session:</strong> ${bookingData.session}</div>
