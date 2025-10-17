@@ -72,6 +72,8 @@ transporter.verify((error, success) => {
 
 const ATTACHMENT_FILE_PATH = path.join(__dirname, 'attachments/APCS_WINNER_ANNOUNCEMENT.pdf');
 const ATTACHMENT_FILENAME = 'APCS_WINNER_ANNOUNCEMENT.pdf';
+const ATTACHMENT_SESSION_FILE_PATH = path.join(__dirname, 'attachments/RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf');
+const ATTACHMENT_SESSION = 'RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf';
 
 // Enqueue a single email job (if needed)
 const enqueueEmailJob = (data) => {
@@ -604,7 +606,7 @@ const sendEmailWinnerSessionFunc = async (data) => {
     try {
         mailOptions = {
             from: '"APCS Music" <hello@apcsmusic.com>',
-            to: "renaldolouis555@gmail.com",
+            to: to,
             subject: "APCS The Sound of Asia – Rundown (1–2 November 2025)",
             html: `
                 <!DOCTYPE html>
@@ -653,8 +655,8 @@ const sendEmailWinnerSessionFunc = async (data) => {
                 </html>`,
             attachments: [
                 {
-                    filename: ATTACHMENT_FILENAME, // e.g., 'APCS_Winner_Information.pdf'
-                    path: ATTACHMENT_FILE_PATH     // e.g., './attachments/winner_guide.pdf'
+                    filename: ATTACHMENT_SESSION,
+                    path: ATTACHMENT_SESSION_FILE_PATH
                 }
             ]
         };
@@ -832,6 +834,7 @@ const sendSeatBookingEmail = async (data) => {
     logger.info(`Sending seat booking email to: ${data.userEmail}`);
     const registrantName = data.userName;
     const to = data.userEmail;
+    const isAddson = data.addOns.length > 0
 
     // First, calculate the total number of seats the user wants to manually select.
     const totalSeatSelection = data.tickets.reduce((total, ticket) => total + (ticket.seatQuantity || 0), 0);
@@ -893,6 +896,10 @@ const sendSeatBookingEmail = async (data) => {
                                         <div><strong>Venue:</strong> ${data.venue}</div>
                                         <div><strong>Date:</strong> ${data.date ? new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
                                         <div><strong>Session:</strong> ${data.session || 'N/A'}</div>
+                                        ${isAddson ? (
+                        `<div><strong>Documentation:</strong> Yes</div>`) : (
+                        ``)
+                    }
                                         <div><strong>Tickets:</strong> ${ticketSummary}</div>
                                         <div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>
                                     </div>
@@ -904,7 +911,7 @@ const sendSeatBookingEmail = async (data) => {
                                             Click Here to Select Your Seat
                                         </a>
                                     </p>
-                                    <p style="font-size: 12px; text-align: center; color: #777;">Please note: This link is unique to you and will expire in 7 days.</p>
+                                    <p style="font-size: 12px; text-align: center; color: #777;">Please note: This link is unique to you and will expire in 2 days.</p>
                                     
                                     <p style="margin-top: 30px;">If you have any questions, please don't hesitate to contact us.</p>
                                     <p>Best regards,<br>The APCS Music Team</p>
@@ -996,7 +1003,7 @@ const sendSeatBookingEmail = async (data) => {
     }
 }
 
-const sendEmailConfirmSeatSelection = async (bookingData, selectedSeatLabels) => {
+const sendEmailConfirmSeatSelection = async (bookingId, bookingData, selectedSeatLabels) => {
     logger.info(`Sending seat confirmation email to: ${bookingData.userEmail}`);
     const registrantName = bookingData.userName;
     const to = bookingData.userEmail;
@@ -1047,7 +1054,7 @@ const sendEmailConfirmSeatSelection = async (bookingData, selectedSeatLabels) =>
                                     <div class="e-ticket">
                                         <h2>Your E-Ticket / Entry Pass</h2>
                                         <div class="booking-details" style="background-color: #fff; margin-bottom: 0;">
-                                            <div><strong>Booking ID:</strong> ${bookingData.id}</div>
+                                            <div><strong>Booking ID:</strong> ${bookingId}</div>
                                             <div><strong>Name:</strong> ${registrantName}</div>
                                             <hr style="border: 1px solid #eee; margin: 10px 0;">
                                             <div><strong>Venue:</strong> ${bookingData.venue}</div>
@@ -1807,13 +1814,11 @@ async function sendSeatBookingEmailFunc(req) {
     }
 }
 
-// TODO: remove might not be used
-async function sendEmailConfirmSeatSelectionFunc(req) {
-    const bookingData = req.body;
+async function sendEmailConfirmSeatSelectionFunc(bookingId, bookingData, selectedSeatLabels) {
 
     try {
         logger.info(`sending seat confirmation email to ${bookingData.userEmail}`);
-        sendEmailConfirmSeatSelection(bookingData, bookingData.selectedSeatLabels);
+        sendEmailConfirmSeatSelection(bookingId, bookingData, selectedSeatLabels);
         logger.info(`Send to ${bookingData.userEmail}.userName} email successfully`);
         return { message: "Emails have been enqueued successfully" };
     } catch (error) {

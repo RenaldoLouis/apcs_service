@@ -16,7 +16,6 @@ router.post('/sendEmailSessionWinner', EmailController.sendEmailSessionWinner)
 router.post('/sendEmailMarketing', EmailController.sendEmailMarketing)
 router.post('/sendEmailPaymentRequest', EmailController.sendEmailPaymentRequest)
 router.post('/sendSeatBookingEmail', EmailController.sendSeatBookingEmail)
-router.post('/sendEmailConfirmSeatSelection', EmailController.sendEmailConfirmSeatSelection);
 router.post('/sendGeneralSeatingEmail', EmailController.sendGeneralSeatingEmail);
 router.post('/sendEmailNotifyApcs', EmailController.sendEmailNotifyApcs)
 router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNotifyBulkUpdateRegistrant)

@@ -86,7 +86,7 @@ const saveSeatBookProfileInfo = async (req, callback) => {
         };
 
         // The token will be valid for 7 days, giving the user time to pay and select a seat
-        const seatSelectionToken = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '7d' });
+        const seatSelectionToken = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '2d' });
 
         console.log("seatSelectionToken", seatSelectionToken)
         // 4. (Optional but recommended) Save the generated token back to the booking document for reference
@@ -220,7 +220,7 @@ const confirmSeatSelection = async (req, callback) => {
             const finalSeatDocs = await db.getAll(...seatRefs);
             const selectedSeatLabels = finalSeatDocs.map(doc => doc.data().seatLabel);
 
-            await email.sendEmailConfirmSeatSelectionFunc(finalBookingData, selectedSeatLabels)
+            await email.sendEmailConfirmSeatSelectionFunc(bookingId, finalBookingData, selectedSeatLabels)
         }
 
         callback(null, 'Your seats have been successfully reserved!');

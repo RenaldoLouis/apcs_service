@@ -66,15 +66,6 @@ async function sendSeatBookingEmail(req, res, next) {
     }
 }
 
-async function sendEmailConfirmSeatSelection(req, res, next) {
-    try {
-        const data = await email.sendEmailConfirmSeatSelectionFunc(req, next)
-        res.status(200).send(data)
-    } catch (err) {
-        next(err);
-    }
-}
-
 async function sendGeneralSeatingEmail(req, res, next) {
     try {
         const data = await email.sendGeneralSeatingEmailFunc(req, next)
@@ -108,7 +99,6 @@ module.exports = {
     sendEmailMarketing,
     sendEmailPaymentRequest,
     sendSeatBookingEmail,
-    sendEmailConfirmSeatSelection,
     sendGeneralSeatingEmail,
     sendEmailNotifyApcs,
     sendEmailNotifyBulkUpdateRegistrant,
