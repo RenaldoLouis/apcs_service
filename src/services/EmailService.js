@@ -856,8 +856,7 @@ const sendSeatBookingEmail = async (data) => {
 
             mailOptions = {
                 from: '"APCS Music" <hello@apcsmusic.com>',
-                // TODO : update to use real TO email
-                to: "renaldolouis555@gmail.com",
+                to: to,
                 subject: `Your APCS Booking Confirmation & Seat Selection`,
                 html: `
                     <!DOCTYPE html>
@@ -932,8 +931,7 @@ const sendSeatBookingEmail = async (data) => {
 
             mailOptions = {
                 from: '"APCS Music" <hello@apcsmusic.com>',
-                // TODO : update to use real TO email
-                to: "renaldolouis555@gmail.com",
+                to: to,
                 subject: `Your APCS Booking Confirmation & Seat Selection`,
                 html: `
                     <!DOCTYPE html>
@@ -1014,8 +1012,7 @@ const sendEmailConfirmSeatSelection = async (bookingId, bookingData, selectedSea
     try {
         const mailOptions = {
             from: '"APCS Music" <hello@apcsmusic.com>',
-            // TODO : update to use real TO email
-            to: "renaldolouis555@gmail.com",
+            to: to,
             subject: `Your E-Ticket for the APCS Event is Here!`,
             html: `
                     <!DOCTYPE html>
@@ -1057,7 +1054,7 @@ const sendEmailConfirmSeatSelection = async (bookingId, bookingData, selectedSea
                                             <div><strong>Booking ID:</strong> ${bookingId}</div>
                                             <div><strong>Name:</strong> ${registrantName}</div>
                                             <hr style="border: 1px solid #eee; margin: 10px 0;">
-                                            <div><strong>Venue:</strong> ${bookingData.venue}</div>
+                                            <div><strong>Venue:</strong> ${bookingData.venue === "Venue1" ? "Jatayu" : "Melati"}</div>
                                             <div><strong>Date:</strong> ${bookingData.date ? new Date(bookingData.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
                                             <div><strong>Session:</strong> ${bookingData.session || 'N/A'}</div>
                                             <div class="seats-confirmed"><strong>Seats:</strong> ${seatSummary}</div>
@@ -1107,8 +1104,7 @@ const sendGeneralSeatingEmail = async (bookingData) => {
     try {
         const mailOptions = {
             from: '"APCS Music" <hello@apcsmusic.com>',
-            //TODO: Update to real email
-            to: "renaldolouis555@gmail.com",
+            to: to,
             subject: subject,
             html: `
                 <!DOCTYPE html>
@@ -1149,7 +1145,7 @@ const sendGeneralSeatingEmail = async (bookingData) => {
                                         <div><strong>Booking ID:</strong> ${bookingData.id}</div>
                                         <div><strong>Name:</strong> ${registrantName}</div>
                                         <hr style="border: 0; border-top: 1px solid #eeeeee; margin: 15px 0;">
-                                        <div><strong>Venue:</strong> ${bookingData.venue}</div>
+                                        <div><strong>Venue:</strong> ${bookingData.venue === "Venue1" ? "Jatayu" : "Melati"}</div>
                                         <div><strong>Date:</strong> ${new Date(bookingData.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
                                         <div><strong>Session:</strong> ${bookingData.session}</div>
                                         <div class="seats-info"><strong>Seats:</strong> ${seatingInfoText}</div>
