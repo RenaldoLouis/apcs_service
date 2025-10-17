@@ -187,7 +187,7 @@ const confirmSeatSelection = async (req, callback) => {
 
             for (const seatDoc of seatDocs) {
                 if (!seatDoc.exists || seatDoc.data().status !== 'available') {
-                    throw new Error(`Sorry, seat ${seatDoc.data()?.seatLabel} is no longer available.`);
+                    throw new Error(`Sorry, seat ${seatDoc.data()?.seatLabel || 'one of your selections'} is no longer available.`);
                 }
 
                 // --- THIS IS THE NEW SEAT UPDATE LOGIC ---
@@ -223,26 +223,24 @@ const confirmSeatSelection = async (req, callback) => {
             await email.sendEmailConfirmSeatSelectionFunc(bookingId, finalBookingData, selectedSeatLabels)
         }
 
-        callback(null, 'Your seats have been successfully reserved!');
-
+        return 'Your seats have been successfully reserved!';
     } catch (error) {
         console.error("Failed to confirm seat selection:", error);
 
-        // --- Step 4: CRITICAL ROLLBACK LOGIC ---
-        // If the error happened AFTER seats were reserved (i.e., email failed), we undo the reservation.
-        if (finalBookingData && !finalBookingData.seatsSelected) {
-            console.log("Email failed after seats were reserved. Rolling back...");
+        if (transactionSucceeded) {
+            console.log("Email failed after seats were successfully reserved. Rolling back...");
             const rollbackBatch = db.batch();
             selectedSeatIds.forEach(seatId => {
                 const seatRef = db.collection(`seats${eventId}`).doc(seatId);
                 rollbackBatch.update(seatRef, { status: 'available', bookingId: null });
             });
-            rollbackBatch.update(bookingRef, { seatsSelected: false, selectedSeats: [] });
+            rollbackBatch.update(bookingRef, { seatsSelected: false, selectedSeats: [], isEmailSent: false });
+
             await rollbackBatch.commit();
             console.log("Rollback successful.");
         }
 
-        callback(error); // Pass the actual error back
+        throw error;
     }
 };
 

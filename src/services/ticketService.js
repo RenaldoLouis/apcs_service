@@ -1,6 +1,7 @@
 
 const db = require('../repositories/TicketRepository.js');
 const databaseUtil = require('../utils/DatabaseUtil.js');
+const TicketRepository = require('../repositories/TicketRepository');
 
 async function verifyTicket(req) {
     const body = req.body;
@@ -26,11 +27,14 @@ async function verifySeatSelectionToken(req) {
         throw error;
     }
 }
+
 async function confirmSeatSelection(req) {
     const body = req.body;
     try {
-        return await databaseUtil.executeDatabaseOperation(db.confirmSeatSelection, body);
+        // Call the refactored async function directly
+        return await TicketRepository.confirmSeatSelection(body);
     } catch (error) {
+        // Re-throw the error to the controller
         throw error;
     }
 }

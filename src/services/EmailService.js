@@ -1048,6 +1048,7 @@ const sendEmailConfirmSeatSelection = async (bookingId, bookingData, selectedSea
                         .e-ticket .booking-details div {
                             margin-bottom: 12px;
                             font-size: 16px;
+                            color: #ffffff !important;
                         }
                         .e-ticket .booking-details strong {
                             color: #aaa; /* Lighter gray for labels */
@@ -1060,7 +1061,11 @@ const sendEmailConfirmSeatSelection = async (bookingId, bookingData, selectedSea
                         .e-ticket .seats-confirmed {
                             font-size: 18px;
                             font-weight: bold;
-                            color: #ffffff; /* Make the seat numbers bright white */
+                            color: #ffffff;
+                        }
+                        .e-ticket a {
+                            color: #EBBC64 !important;
+                            text-decoration: underline !important;
                         }
                     </style>
                 </head>
@@ -1170,6 +1175,7 @@ const sendGeneralSeatingEmail = async (bookingData) => {
                         .e-ticket .booking-details div {
                             margin-bottom: 12px;
                             font-size: 16px;
+                            color: #ffffff !important;
                         }
                         .e-ticket .booking-details strong {
                             color: #aaa; /* Lighter gray for labels */
@@ -1183,6 +1189,10 @@ const sendGeneralSeatingEmail = async (bookingData) => {
                         }
                         .e-ticket .seats-info strong {
                             color: #aaa; /* Keep label color consistent */
+                        }
+                        .e-ticket a {
+                            color: #EBBC64 !important;
+                            text-decoration: underline !important;
                         }
                     </style>
                 </head>
