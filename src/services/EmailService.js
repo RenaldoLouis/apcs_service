@@ -892,7 +892,7 @@ const sendSeatBookingEmail = async (data) => {
                                     
                                     <h3>Your Booking Details</h3>
                                     <div class="booking-details">
-                                        <div><strong>Venue:</strong> ${data.venue}</div>
+                                        <div><strong>Venue:</strong> ${data.venue === "Venue1" ? "Jatayu" : "Melati"}</div>
                                         <div><strong>Date:</strong> ${data.date ? new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
                                         <div><strong>Session:</strong> ${data.session || 'N/A'}</div>
                                         ${isAddson ? (
@@ -900,7 +900,7 @@ const sendSeatBookingEmail = async (data) => {
                         ``)
                     }
                                         <div><strong>Tickets:</strong> ${ticketSummary}</div>
-                                        <div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>
+                                       ${ticketAdsonSummary ? `<div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>` : ''}
                                     </div>
 
                                     <h3>Select Your Seats</h3>
@@ -967,11 +967,11 @@ const sendSeatBookingEmail = async (data) => {
                                     
                                     <h3>Your Booking Details</h3>
                                     <div class="booking-details">
-                                        <div><strong>Venue:</strong> ${data.venue}</div>
+                                        <div><strong>Venue:</strong> ${data.venue === "Venue1" ? "Jatayu" : "Melati"}</div>
                                         <div><strong>Date:</strong> ${data.date ? new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
                                         <div><strong>Session:</strong> ${data.session || 'N/A'}</div>
                                         <div><strong>Tickets:</strong> ${ticketSummary}</div>
-                                        <div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>
+                                        ${ticketAdsonSummary ? `<div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>` : ''}
                                     </div>
 
                                     <h3>Your Seat Assignment</h3>
