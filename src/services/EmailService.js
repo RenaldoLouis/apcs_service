@@ -838,6 +838,7 @@ const sendSeatBookingEmail = async (data) => {
 
     // First, calculate the total number of seats the user wants to manually select.
     const totalSeatSelection = data.tickets.reduce((total, ticket) => total + (ticket.seatQuantity || 0), 0);
+    const totalTicket = data.tickets.reduce((total, ticket) => total + (ticket.quantity || 0), 0);
 
     const ticketSummary = data.tickets.map(ticket => `${ticket.quantity}x ${ticket.name} Ticket`).join(', ');
     const seatSelectionLink = `https://www.apcsmusic.com/select-seat?token=${data.seatSelectionToken}`;
@@ -850,7 +851,72 @@ const sendSeatBookingEmail = async (data) => {
         .map(ticket => `${ticket.seatQuantity}x Seat Selection for ${ticket.name}`)
         .join(', ');
     try {
-        if (totalSeatSelection > 0) {
+        if (totalTicket <= 0 && isAddson) {
+            mailOptions = {
+                from: '"APCS Music" <hello@apcsmusic.com>',
+                to: to,
+                subject: `Your APCS Performance Details`,
+                html: `
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8">
+                        <style>
+                            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                            .email-wrapper { width: 100%; background-color: #f4f4f4; }
+                            .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                            .header {color: #333333; text-align: center; }
+                            .content { padding: 30px; line-height: 1.6; color: #555555; }
+                            .content p { margin: 0 0 20px 0; }
+                            .content h3 { color: #333333; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
+                            .booking-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
+                            .booking-details div { margin-bottom: 10px; }
+                            .booking-details strong { color: #333333; width: 120px; display: inline-block; }
+                            .cta-button { display: inline-block; background-color: #e5cc92; color: #2c3e50; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 16px; }
+                            .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="email-wrapper">
+                            <div class="email-container">
+                                <div class="header">
+                                    <div style="width: 100%;background: black;">
+                                        <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo" title="APCS Logo">
+                                    </div>
+                                </div>
+                                <div class="content">
+                                    <p>Dear <strong>${registrantName}</strong>,</p>
+                                    <p>Thank you for your booking! We have successfully received your order details and are excited for you to join us at the event.</p>
+                                    
+                                    <h3>Your Performance Details</h3>
+                                    <div class="booking-details">
+                                        <div><strong>Venue:</strong> ${data.venue === "Venue1" ? "Jatayu" : "Melati"}</div>
+                                        <div><strong>Date:</strong> ${data.date ? new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
+                                        <div><strong>Session:</strong> ${data.session || 'N/A'}</div>
+                                        ${isAddson ? (
+                        `<div><strong>Documentation:</strong> Yes</div>`) : (
+                        ``)
+                    }
+                                        ${ticketSummary ? `<div><strong>Tickets:</strong> ${ticketSummary}</div>` : ''}
+                                       ${ticketAdsonSummary ? `<div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>` : ''}
+                                    </div>
+
+                                    <p>The documentation file will be sent to you via WhatsApp by the admin within 3 weeks after the event.</p>
+                                    
+                                    <p style="margin-top: 30px;">If you have any questions, please don't hesitate to contact us.</p>
+                                    <p>Best regards,<br>The APCS Music Team</p>
+                                </div>
+                                <div class="footer">
+                                    <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                                </div>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                    `
+            };
+
+        } else if (totalSeatSelection > 0) {
             // --- CASE 1: User WANTS to select their seats ---
             // The email will contain the "Select Your Seat" button.
 
@@ -899,7 +965,7 @@ const sendSeatBookingEmail = async (data) => {
                         `<div><strong>Documentation:</strong> Yes</div>`) : (
                         ``)
                     }
-                                        <div><strong>Tickets:</strong> ${ticketSummary}</div>
+                                        ${ticketSummary ? `<div><strong>Tickets:</strong> ${ticketSummary}</div>` : ''}
                                        ${ticketAdsonSummary ? `<div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>` : ''}
                                     </div>
 
@@ -974,7 +1040,7 @@ const sendSeatBookingEmail = async (data) => {
                         `<div><strong>Documentation:</strong> Yes</div>`) : (
                         ``)
                     }
-                                        <div><strong>Tickets:</strong> ${ticketSummary}</div>
+                                        ${ticketSummary ? `<div><strong>Tickets:</strong> ${ticketSummary}</div>` : ''}
                                         ${ticketAdsonSummary ? `<div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>` : ''}
                                     </div>
 
