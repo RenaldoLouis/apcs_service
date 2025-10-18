@@ -970,6 +970,10 @@ const sendSeatBookingEmail = async (data) => {
                                         <div><strong>Venue:</strong> ${data.venue === "Venue1" ? "Jatayu" : "Melati"}</div>
                                         <div><strong>Date:</strong> ${data.date ? new Date(data.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : 'N/A'}</div>
                                         <div><strong>Session:</strong> ${data.session || 'N/A'}</div>
+                                            ${isAddson ? (
+                        `<div><strong>Documentation:</strong> Yes</div>`) : (
+                        ``)
+                    }
                                         <div><strong>Tickets:</strong> ${ticketSummary}</div>
                                         ${ticketAdsonSummary ? `<div><strong>Seating Tickets:</strong> ${ticketAdsonSummary}</div>` : ''}
                                     </div>
