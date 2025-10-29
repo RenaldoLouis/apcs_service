@@ -3,6 +3,8 @@ const Queue = require('bull');
 const { logger } = require('../utils/Logger');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const xlsx = require('xlsx');
+const fs = require('fs');
 
 // IMPORTANT: Store this secret in your .env file!
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -75,6 +77,53 @@ const ATTACHMENT_FILENAME = 'APCS_WINNER_ANNOUNCEMENT.pdf';
 const ATTACHMENT_SESSION_FILE_PATH = path.join(__dirname, 'attachments/RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf');
 const ATTACHMENT_SESSION = 'RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf';
 
+const EXCEL_FILE_PATH = path.join(__dirname, 'attachments/emailList.csv');
+const EXCEL_TEAM_LIST = path.join(__dirname, 'attachments/emailTeam.csv');
+
+// This is the path to the main folder you downloaded from Google Drive
+const LOCAL_FILES_PATH = path.join(__dirname, 'student_files');
+
+function getAttachmentsForStudent(studentName) {
+    const trimmedStudentName = studentName.trim();
+    const lowerCaseStudentName = trimmedStudentName.toLowerCase();
+
+    // 1. Read all directory names from the local path
+    const allFolderNames = fs.readdirSync(LOCAL_FILES_PATH, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => dirent.name);
+
+    // 2. Find the matching folder name, ignoring case
+    const foundFolderName = allFolderNames.find(folderName =>
+        folderName.toLowerCase() === lowerCaseStudentName
+    );
+
+    // 3. Check if a folder was actually found
+    if (!foundFolderName) {
+        throw new Error(`Folder not found for: ${trimmedStudentName}`);
+    }
+
+    // 4. Use the *original*, correctly-cased folder name (from the file system) to build the path
+    const studentFolderPath = path.join(LOCAL_FILES_PATH, foundFolderName);
+
+    // Read all files in the folder
+    const files = fs.readdirSync(studentFolderPath);
+
+    // Filter out system files like .DS_Store (common on Macs)
+    const validFiles = files.filter(file => !file.startsWith('.'));
+
+    if (validFiles.length < 2) {
+        throw new Error(`Expected 2 files in folder, but found ${validFiles.length} for ${trimmedStudentName}`);
+    }
+
+    // Create the attachments array for Nodemailer
+    return validFiles.slice(0, 2).map(fileName => {
+        return {
+            filename: fileName,
+            path: path.join(studentFolderPath, fileName) // Nodemailer can read the file directly from this path
+        };
+    });
+}
+
 // Enqueue a single email job (if needed)
 const enqueueEmailJob = (data) => {
     emailQueue.add({ emailData: data });
@@ -132,6 +181,116 @@ const processEmailQueue = async (job) => {
         }
     }
 };
+
+const sendEmailFail = async () => {
+    console.log("Starting local attachment email campaign...");
+    try {
+        const workbook = xlsx.readFile(EXCEL_FILE_PATH);
+        const sheetName = workbook.SheetNames[0];
+        const recipients = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+        if (recipients.length === 0) {
+            console.log("No recipients found in the file. Exiting.");
+            return;
+        }
+
+        // console.log(`Found ${recipients.length} recipients to email.`);
+
+        for (const recipient of recipients) {
+            let recipientName = recipient.Name; // Use the exact header from your CSV
+            const recipientEmail = recipient.Email;
+
+            if (!recipientName || !recipientEmail) {
+                // console.warn(`Skipping row due to missing Name or Email:`, recipient);
+                continue;
+            }
+
+            try {
+                console.log(`Processing ${recipientName} <${recipientEmail}>...`);
+
+                // 1. Find the local files for this student
+                const attachments = getAttachmentsForStudent(recipientName);
+                console.log(`  Found ${attachments.length} files to attach.`);
+
+                if (recipientName === "Gretchendell Agfinia Thendean young") {
+                    recipientName = "Gretchendell Agfinia Thendean"
+                }
+
+                // 2. Send the email with the attachments
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: recipientEmail,
+                    subject: 'APCS – E-Certificate and Comment Sheet',
+                    html: `
+                      <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color:#333; }
+                        .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                        .header { line-height: 0; }
+                        .content { padding: 30px; line-height: 1.6; }
+                        .content p { margin: 0 0 16px 0; }
+                        .content strong { color: #333333; }
+                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                        .content, .content p, .content strong {
+                            color: #333 !important;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="email-wrapper">
+                        <div class="email-container">
+                            <div class="header">
+                                <div style="width: 100%; background: black;">
+                                    <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo" title="APCS Logo">
+                                </div>
+                            </div>
+                            <div class="content">
+                                <p>Dear <strong>${recipientName}</strong>,</p>
+                                <p>
+                                    Please find attached your E-Certificate and E-Comment Sheet from APCS <strong>“The Sound of Asia 2025”.</strong>
+                                </p>
+                                <p>
+                                    We truly appreciate your effort and dedication throughout this journey. Every performance is a step forward, and you should be proud of your growth and hard work.
+                                </p>
+                                <p>
+                                    Keep playing with passion, and we look forward to seeing you again in our future events.
+                                </p>
+                                <p style="margin-top: 20px;">
+                                    Warm regards,<br>
+                                    <strong>The APCS Team</strong>
+                                </p>
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                    `,
+                    attachments: attachments // Attach the array of files
+                };
+
+                await transporter.sendMail(mailOptions);
+                console.log(`  ✅ Email sent successfully to ${recipientEmail}.`);
+
+                // Add a short delay to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+            } catch (error) {
+                console.error(`  ❌ Failed to process ${recipientName}:`, error.message);
+            }
+        }
+        console.log("🎉 Campaign finished!");
+
+    } catch (error) {
+        console.error("An error occurred during the campaign:", error);
+    }
+}
 
 const sendEmailFunc = async (data) => {
     logger.info(`Processing email: ${data.email}`);
@@ -1313,110 +1472,239 @@ const sendGeneralSeatingEmail = async (bookingData) => {
     }
 }
 
-const sendTeamEntryPassEmail = async (teamMember) => {
-    logger.info(`Sending Staff E-Ticket to: ${teamMember.email}`);
-    const teamMemberName = teamMember.name;
-    const to = teamMember.email;
-
+const sendTeamEntryPassEmail = async () => {
+    console.log("Starting send Team E-Pass...");
     try {
-        const mailOptions = {
-            from: '"APCS Music" <hello@apcsmusic.com>',
-            to: to,
-            subject: `Your APCS Gala Concert - Staff Entry Pass`,
-            html: `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <style>
-                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
-                        .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
-                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
-                        .header { line-height: 0; }
-                        .content { padding: 30px; line-height: 1.6; color: #555555; }
-                        .content p { margin: 0 0 16px 0; }
-                        .content h3 { color: #333333; margin-top: 25px; margin-bottom: 15px; }
-                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
-                        
-                        /* --- E-TICKET STYLES --- */
-                        .e-ticket {
-                            border: 2px dashed #EBBC64;
-                            border-radius: 8px;
-                            margin-top: 30px;
-                            background-color: #1E1E1E; /* Dark background */
-                            color: #ffffff;           /* White text */
-                            padding: 20px;
-                            text-align: left;
-                        }
-                        .e-ticket h2 {
-                            text-align: center;
-                            color: #EBBC64; /* Golden color for the title */
-                            margin-top: 0;
-                            margin-bottom: 20px;
-                            font-size: 20px;
-                            font-weight: bold;
-                        }
-                        .e-ticket .booking-details div {
-                            margin-bottom: 12px;
-                            font-size: 16px;
-                            color: #ffffff !important;
-                        }
-                        .e-ticket .booking-details strong {
-                            color: #aaa; /* Lighter gray for labels */
-                            width: 120px;
-                            display: inline-block;
-                        }
-                        .e-ticket a {
-                            color: #EBBC64 !important;
-                            text-decoration: underline !important;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="email-wrapper">
-                        <div class="email-container">
-                            <div class="header">
-                                <div style="width: 100%; background: black;">
-                                    <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" alt="APCS Logo" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;">
-                                </div>
-                            </div>
-                            <div class="content">
-                                <p>Dear <strong>${teamMemberName}</strong>,</p>
-                                <p>Thank you for being a core part of the APCS Gala Concert. This email is your official Staff Entry Pass. Please present it to security at the venue entrance.</p>
-                                
-                                <div class="e-ticket">
-                                    <h2>APCS STAFF & TEAM PASS</h2>
-                                    <div class="booking-details">
-                                        <div><strong>Name:</strong> ${teamMemberName}</div>
-                                        <div><strong>Access:</strong> All Access</div>
-                                        <hr style="border: 0; border-top: 1px solid #444; margin: 15px 0;">
-                                        <div><strong>Venue:</strong> All Venues (Jatayu & Melati)</div>
-                                        <div><strong>Date:</strong> 01-02 November 2025</div>
-                                        <div><strong>Session:</strong> All Sessions</div>
+        const workbook = xlsx.readFile(EXCEL_TEAM_LIST);
+        const sheetName = workbook.SheetNames[0];
+        const recipients = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+        if (recipients.length === 0) {
+            console.log("No recipients found in the file. Exiting.");
+            return;
+        }
+
+        for (const recipient of recipients) {
+            let recipientName = recipient.Name; // Use the exact header from your CSV
+            const recipientEmail = recipient.Email;
+
+            if (!recipientName || !recipientEmail) {
+                // console.warn(`Skipping row due to missing Name or Email:`, recipient);
+                continue;
+            }
+
+            try {
+                console.log(`Processing ${recipientName} <${recipientEmail}>...`);
+
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: recipientEmail,
+                    subject: `Your APCS Gala Concert - Staff Entry Pass`,
+                    html: `
+                        <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <meta charset="utf-8">
+                                <style>
+                                    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                                    .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+                                    .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                                    .header { line-height: 0; }
+                                    .content { padding: 30px; line-height: 1.6; color: #555555; }
+                                    .content p { margin: 0 0 16px 0; }
+                                    .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+
+                                    /* --- UPDATED E-TICKET STYLES (BRIGHT YELLOW) --- */
+                                    .e-ticket {
+                                        border: 2px solid #a88a4a; /* Darker gold/brown border */
+                                        border-radius: 8px;
+                                        margin-top: 30px;
+                                        background-color: #EBBC64; /* Bright yellow/gold background */
+                                        color: #1E1E1E;           /* Dark text */
+                                        padding: 20px;
+                                        text-align: left;
+                                    }
+                                    .e-ticket h2 {
+                                        text-align: center;
+                                        color: #1E1E1E; /* Dark title */
+                                        margin-top: 0;
+                                        margin-bottom: 20px;
+                                        font-size: 20px;
+                                        font-weight: bold;
+                                    }
+                                    .e-ticket .booking-details div {
+                                        margin-bottom: 12px;
+                                        font-size: 16px;
+                                        color: #1E1E1E !important; /* Force all text to be dark */
+                                    }
+                                    .e-ticket .booking-details strong {
+                                        color: #59442a; /* Darker brown/gold for labels */
+                                        width: 120px;
+                                        display: inline-block;
+                                    }
+                                    .e-ticket a {
+                                        color: #0000FF !important; /* Standard blue for links, high contrast */
+                                        text-decoration: underline !important;
+                                    }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="email-wrapper">
+                                    <div class="email-container">
+                                        <div class="header">
+                                            <div style="width: 100%; background: black;">
+                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" alt="APCS Logo" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;">
+                                            </div>
+                                        </div>
+                                        <div class="content">
+                                            <p>Dear <strong>${recipientName}</strong>,</p>
+                                            <p>Thank you for being a core part of the APCS Gala Concert. This email is your official Staff Entry Pass. Please present it to security at the venue entrance.</p>
+                                            
+                                            <div class="e-ticket">
+                                                <h2>APCS STAFF & TEAM PASS</h2>
+                                                <div class="booking-details">
+                                                    <div><strong>Name:</strong> ${recipientName}</div>
+                                                    <div><strong>Access:</strong> All Access</div>
+                                                    <hr style="border: 0; border-top: 1px solid #a88a4a; margin: 15px 0;">
+                                                    <div><strong>Venue:</strong> All Venues (Jatayu & Melati)</div>
+                                                    <div><strong>Date:</strong> 01-02 November 2025</div>
+                                                    <div><strong>Session:</strong> All Sessions</div>
+                                                </div>
+                                            </div>
+                                            
+                                            <p style="margin-top: 30px;">We're excited to make this event a huge success with you!</p>
+                                            <p>Best regards,<br>The APCS Music Team</p>
+                                        </div>
+                                        <div class="footer">
+                                            <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                                        </div>
                                     </div>
                                 </div>
-                                
-                                <p style="margin-top: 30px;">We're excited to make this event a huge success with you!</p>
-                                <p>Best regards,<br>The APCS Music Team</p>
-                            </div>
-                            <div class="footer">
-                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
-                            </div>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `
-        };
+                            </body>
+                        </html>
+                        `
+                };
 
-        await transporter.sendMail(mailOptions);
-        logger.info(`Successfully sent Staff E-Ticket to ${to}`);
-        return true;
+                await transporter.sendMail(mailOptions);
+                console.log(`  ✅ Email sent successfully to ${recipientEmail}.`);
+
+                // Add a short delay to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+            } catch (error) {
+                console.error(`  ❌ Failed to process ${recipientName}:`, error.message);
+            }
+        }
+        console.log("🎉 Team Email finished!");
+
     } catch (error) {
-        logger.error(`Failed to send Staff E-Ticket to ${to}: ${error.message}`);
-        return false;
+        console.error("An error occurred during the Team Email:", error);
     }
 }
+
+// const sendTeamEntryPassEmail = async (teamMember) => {
+//     logger.info(`Sending Staff E-Ticket to: ${teamMember.email}`);
+//     const teamMemberName = teamMember.name;
+//     const to = teamMember.email;
+
+//     try {
+//         const mailOptions = {
+//             from: '"APCS Music" <hello@apcsmusic.com>',
+//             to: to,
+//             subject: `Your APCS Gala Concert - Staff Entry Pass`,
+//             html: `
+//               <!DOCTYPE html>
+//                 <html>
+//                 <head>
+//                     <meta charset="utf-8">
+//                     <style>
+//                         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+//                         .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+//                         .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+//                         .header { line-height: 0; }
+//                         .content { padding: 30px; line-height: 1.6; color: #555555; }
+//                         .content p { margin: 0 0 16px 0; }
+//                         .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+
+//                         /* --- UPDATED E-TICKET STYLES (STAFF) --- */
+//                         .e-ticket {
+//                             border: 2px dashed #3498db; /* New: Blue dashed border */
+//                             border-radius: 8px;
+//                             margin-top: 30px;
+//                             background-color: #2c3e50; /* New: Dark Blue background */
+//                             color: #ffffff;           /* White text */
+//                             padding: 20px;
+//                             text-align: left;
+//                         }
+//                         .e-ticket h2 {
+//                             text-align: center;
+//                             color: #ffffff; /* New: White title */
+//                             margin-top: 0;
+//                             margin-bottom: 20px;
+//                             font-size: 20px;
+//                             font-weight: bold;
+//                         }
+//                         .e-ticket .booking-details div {
+//                             margin-bottom: 12px;
+//                             font-size: 16px;
+//                             color: #ffffff !important;
+//                         }
+//                         .e-ticket .booking-details strong {
+//                             color: #bdc3c7; /* New: Light silver/gray for labels */
+//                             width: 120px;
+//                             display: inline-block;
+//                         }
+//                         .e-ticket a {
+//                             color: #3498db !important; /* New: Blue for links */
+//                             text-decoration: underline !important;
+//                         }
+//                     </style>
+//                 </head>
+//                 <body>
+//                     <div class="email-wrapper">
+//                         <div class="email-container">
+//                             <div class="header">
+//                                 <div style="width: 100%; background: black;">
+//                                     <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" alt="APCS Logo" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;">
+//                                 </div>
+//                             </div>
+//                             <div class="content">
+//                                 <p>Dear <strong>${teamMemberName}</strong>,</p>
+//                                 <p>Thank you for being a core part of the APCS Gala Concert. This email is your official Staff Entry Pass. Please present it to security at the venue entrance.</p>
+
+//                                 <div class="e-ticket">
+//                                     <h2>APCS STAFF & TEAM PASS</h2>
+//                                     <div class="booking-details">
+//                                         <div><strong>Name:</strong> ${teamMemberName}</div>
+//                                         <div><strong>Access:</strong> All Access</div>
+//                                         <hr style="border: 0; border-top: 1px solid #7f8c8d; margin: 15px 0;">
+//                                         <div><strong>Venue:</strong> All Venues (Jatayu & Melati)</div>
+//                                         <div><strong>Date:</strong> 01-02 November 2025</div>
+//                                         <div><strong>Session:</strong> All Sessions</div>
+//                                     </div>
+//                                 </div>
+
+//                                 <p style="margin-top: 30px;">We're excited to make this event a huge success with you!</p>
+//                                 <p>Best regards,<br>The APCS Music Team</p>
+//                             </div>
+//                             <div class="footer">
+//                                 <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+//                             </div>
+//                         </div>
+//                     </div>
+//                 </body>
+//                 </html>
+//             `
+//         };
+
+//         await transporter.sendMail(mailOptions);
+//         logger.info(`Successfully sent Staff E-Ticket to ${to}`);
+//         return true;
+//     } catch (error) {
+//         logger.error(`Failed to send Staff E-Ticket to ${to}: ${error.message}`);
+//         return false;
+//     }
+// }
 
 const sendEmailNotifyApcs = async (data) => {
     logger.info(`Sending internal notification for: ${data.name}`);
@@ -2081,25 +2369,25 @@ async function sendGeneralSeatingEmailFunc(req) {
     }
 }
 
-async function sendTeamEntryPassEmailFunc(req) {
-    try {
-        const emailsArray = req.body;
-        if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-            // Bulk add email jobs to the queue
-            // enqueueBulkEmails(emailsArray);
-            for (const data of emailsArray) {
-                sendTeamEntryPassEmail(data);
-            }
-            logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
-        } else {
-            logger.warn("No emails provided to enqueue");
-        }
-        return { message: "Emails have been enqueued successfully" };
-    } catch (error) {
-        logger.error(`Failed to enqueue email jobs: ${error.message}`);
-        throw error;
-    }
-}
+// async function sendTeamEntryPassEmailFunc(req) {
+//     try {
+//         const emailsArray = req.body;
+//         if (Array.isArray(emailsArray) && emailsArray.length > 0) {
+//             // Bulk add email jobs to the queue
+//             // enqueueBulkEmails(emailsArray);
+//             for (const data of emailsArray) {
+//                 sendTeamEntryPassEmail(data);
+//             }
+//             logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
+//         } else {
+//             logger.warn("No emails provided to enqueue");
+//         }
+//         return { message: "Emails have been enqueued successfully" };
+//     } catch (error) {
+//         logger.error(`Failed to enqueue email jobs: ${error.message}`);
+//         throw error;
+//     }
+// }
 
 
 async function sendEmailETicketFunc(req) {
@@ -2165,7 +2453,7 @@ module.exports = {
     sendEmail,
     sendEmailWinner,
     sendEmailSessionWinner,
-    sendTeamEntryPassEmailFunc,
+    sendTeamEntryPassEmail,
     enqueueEmailJob,
     enqueueBulkEmails,
     sendEmailMarketing,
@@ -2177,4 +2465,5 @@ module.exports = {
     sendEmailNotifyApcsFunc,
     sendEmailNotifyBulkUpdateRegistrantFunc,
     sendEmailETicketFunc,
+    sendEmailFail
 };

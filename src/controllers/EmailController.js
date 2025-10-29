@@ -77,7 +77,7 @@ async function sendGeneralSeatingEmail(req, res, next) {
 
 async function sendTeamEntryPassEmail(req, res, next) {
     try {
-        const data = await email.sendTeamEntryPassEmailFunc(req, next)
+        const data = await email.sendTeamEntryPassEmail(req, next)
         res.status(200).send(data)
     } catch (err) {
         next(err);
@@ -87,6 +87,15 @@ async function sendTeamEntryPassEmail(req, res, next) {
 async function sendEmailNotifyApcs(req, res, next) {
     try {
         const data = await email.sendEmailNotifyApcsFunc(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function sendEmailFail(req, res, next) {
+    try {
+        const data = await email.sendEmailFail(req, next)
         res.status(200).send(data)
     } catch (err) {
         next(err);
@@ -112,4 +121,5 @@ module.exports = {
     sendTeamEntryPassEmail,
     sendEmailNotifyApcs,
     sendEmailNotifyBulkUpdateRegistrant,
+    sendEmailFail
 };
