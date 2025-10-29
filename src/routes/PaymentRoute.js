@@ -18,6 +18,7 @@ router.post('/sendEmailPaymentRequest', EmailController.sendEmailPaymentRequest)
 router.post('/sendSeatBookingEmail', EmailController.sendSeatBookingEmail)
 router.post('/sendGeneralSeatingEmail', EmailController.sendGeneralSeatingEmail);
 router.post('/sendTeamEntryPassEmail', EmailController.sendTeamEntryPassEmail);
+router.post('/sendSponsorEntryPassEmail', EmailController.sendSponsorEntryPassEmail);
 router.post('/sendEmailNotifyApcs', EmailController.sendEmailNotifyApcs)
 router.post('/sendEmailFail', EmailController.sendEmailFail)
 router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNotifyBulkUpdateRegistrant)

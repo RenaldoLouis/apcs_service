@@ -84,6 +84,15 @@ async function sendTeamEntryPassEmail(req, res, next) {
     }
 }
 
+async function sendSponsorEntryPassEmail(req, res, next) {
+    try {
+        const data = await email.sendSponsorEntryPassEmail(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function sendEmailNotifyApcs(req, res, next) {
     try {
         const data = await email.sendEmailNotifyApcsFunc(req, next)
@@ -119,6 +128,7 @@ module.exports = {
     sendSeatBookingEmail,
     sendGeneralSeatingEmail,
     sendTeamEntryPassEmail,
+    sendSponsorEntryPassEmail,
     sendEmailNotifyApcs,
     sendEmailNotifyBulkUpdateRegistrant,
     sendEmailFail
