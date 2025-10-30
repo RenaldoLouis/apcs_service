@@ -80,6 +80,7 @@ const ATTACHMENT_SESSION = 'RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 20
 const EXCEL_FILE_PATH = path.join(__dirname, 'attachments/emailList.csv');
 const EXCEL_TEAM_LIST = path.join(__dirname, 'attachments/emailTeam.csv');
 const EXCEL_SPONSOR_LIST = path.join(__dirname, 'attachments/emailSponsor.csv');
+const TNC_APCS_TICKETING = path.join(__dirname, 'attachments/TNCAPCSTICKETING.pdf');
 
 // This is the path to the main folder you downloaded from Google Drive
 const LOCAL_FILES_PATH = path.join(__dirname, 'student_files');
@@ -1461,7 +1462,13 @@ const sendGeneralSeatingEmail = async (bookingData) => {
                     </div>
                 </body>
                 </html>
-            `
+            `,
+            attachments: [
+                {
+                    filename: 'TNC APCS TICKETING.pdf',
+                    path: TNC_APCS_TICKETING
+                },
+            ]
         };
 
         await transporter.sendMail(mailOptions);
