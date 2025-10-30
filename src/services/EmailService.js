@@ -1638,6 +1638,146 @@ const sendSponsorEntryPassEmail = async () => {
                 const mailOptions = {
                     from: '"APCS Music" <hello@apcsmusic.com>',
                     to: recipientEmail,
+                    subject: `Your APCS Gala Concert - Sponsor Entry Pass`,
+                    html: `
+                    <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <meta charset="utf-8">
+                            <style>
+                                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                                .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+                                .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                                .header { line-height: 0; }
+                                .content { padding: 30px; line-height: 1.6; color: #555555; }
+                                .content p { margin: 0 0 16px 0; }
+                                .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                                
+                                /* --- UPDATED E-TICKET STYLES (YELLOWISH) --- */
+                                .e-ticket {
+                                    border: 2px dashed #EBBC64; /* Golden dashed border */
+                                    border-radius: 8px;
+                                    margin-top: 30px;
+                                    background-color: #455c88;
+                                    color: #ffffff;           /* White text */
+                                    padding: 20px;
+                                    text-align: left;
+                                }
+                                .e-ticket h2 {
+                                    text-align: center;
+                                    color: #EBBC64; /* Golden title */
+                                    margin-top: 0;
+                                    margin-bottom: 20px;
+                                    font-size: 20px;
+                                    font-weight: bold;
+                                }
+                                .e-ticket .booking-details div {
+                                    margin-bottom: 12px;
+                                    font-size: 16px;
+                                    color: #ffffff !important;
+                                }
+                                .e-ticket .booking-details strong {
+                                    color: #EBBC64; /* New: Light beige/tan for labels */
+                                    width: 120px;
+                                    display: inline-block;
+                                }
+                                .e-ticket a {
+                                    color: #EBBC64 !important; /* Golden for links */
+                                    text-decoration: underline !important;
+                                }
+                            </style>
+                        </head>
+                            <body>
+                                <div class="email-wrapper">
+                                    <div class="email-container">
+                                        <div class="header">
+                                            <div style="width: 100%; background: black;">
+                                                <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" alt="APCS Logo" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;">
+                                            </div>
+                                        </div>
+                                        <div class="content">
+                                            <p>Dear <strong>${recipientName}</strong>,</p>
+                                            <p>Thank you for partnering with us for the APCS Gala Concert. This email is your official pass for venue entry and setup.</p>
+                                            
+                                            <div class="e-ticket">
+                                                <h2>APCS TENANT & SPONSOR PASS</h2>
+                                                <div class="booking-details">
+                                                    <div><strong>Name:</strong>${recipientName}</div>
+                                                    <div><strong>Access:</strong>TENANT & SPONSOR PASS</div>
+                                                    <hr style="border: 0; border-top: 1px solid #7A5B49; margin: 15px 0;">
+                                                    <div><strong>Venue:</strong> All Venues (Jatayu & Melati)</div>
+                                                    <div><strong>Date:</strong> 01-02 November 2025</div>
+                                                </div>
+                                            </div>
+
+                                            <div class="instructions">
+                                                <h3>Important Information</h3>
+                                                <ul>
+                                                    <li>Please show this pass to security upon entry.</li>
+                                                    <li>Loading-in times are: <Strong>Oct 31 (19:00 - 21:00)</Strong> or <Strong> Nov 1 (starting at 07:00)</Strong>.</li>
+                                                    <li>All guest performers must enter via the <strong>JIS SIMATUPANG GATE</strong>.</li>
+                                                    <li><a href="https://share.google/ZEvJc04a2iBOPtxZD" target="_blank">Click here for the gate location on Google Maps</a>.</li>
+                                                </ul>
+                                            </div>
+                                            
+                                            <p style="margin-top: 30px;">We look forward to a successful event with you!</p>
+                                            <p>Best regards,<br>The APCS Music Team</p>
+                                        </div>
+                                        <div class="footer">
+                                            <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </body>
+                    </html>
+                    `
+                };
+
+                await transporter.sendMail(mailOptions);
+                console.log(`  ✅ Email sent successfully to ${recipientEmail}.`);
+
+                // Add a short delay to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+            } catch (error) {
+                console.error(`  ❌ Failed to process ${recipientName}:`, error.message);
+            }
+        }
+        console.log("🎉 Team Email finished!");
+
+    } catch (error) {
+        console.error("An error occurred during the Team Email:", error);
+    }
+}
+
+const sendGuestStarEntryPassEmail = async () => {
+    // TODO: this was used for sponosr and guest pass CHANGE THE SUBJECT
+    console.log("Starting send Sponsor E-Pass...");
+    try {
+        const workbook = xlsx.readFile(EXCEL_SPONSOR_LIST);
+        const sheetName = workbook.SheetNames[0];
+        const recipients = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+        if (recipients.length === 0) {
+            console.log("No recipients found in the file. Exiting.");
+            return;
+        }
+
+        for (const recipient of recipients) {
+            let recipientName = recipient.Name; // Use the exact header from your CSV
+            const recipientEmail = recipient.Email;
+
+            if (!recipientName || !recipientEmail) {
+                // console.warn(`Skipping row due to missing Name or Email:`, recipient);
+                continue;
+            }
+
+            try {
+                console.log(`Processing ${recipientName} <${recipientEmail}>...`);
+
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: recipientEmail,
                     subject: `Your APCS Gala Concert - Guest Performer Entry Pass`,
                     html: `
                     <!DOCTYPE html>
@@ -1697,7 +1837,7 @@ const sendSponsorEntryPassEmail = async () => {
                                         </div>
                                         <div class="content">
                                             <p>Dear <strong>${recipientName}</strong>,</p>
-                                            <p>Thank you for being part of the APCS Gala Concert! This email is your official pass for venue entry and setup.</p>
+                                            <p>Thank you for being part of the APCS Gala Concert! This email is your official pass for venue entry.</p>
                                             
                                             <div class="e-ticket">
                                                 <h2>APCS GUEST PERFORMER</h2>
