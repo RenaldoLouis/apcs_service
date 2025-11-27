@@ -30,6 +30,7 @@ router.post('/register', RegisterController.postRegistrant)
 router.post('/signed-url-images', RegisterController.getUploadUrl)
 router.post('/download-files-aws', RegisterController.downloadFilesAws)
 router.post('/download-all-files-aws', RegisterController.downloadAllFiles)
+router.post('/getPublicVideoLinkAws', RegisterController.getPublicVideoLinkAws)
 
 router.get('/verifyTicker', TicketController.verifyTicket)
 router.post('/saveSeatBookProfileInfo', TicketController.saveSeatBookProfileInfo)

@@ -36,9 +36,19 @@ async function downloadAllFiles(params, res) {
     }
 }
 
+async function getPublicVideoLinkAws(req) {
+    const body = req.body;
+    try {
+        return await databaseUtil.executeDatabaseOperation(db.getPublicVideoLinkAws, body);
+    } catch (error) {
+        throw error;
+    }
+}
+
 module.exports = {
     postRegistrant,
     getUploadUrl,
     downloadFilesAws,
-    downloadAllFiles
+    downloadAllFiles,
+    getPublicVideoLinkAws
 };

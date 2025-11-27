@@ -35,9 +35,19 @@ async function downloadAllFiles(req, res, next) {
     }
 }
 
+async function getPublicVideoLinkAws(req, res, next) {
+    try {
+        const data = await registerService.getPublicVideoLinkAws(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     postRegistrant,
     getUploadUrl,
     downloadFilesAws,
     downloadAllFiles,
+    getPublicVideoLinkAws
 };

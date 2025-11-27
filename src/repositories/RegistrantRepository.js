@@ -32,11 +32,11 @@ const postRegistrant = async (params, callback) => {
 }
 
 const getUploadUrl = async (params, callback) => {
-    const { directoryname, fileName } = params;
+    const { directoryname, fileName, fileType } = params;
     const s3Param = {
         Bucket: 'registrants2025',
-        Key: `${directoryname}/${fileName}.pdf`, // Use a unique key
-        ContentType: 'application/pdf',
+        Key: `${directoryname}/${fileName}`, // Use a unique key
+        ContentType: fileType || 'application/octet-stream',
     };
 
     const command = new PutObjectCommand(s3Param);
@@ -127,6 +127,35 @@ const downloadFilesAws = async (filesToDownload, res) => {
     }
 };
 
+const getPublicVideoLinkAws = async (body, callback) => {
+    const { s3Link } = body;
+
+    // 1. Extract the Key from the s3:// link
+    // e.g., s3://bucket/folder/vid.mp4 -> folder/vid.mp4
+    const key = s3Link.replace('s3://registrants2025/', '');
+
+    // 2. Use GetObjectCommand (For Viewing/Downloading)
+    const command = new GetObjectCommand({
+        Bucket: 'registrants2025',
+        Key: key,
+    });
+
+    try {
+        // 3. Generate the signed URL
+        const signedUrl = await getSignedUrl(s3Admin, command, { expiresIn: 3600 }); // 1 hour link
+
+        const returnedObject = {
+            url: signedUrl
+        };
+
+        return callback(null, returnedObject);
+
+    } catch (error) {
+        console.error('Error generating view URL:', error);
+        return callback(error);
+    }
+};
+
 const downloadAllFiles = async (filesToDownload, res) => {
 
     if (!filesToDownload || !Array.isArray(filesToDownload) || filesToDownload.length === 0) {
@@ -196,5 +225,6 @@ module.exports = {
     postRegistrant,
     getUploadUrl,
     downloadFilesAws,
-    downloadAllFiles
+    downloadAllFiles,
+    getPublicVideoLinkAws
 }
