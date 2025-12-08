@@ -44,10 +44,72 @@ async function getPublicVideoLinkAws(req, res, next) {
     }
 }
 
+async function initiateMultipartUpload(req, res, next) {
+    try {
+        const { directoryname, fileName, fileType } = req.body;
+
+        const result = await registerService.initiateMultipartUpload({
+            directoryname,
+            fileName,
+            fileType
+        });
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function getPartUploadUrl(req, res, next) {
+    try {
+        const { directoryname, fileName, uploadId, partNumber } = req.body;
+
+        const result = await registerService.getPartUploadUrl({
+            directoryname,
+            fileName,
+            uploadId,
+            partNumber: parseInt(partNumber)
+        });
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function completeMultipartUpload(req, res, next) {
+    try {
+        const { directoryname, fileName, uploadId, parts } = req.body;
+
+        const result = await registerService.completeMultipartUpload({
+            directoryname,
+            fileName,
+            uploadId,
+            parts
+        });
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     postRegistrant,
     getUploadUrl,
     downloadFilesAws,
     downloadAllFiles,
-    getPublicVideoLinkAws
+    getPublicVideoLinkAws,
+    initiateMultipartUpload,
+    getPartUploadUrl,
+    completeMultipartUpload,
 };

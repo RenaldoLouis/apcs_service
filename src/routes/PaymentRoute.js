@@ -7,6 +7,7 @@ const RegisterController = require("../controllers/RegisterController");
 const BookingController = require("../controllers/BookingController");
 const TicketController = require("../controllers/TicketController");
 const { paymentValidation } = require('../utils/ValidationUtil');
+const { multipartUploadValidation, partUploadValidation, completeUploadValidation } = require('../middlewares/ValidationMiddleware');
 
 router.post('/createPayment', paymentValidation, paymentController.createPayment)
 
@@ -28,6 +29,9 @@ router.get('/getVideos', FirebaseController.getVideos)
 
 router.post('/register', RegisterController.postRegistrant)
 router.post('/signed-url-images', RegisterController.getUploadUrl)
+router.post('/initiateMultipartUpload', multipartUploadValidation, RegisterController.initiateMultipartUpload);
+router.post('/getPartUploadUrl', partUploadValidation, RegisterController.getPartUploadUrl);
+router.post('/completeMultipartUpload', completeUploadValidation, RegisterController.completeMultipartUpload);
 router.post('/download-files-aws', RegisterController.downloadFilesAws)
 router.post('/download-all-files-aws', RegisterController.downloadAllFiles)
 router.post('/getPublicVideoLinkAws', RegisterController.getPublicVideoLinkAws)

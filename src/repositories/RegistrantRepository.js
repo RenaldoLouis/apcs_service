@@ -1,10 +1,11 @@
 const pool = require('../configs/DbConfig');
 const { logger } = require('../utils/Logger');
-const { S3Client, ListObjectsV2Command, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, ListObjectsV2Command, PutObjectCommand, GetObjectCommand, CompleteMultipartUploadCommand, UploadPartCommand, CreateMultipartUploadCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const archiver = require('archiver');
 const { AppendFilesToZip } = require('../utils/awsDownload');
 const axios = require('axios');
+const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
 
 const s3Admin = new S3Client({
     region: process.env.AWS_REGION,
@@ -220,11 +221,121 @@ const downloadAllFiles = async (filesToDownload, res) => {
     }
 };
 
+const BUCKET_NAME = 'registrants2025';
+const URL_EXPIRATION = 300; // 5 minutes
+
+/**
+ * Initiate a multipart upload
+ */
+async function initiateMultipartUpload(params) {
+    const { directoryname, fileName, fileType } = params;
+
+    const command = new CreateMultipartUploadCommand({
+        Bucket: BUCKET_NAME,
+        Key: `${directoryname}/${fileName}`,
+        ContentType: fileType,
+    });
+
+    try {
+        const response = await s3Admin.send(command);
+
+        if (!response.UploadId) {
+            throw new AppError('Failed to initiate multipart upload', 500);
+        }
+
+        return {
+            uploadId: response.UploadId,
+            key: `${directoryname}/${fileName}`
+        };
+    } catch (error) {
+        console.error('S3 multipart upload initiation error:', error);
+        throw new AppError(
+            `Failed to initiate upload: ${error.message}`,
+            error.$metadata?.httpStatusCode || 500
+        );
+    }
+}
+
+/**
+ * Get a signed URL for uploading a specific part
+ */
+async function getPartUploadUrl(params) {
+    const { directoryname, fileName, uploadId, partNumber } = params;
+
+    const command = new UploadPartCommand({
+        Bucket: BUCKET_NAME,
+        Key: `${directoryname}/${fileName}`,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+    });
+
+    try {
+        const signedUrl = await getSignedUrl(s3Admin, command, {
+            expiresIn: URL_EXPIRATION
+        });
+
+        return {
+            link: signedUrl,
+            partNumber,
+            expiresIn: URL_EXPIRATION
+        };
+    } catch (error) {
+        console.error('S3 part upload URL generation error:', error);
+        throw new AppError(
+            `Failed to generate upload URL for part ${partNumber}: ${error.message}`,
+            error.$metadata?.httpStatusCode || 500
+        );
+    }
+}
+
+/**
+ * Complete a multipart upload
+ */
+async function completeMultipartUpload(params) {
+    const { directoryname, fileName, uploadId, parts } = params;
+
+    // Sort parts by PartNumber to ensure correct order
+    const sortedParts = parts.sort((a, b) => a.PartNumber - b.PartNumber);
+
+    const command = new CompleteMultipartUploadCommand({
+        Bucket: BUCKET_NAME,
+        Key: `${directoryname}/${fileName}`,
+        UploadId: uploadId,
+        MultipartUpload: {
+            Parts: sortedParts.map(part => ({
+                ETag: part.ETag,
+                PartNumber: part.PartNumber
+            }))
+        },
+    });
+
+    try {
+        const response = await s3Admin.send(command);
+
+        return {
+            location: response.Location,
+            key: response.Key,
+            bucket: response.Bucket,
+            etag: response.ETag,
+            s3Uri: `s3://${BUCKET_NAME}/${directoryname}/${fileName}`
+        };
+    } catch (error) {
+        console.error('S3 multipart upload completion error:', error);
+        throw new AppError(
+            `Failed to complete upload: ${error.message}`,
+            error.$metadata?.httpStatusCode || 500
+        );
+    }
+}
+
 
 module.exports = {
     postRegistrant,
     getUploadUrl,
     downloadFilesAws,
     downloadAllFiles,
-    getPublicVideoLinkAws
+    getPublicVideoLinkAws,
+    initiateMultipartUpload,
+    getPartUploadUrl,
+    completeMultipartUpload
 }
