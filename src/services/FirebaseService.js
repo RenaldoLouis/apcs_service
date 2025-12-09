@@ -20,7 +20,17 @@ async function getVideos(req) {
     }
 }
 
+async function getSponsors(req) {
+    const query = req.query;
+    try {
+        return await databaseUtil.executeDatabaseOperation(db.getSponsors, query);
+    } catch (error) {
+        throw error;
+    }
+}
+
 module.exports = {
     getGaleries,
-    getVideos
+    getVideos,
+    getSponsors
 };

@@ -33,6 +33,25 @@ const getGaleries = async (params, callback) => {
     return callback(null, files);
 };
 
+const getSponsors = async (params, callback) => {
+    logger.info(`Retrieving Sponsors`);
+
+    //AWS
+    const bucketName = "sponsorlogo";
+
+    const command = new ListObjectsV2Command({
+        Bucket: bucketName,
+    });
+
+    const response = await s3.send(command);
+
+    // Extract folder names from CommonPrefixes
+    const files = response.Contents?.map(file => `https://${bucketName}.s3.${process.env.AWS_REGION}.amazonaws.com/${file.Key}`) || [];
+    files.shift();
+
+    return callback(null, files);
+};
+
 const getVideos = async (params, callback) => {
     // const { eventName } = params;
     // const normalizedNameEvent = eventName.replace(/\s+/g, '').toLowerCase()
@@ -82,5 +101,6 @@ const getVideos = async (params, callback) => {
 
 module.exports = {
     getGaleries,
-    getVideos
+    getVideos,
+    getSponsors
 }

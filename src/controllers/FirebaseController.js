@@ -19,7 +19,17 @@ async function getVideos(req, res, next) {
     }
 }
 
+async function getSponsors(req, res, next) {
+    try {
+        const data = await firebaseService.getSponsors(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     getGaleries,
-    getVideos
+    getVideos,
+    getSponsors,
 };
