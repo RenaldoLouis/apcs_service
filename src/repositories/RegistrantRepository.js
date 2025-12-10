@@ -133,7 +133,7 @@ const getPublicVideoLinkAws = async (body, callback) => {
 
     // 1. Extract the Key from the s3:// link
     // e.g., s3://bucket/folder/vid.mp4 -> folder/vid.mp4
-    const key = s3Link.replace('s3://registrants2025/', '');
+    const key = s3Link?.replace('s3://registrants2025/', '');
 
     // 2. Use GetObjectCommand (For Viewing/Downloading)
     const command = new GetObjectCommand({
