@@ -4,5 +4,6 @@ const PaperController = require("../controllers/PaperController");
 
 router.post('/createInvoice', PaperController.createInvoice);
 router.post('/webhooks/paper-id', PaperController.handlePaperWebhook);
+router.get('/registrant-status/:id', PaperController.checkPaymentStatus);
 
 module.exports = router;
