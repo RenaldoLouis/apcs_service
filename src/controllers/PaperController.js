@@ -1,6 +1,7 @@
 const paperService = require('../services/PaperService.js');
 const { validationResult } = require('express-validator');
 const { logger } = require('../utils/Logger.js');
+const { db, admin } = require('../configs/firebase-init');
 
 async function createInvoice(req, res, next) {
     try {
