@@ -51,7 +51,6 @@ const createInvoice = async (body, callback) => {
         logger.info(`Successfully create payment for ${user.name} with id ${externalId}`);
 
         // 3. Call Paper.id API using AXIOS
-        // Endpoint: /store-invoice (based on your curl example)
         const response = await axios.post(
             `${PAPER_BASE_URL}/store-invoice`,
             payload,
