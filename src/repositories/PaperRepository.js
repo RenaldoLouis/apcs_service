@@ -3,7 +3,8 @@ const axios = require('axios');
 const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
 const dayjs = require('dayjs');
 
-const PAPER_BASE_URL = 'https://open-api.stag-v2.paper.id/api/v1'; // Use staging URL if testing
+// const PAPER_BASE_URL = process.env.PAPER_BASE_URL;
+const PAPER_BASE_URL = 'https://open-api.paper.id/api/v1';
 
 const createInvoice = async (body, callback) => {
     try {
@@ -102,7 +103,7 @@ const createInvoice = async (body, callback) => {
 
         } catch (emailError) {
             console.error("Failed to send Paper.id email:", emailError?.response?.data || emailError.message);
-            logger.error(`Failed to send email for invoice ${invoiceData.number}: ${emailError.message}`);
+            logger.info(`Failed to send email for invoice ${invoiceData.number}: ${emailError.message}`);
         }
 
         return callback(null, {
@@ -112,7 +113,7 @@ const createInvoice = async (body, callback) => {
         });
     } catch (error) {
         console.error("Paper.id Error:", error?.response?.data || error.message);
-        logger.erorr(`fail create payment: ${error.message}}`);
+        logger.info(`fail create payment: ${error.message}}`);
         throw new AppError(
             `Failed to initiate upload: ${error.message}`,
             error.$metadata?.httpStatusCode || 500
