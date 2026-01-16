@@ -14,7 +14,7 @@ const corsOptions = {
     origin: ['http://localhost:3000', 'https://www.apcsmusic.com'],
     credentials: true, // ✅ Important: allows cookies/auth headers to be sent
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // ✅ Explicitly allow these methods
-    allowedHeaders: ['Content-Type', 'Authorization'] // ✅ Explicitly allow these headers
+    allowedHeaders: ['Content-Type', 'Authorization', 'auth-token']
 };
 
 // 2. Use the CORS middleware ONLY ONCE with the options
