@@ -9,10 +9,21 @@ const paperRoute = require('./src/routes/PaperRoute.js')
 const PaymentIntegrationRoute = require('./src/routes/PaymentIntegrationRoute.js')
 const wasteRoute = require('./src/routes/WasteRoutes.js')
 
-app.use(cors())
-app.use(cors({
-    origin: ['http://localhost:3000', 'https://www.apcsmusic.com']
-}));
+// 1. Define the CORS options separately for clarity
+const corsOptions = {
+    origin: ['http://localhost:3000', 'https://www.apcsmusic.com'],
+    credentials: true, // ✅ Important: allows cookies/auth headers to be sent
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // ✅ Explicitly allow these methods
+    allowedHeaders: ['Content-Type', 'Authorization'] // ✅ Explicitly allow these headers
+};
+
+// 2. Use the CORS middleware ONLY ONCE with the options
+app.use(cors(corsOptions));
+
+// 3. Explicitly handle Preflight (OPTIONS) requests
+// This ensures the browser gets the correct 'OK' before sending the real data
+app.options('*', cors(corsOptions));
+
 app.use(bodyParser.json())
 app.use(
     bodyParser.urlencoded({
