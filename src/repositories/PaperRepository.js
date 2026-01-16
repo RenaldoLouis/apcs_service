@@ -4,8 +4,6 @@ const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
 const dayjs = require('dayjs');
 
 const PAPER_BASE_URL = 'https://open-api.stag-v2.paper.id/api/v1'; // Use staging URL if testing
-PAPER_CLIENT_ID = "38b434d3f00e0cbedf388e7689b58f77"
-PAPER_CLIENT_SECRET = "733216e98c1536a23c176e25eadd9578"
 
 const createInvoice = async (body, callback) => {
     try {
@@ -56,8 +54,8 @@ const createInvoice = async (body, callback) => {
             payload,
             {
                 headers: {
-                    'client_id': PAPER_CLIENT_ID,
-                    'client_secret': PAPER_CLIENT_SECRET,
+                    'client_id': process.env.PAPER_CLIENT_ID,
+                    'client_secret': process.env.PAPER_CLIENT_SECRET,
                     'Content-Type': 'application/json'
                 }
             }
@@ -93,8 +91,8 @@ const createInvoice = async (body, callback) => {
                 },
                 {
                     headers: {
-                        'client_id': PAPER_CLIENT_ID,
-                        'client_secret': PAPER_CLIENT_SECRET,
+                        'client_id': process.env.PAPER_CLIENT_ID,
+                        'client_secret': process.env.PAPER_CLIENT_SECRET,
                         'Content-Type': 'application/json'
                     }
                 }
