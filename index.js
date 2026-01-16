@@ -11,7 +11,7 @@ const wasteRoute = require('./src/routes/WasteRoutes.js')
 
 // 1. Define the CORS options separately for clarity
 const corsOptions = {
-    origin: ['http://localhost:3000', 'https://www.apcsmusic.com'],
+    origin: ['https://www.apcsmusic.com'],
     credentials: true, // ✅ Important: allows cookies/auth headers to be sent
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // ✅ Explicitly allow these methods
     allowedHeaders: ['Content-Type', 'Authorization', 'auth-token']
