@@ -11,7 +11,7 @@ const wasteRoute = require('./src/routes/WasteRoutes.js')
 
 app.use(cors())
 app.use(cors({
-    origin: ['http://localhost:3000', 'https://your-production-site.com']
+    origin: ['http://localhost:3000', 'https://www.apcsmusic.com']
 }));
 app.use(bodyParser.json())
 app.use(
