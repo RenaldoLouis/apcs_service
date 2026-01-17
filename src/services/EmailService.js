@@ -1,5 +1,4 @@
 const nodemailer = require("nodemailer");
-const Queue = require('bull');
 const { logger } = require('../utils/Logger');
 const jwt = require('jsonwebtoken');
 const path = require('path');
@@ -25,7 +24,7 @@ const ATTACHMENT_FILENAME = 'APCS_WINNER_ANNOUNCEMENT.pdf';
 const ATTACHMENT_SESSION_FILE_PATH = path.join(__dirname, 'attachments/RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf');
 const ATTACHMENT_SESSION = 'RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf';
 
-const EXCEL_FILE_PATH = path.join(__dirname, 'attachments/emailList.csv');
+const ANNOUNCEMENT_DUMMY_LIST = path.join(__dirname, 'attachments/2026_harp_list.csv');
 const LIST_FAILED = path.join(__dirname, 'attachments/emailFailCert.csv');
 const EXCEL_TEAM_LIST = path.join(__dirname, 'attachments/emailTeam.csv');
 const EXCEL_SPONSOR_LIST = path.join(__dirname, 'attachments/emailSponsor.csv');
@@ -134,50 +133,6 @@ const sendEmailFail = async () => {
 
     } catch (error) {
         console.error("An error occurred during the campaign:", error);
-    }
-}
-
-const sendEmailAnnouncementFunc = async (data) => {
-    logger.info(`Processing email Announcet Winner/fail: ${data.email}`);
-    const winner = data.name;
-    const to = data.email;
-    const award = data.award;
-    const isFail = award === "FAIL"
-
-    try {
-        let templateType;
-        let templateData = { winner, award };
-        let attachments = [];
-
-        if (isFail) {
-            templateType = 'WINNER_FAIL';
-        } else {
-            templateType = 'WINNER_ANNOUNCEMENT';
-            // Only add attachment for winners
-            attachments.push({
-                filename: ATTACHMENT_FILENAME,
-                path: ATTACHMENT_FILE_PATH
-            });
-        }
-
-        // 1. Get HTML Content
-        const { subject, html } = getTemplate(templateType, templateData);
-
-        // 2. Construct Email
-        const mailOptions = {
-            from: '"APCS Music" <hello@apcsmusic.com>',
-            to: to,
-            subject: subject,
-            html: html,
-            attachments: attachments
-        };
-
-        const result = await transporter.sendMail(mailOptions);
-        logger.info(`Successfully sent email to ${to}`);
-        return result;
-    } catch (error) {
-        logger.error(`Failed to send email to ${to}: ${error.message}`);
-        throw error;
     }
 }
 
@@ -2057,7 +2012,7 @@ async function sendEmail(req) {
 async function sendEmailAnnouncement(req) {
     logger.info("sending email Announcement Winner/Fail...");
 
-    const workbook = xlsx.readFile(EXCEL_TEAM_LIST);
+    const workbook = xlsx.readFile(ANNOUNCEMENT_DUMMY_LIST);
     const sheetName = workbook.SheetNames[0];
     const winners = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
@@ -2084,7 +2039,40 @@ async function sendEmailAnnouncement(req) {
             console.log('data', data)
 
             if (data) {
-                await sendEmailAnnouncementFunc(data);
+                const winner = data.name;
+                const to = data.email;
+                const award = data.award;
+                const isFail = award === "FAIL"
+
+                let templateType;
+                let templateData = { winner, award };
+                let attachments = [];
+
+                if (isFail) {
+                    templateType = 'WINNER_FAIL';
+                } else {
+                    templateType = 'WINNER_ANNOUNCEMENT';
+                    // Only add attachment for winners
+                    attachments.push({
+                        filename: ATTACHMENT_FILENAME,
+                        path: ATTACHMENT_FILE_PATH
+                    });
+                }
+
+                // 1. Get HTML Content
+                const { subject, html } = getTemplate(templateType, templateData);
+
+                // 2. Construct Email
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: to,
+                    subject: subject,
+                    html: html,
+                    attachments: attachments
+                };
+
+                await transporter.sendMail(mailOptions);
+                logger.info(`Successfully sent email to ${to}`);
                 // Add a short delay between emails to avoid being flagged as spam
                 await new Promise(resolve => setTimeout(resolve, 550)); // 1-second delay
             }
@@ -2093,7 +2081,7 @@ async function sendEmailAnnouncement(req) {
         logger.info("🎉 Email campaign finished!");
 
     } catch (error) {
-        logger.error("An error occurred during the campaign:", error);
+        logger.error(`Failed to send email to: ${error.message}`);
     }
 }
 

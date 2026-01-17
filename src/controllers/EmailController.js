@@ -19,6 +19,15 @@ async function sendEmailAnnouncement(req, res, next) {
     }
 }
 
+async function sendEmailFail(req, res, next) {
+    try {
+        const data = await email.sendEmailFail(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function sendEmailSessionWinner(req, res, next) {
     try {
         const data = await email.sendEmailSessionWinner(req, next)
@@ -76,15 +85,6 @@ async function sendSponsorEntryPassEmail(req, res, next) {
 async function sendEmailNotifyApcs(req, res, next) {
     try {
         const data = await email.sendEmailNotifyApcsFunc(req, next)
-        res.status(200).send(data)
-    } catch (err) {
-        next(err);
-    }
-}
-
-async function sendEmailFail(req, res, next) {
-    try {
-        const data = await email.sendEmailFail(req, next)
         res.status(200).send(data)
     } catch (err) {
         next(err);
