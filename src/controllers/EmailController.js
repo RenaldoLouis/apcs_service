@@ -10,9 +10,9 @@ async function sendEmail(req, res, next) {
         next(err);
     }
 }
-async function sendEmailWinner(req, res, next) {
+async function sendEmailAnnouncement(req, res, next) {
     try {
-        const data = await email.sendEmailWinner(req, next)
+        const data = await email.sendEmailAnnouncement(req, next)
         res.status(200).send(data)
     } catch (err) {
         next(err);
@@ -101,7 +101,7 @@ async function sendEmailNotifyBulkUpdateRegistrant(req, res, next) {
 }
 module.exports = {
     sendEmail,
-    sendEmailWinner,
+    sendEmailAnnouncement,
     sendEmailSessionWinner,
     sendEmailPaymentRequest,
     sendSeatBookingEmail,
