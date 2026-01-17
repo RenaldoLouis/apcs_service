@@ -39,15 +39,6 @@ async function sendEmailSessionWinner(req, res, next) {
     }
 }
 
-async function sendEmailMarketing(req, res, next) {
-    try {
-        const data = await email.sendEmailMarketingFunc(req, next)
-        res.status(200).send(data)
-    } catch (err) {
-        next(err);
-    }
-}
-
 async function sendEmailPaymentRequest(req, res, next) {
     try {
         const data = await email.sendEmailPaymentRequestFunc(req, next)
@@ -123,7 +114,6 @@ module.exports = {
     sendEmail,
     sendEmailWinner,
     sendEmailSessionWinner,
-    sendEmailMarketing,
     sendEmailPaymentRequest,
     sendSeatBookingEmail,
     sendGeneralSeatingEmail,
