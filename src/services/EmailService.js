@@ -136,6 +136,82 @@ const sendEmailFail = async () => {
     }
 }
 
+async function sendEmailAnnouncement(req) {
+    logger.info("sending email Announcement Winner/Fail...");
+
+    const workbook = xlsx.readFile(ANNOUNCEMENT_DUMMY_LIST);
+    const sheetName = workbook.SheetNames[0];
+    const winners = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+    try {
+        if (winners.length === 0) {
+            logger.info("No winners found. Exiting.");
+            return;
+        }
+
+        logger.info(`Found ${winners.length} winners to email.`);
+
+        // Loop through each winner and send an email
+        for (const winner of winners) {
+            const winnerName = winner['Name'];
+            const winnerEmail = winner['Email'];
+            const winnerAwards = winner['AWARDS'];
+
+            const data = {
+                name: winnerName,
+                email: winnerEmail,
+                award: winnerAwards
+            }
+
+            console.log('data', data)
+
+            if (data) {
+                const winner = data.name;
+                const to = data.email;
+                const award = data.award;
+                const isFail = award === "FAIL"
+
+                let templateType;
+                let templateData = { winner, award };
+                let attachments = [];
+
+                if (isFail) {
+                    templateType = 'WINNER_FAIL';
+                } else {
+                    templateType = 'WINNER_ANNOUNCEMENT_WITHOUT_VENUE';
+                    // Only add attachment for winners
+                    attachments.push({
+                        filename: ATTACHMENT_FILENAME,
+                        path: ATTACHMENT_FILE_PATH
+                    });
+                }
+
+                // 1. Get HTML Content
+                const { subject, html } = getTemplate(templateType, templateData);
+
+                // 2. Construct Email
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: to,
+                    subject: subject,
+                    html: html,
+                    attachments: attachments
+                };
+
+                await transporter.sendMail(mailOptions);
+                logger.info(`Successfully sent email to ${to}`);
+                // Add a short delay between emails to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 550)); // 1-second delay
+            }
+        }
+
+        logger.info("🎉 Email campaign finished!");
+
+    } catch (error) {
+        logger.error(`Failed to send email to: ${error.message}`);
+    }
+}
+
 const sendEmailFunc = async (data) => {
     logger.info(`Processing email: ${data.email}`);
     const participant = data.name
@@ -2009,82 +2085,6 @@ async function sendEmail(req) {
     }
 }
 
-async function sendEmailAnnouncement(req) {
-    logger.info("sending email Announcement Winner/Fail...");
-
-    const workbook = xlsx.readFile(ANNOUNCEMENT_DUMMY_LIST);
-    const sheetName = workbook.SheetNames[0];
-    const winners = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
-
-    try {
-        if (winners.length === 0) {
-            logger.info("No winners found. Exiting.");
-            return;
-        }
-
-        logger.info(`Found ${winners.length} winners to email.`);
-
-        // Loop through each winner and send an email
-        for (const winner of winners) {
-            const winnerName = winner['Name'];
-            const winnerEmail = winner['Email'];
-            const winnerAwards = winner['AWARDS'];
-
-            const data = {
-                name: winnerName,
-                email: winnerEmail,
-                award: winnerAwards
-            }
-
-            console.log('data', data)
-
-            if (data) {
-                const winner = data.name;
-                const to = data.email;
-                const award = data.award;
-                const isFail = award === "FAIL"
-
-                let templateType;
-                let templateData = { winner, award };
-                let attachments = [];
-
-                if (isFail) {
-                    templateType = 'WINNER_FAIL';
-                } else {
-                    templateType = 'WINNER_ANNOUNCEMENT';
-                    // Only add attachment for winners
-                    attachments.push({
-                        filename: ATTACHMENT_FILENAME,
-                        path: ATTACHMENT_FILE_PATH
-                    });
-                }
-
-                // 1. Get HTML Content
-                const { subject, html } = getTemplate(templateType, templateData);
-
-                // 2. Construct Email
-                const mailOptions = {
-                    from: '"APCS Music" <hello@apcsmusic.com>',
-                    to: to,
-                    subject: subject,
-                    html: html,
-                    attachments: attachments
-                };
-
-                await transporter.sendMail(mailOptions);
-                logger.info(`Successfully sent email to ${to}`);
-                // Add a short delay between emails to avoid being flagged as spam
-                await new Promise(resolve => setTimeout(resolve, 550)); // 1-second delay
-            }
-        }
-
-        logger.info("🎉 Email campaign finished!");
-
-    } catch (error) {
-        logger.error(`Failed to send email to: ${error.message}`);
-    }
-}
-
 async function sendEmailSessionWinner(req) {
     const winners = req.body;
 
@@ -2261,6 +2261,7 @@ async function sendEmailNotifyBulkUpdateRegistrantFunc(req) {
         throw error;
     }
 }
+
 module.exports = {
     sendEmail,
     sendEmailAnnouncement,
