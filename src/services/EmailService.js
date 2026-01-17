@@ -5,63 +5,11 @@ const jwt = require('jsonwebtoken');
 const path = require('path');
 const xlsx = require('xlsx');
 const fs = require('fs');
-
-// IMPORTANT: Store this secret in your .env file!
-const JWT_SECRET = process.env.JWT_SECRET;
-
-
-const defaultJobOptions = {
-    removeOnComplete: true,
-    removeOnFail: false,
-    attempts: 5, // retry up to 3 times if failed
-    backoff: {
-        type: 'exponential',
-        delay: 2000, // initial delay of 1 second before retrying
-    },
-};
-
-// const redisConfig = {
-//     redis: {
-//         path: '/home/apcc8119/tmp/redis.sock'
-//     },
-//     limiter: {
-//         max: 5,         // Maximum number of jobs processed per duration
-//         duration: 60000 // Time window in milliseconds (1 minute)
-//     }
-// };
-
-/* DONT FORGET TO REVERT THE CONFIG */
-// for local dev only 
-const redisConfig = {
-    redis: {
-        host: "127.0.0.1",
-        port: 6379
-    },
-    limiter: {
-        max: 3,         // Maximum number of jobs processed per duration
-        duration: 30000 // Time window in milliseconds (1 minute)
-    }
-};
-
-const emailQueue = new Queue('emailQueue', redisConfig, { defaultJobOptions });
+const { smtpConfig } = require("../configs/emailConfig");
+const { getTemplate } = require("./EmailTemplateService");
 
 // Create a nodemailer transporter with TLS enforced
-const transporter = nodemailer.createTransport({
-    pool: true,
-    maxConnections: 10,
-    // maxMessages: 5,            // Close connection after 5 messages to avoid stale connections
-    connectionTimeout: 120000, // Increase connection timeout to 120 seconds
-    socketTimeout: 120000,     // Increase socket timeout to 120 seconds
-    service: "Gmail",
-    host: "smtp-relay.gmail.com",
-    port: 587,
-    secure: false,
-    requireTLS: true,
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-    },
-});
+const transporter = nodemailer.createTransport(smtpConfig);
 
 // Verify SMTP connection once on startup
 transporter.verify((error, success) => {
@@ -78,6 +26,7 @@ const ATTACHMENT_SESSION_FILE_PATH = path.join(__dirname, 'attachments/RUNDOWN A
 const ATTACHMENT_SESSION = 'RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf';
 
 const EXCEL_FILE_PATH = path.join(__dirname, 'attachments/emailList.csv');
+const LIST_FAILED = path.join(__dirname, 'attachments/emailFailCert.csv');
 const EXCEL_TEAM_LIST = path.join(__dirname, 'attachments/emailTeam.csv');
 const EXCEL_SPONSOR_LIST = path.join(__dirname, 'attachments/emailSponsor.csv');
 const TNC_APCS_TICKETING = path.join(__dirname, 'attachments/TNCAPCSTICKETING.pdf');
@@ -126,68 +75,10 @@ function getAttachmentsForStudent(studentName) {
     });
 }
 
-// Enqueue a single email job (if needed)
-const enqueueEmailJob = (data) => {
-    emailQueue.add({ emailData: data });
-};
-
-// Bulk enqueue emails using addBulk for better performance
-const enqueueBulkEmails = (emailsArray) => {
-    const jobs = emailsArray.map(data => ({ data: { emailData: data } }));
-    emailQueue.addBulk(jobs);
-};
-
-const processEmailQueue = async (job) => {
-    logger.info(`Processing email job id: ${job.id}`);
-    const { emailData } = job.data;
-    const { email: to, name: participant } = emailData;
-    try {
-        const mailOptions = {
-            from: "hello@apcsmusic.com",
-            to: to,
-            subject: "APCS Gala Concert 2024 - Winner Announcement",
-            text: `
-            Dear ${participant},
-
-            Congratulations! You have won the Silver Category and earned the opportunity to perform at the APCS Gala Concert 2024, which will be held on:
-
-            Day/Date: Saturday, October 19, 2024
-            Location: Galeri Salihara, South Jakarta
-
-            Kindly take a moment to review the terms and conditions provided in the attached PDF file. If you have further questions, please contact the admin via the following WhatsApp:
-
-            Silver & Gold Admin: https://wa.me/6281528885132
-
-            See you at the event! :)
-            `,
-            attachments: [
-                {
-                    filename: 'license.txt',
-                    path: 'https://raw.github.com/nodemailer/nodemailer/master/LICENSE'
-                },
-            ]
-        };
-
-        const result = await transporter.sendMail(mailOptions);
-        logger.info(`Successfully sent email to ${to} for job id: ${job.id}`);
-        console.log(`Message sent to ${to}: ${result.messageId}`);
-        return result;
-    } catch (error) {
-        if (error.message.includes("Socket connection timeout")) {
-            logger.warn(`Socket connection timeout for job id: ${job.id}. Retrying...`);
-            // Manually trigger a retry; note that job.retry() will work if your job hasn't exhausted its attempts.
-            await job.retry();
-        } else {
-            logger.error(`Failed to send email to ${to} for job id: ${job.id}: ${error.message}`);
-            throw error; // rethrow to allow Bull to handle retries
-        }
-    }
-};
-
 const sendEmailFail = async () => {
-    console.log("Starting local attachment email campaign...");
+    console.log("Starting sendEmailFail...");
     try {
-        const workbook = xlsx.readFile(EXCEL_FILE_PATH);
+        const workbook = xlsx.readFile(LIST_FAILED);
         const sheetName = workbook.SheetNames[0];
         const recipients = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
 
@@ -196,14 +87,11 @@ const sendEmailFail = async () => {
             return;
         }
 
-        // console.log(`Found ${recipients.length} recipients to email.`);
-
         for (const recipient of recipients) {
             let recipientName = recipient.Name; // Use the exact header from your CSV
             const recipientEmail = recipient.Email;
 
             if (!recipientName || !recipientEmail) {
-                // console.warn(`Skipping row due to missing Name or Email:`, recipient);
                 continue;
             }
 
@@ -218,76 +106,31 @@ const sendEmailFail = async () => {
                     recipientName = "Gretchendell Agfinia Thendean"
                 }
 
+                // B. Get HTML Template
+                const { subject, html } = getTemplate('CERTIFICATE_FAIL', {
+                    name: recipientName
+                });
+
                 // 2. Send the email with the attachments
                 const mailOptions = {
                     from: '"APCS Music" <hello@apcsmusic.com>',
                     to: recipientEmail,
-                    subject: 'APCS – E-Certificate and Comment Sheet',
-                    html: `
-                      <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="utf-8">
-                    <style>
-                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color:#333; }
-                        .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
-                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
-                        .header { line-height: 0; }
-                        .content { padding: 30px; line-height: 1.6; }
-                        .content p { margin: 0 0 16px 0; }
-                        .content strong { color: #333333; }
-                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
-                        .content, .content p, .content strong {
-                            color: #333 !important;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="email-wrapper">
-                        <div class="email-container">
-                            <div class="header">
-                                <div style="width: 100%; background: black;">
-                                    <img src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png" style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;" alt="APCS Logo" title="APCS Logo">
-                                </div>
-                            </div>
-                            <div class="content">
-                                <p>Dear <strong>${recipientName}</strong>,</p>
-                                <p>
-                                    Please find attached your E-Certificate and E-Comment Sheet from APCS <strong>“The Sound of Asia 2025”.</strong>
-                                </p>
-                                <p>
-                                    We truly appreciate your effort and dedication throughout this journey. Every performance is a step forward, and you should be proud of your growth and hard work.
-                                </p>
-                                <p>
-                                    Keep playing with passion, and we look forward to seeing you again in our future events.
-                                </p>
-                                <p style="margin-top: 20px;">
-                                    Warm regards,<br>
-                                    <strong>The APCS Team</strong>
-                                </p>
-                            </div>
-                            <div class="footer">
-                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
-                            </div>
-                        </div>
-                    </div>
-                </body>
-                </html>
-                    `,
+                    subject: subject,
+                    html: html,
                     attachments: attachments // Attach the array of files
                 };
 
                 await transporter.sendMail(mailOptions);
-                console.log(`  ✅ Email sent successfully to ${recipientEmail}.`);
+                console.log(`Email sent successfully to ${recipientEmail}.`);
 
                 // Add a short delay to avoid being flagged as spam
                 await new Promise(resolve => setTimeout(resolve, 500));
 
             } catch (error) {
-                console.error(`  ❌ Failed to process ${recipientName}:`, error.message);
+                console.error(`Failed to process ${recipientName}:`, error.message);
             }
         }
-        console.log("🎉 Campaign finished!");
+        console.log("Campaign finished!");
 
     } catch (error) {
         console.error("An error occurred during the campaign:", error);
@@ -2242,13 +2085,6 @@ const sendEmailNotifyBulkUpdateRegistrant = async (data) => {
     }
 };
 
-
-/**
- * Creates a secure, signed JWT for a registrant's ticket.
- * @param {string} registrantId - The Firestore document ID of the registrant.
- * @param {string} eventId - An identifier for the event (e.g., "APCS2025").
- * @returns {string} The generated JSON Web Token.
- */
 async function generateTicketToken(registrantId, eventId) {
     const payload = {
         registrantId: registrantId,
@@ -2256,11 +2092,10 @@ async function generateTicketToken(registrantId, eventId) {
     };
 
     // The token will be valid for 1 year. Adjust as needed.
-    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '365d' });
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '365d' });
 
     return token;
 };
-
 
 async function sendETicketEmail(registrantData) {
     // 1. Generate the unique token
@@ -2301,15 +2136,10 @@ async function sendETicketEmail(registrantData) {
     }
 };
 
-// Process email queue with concurrency of 3
-emailQueue.process(3, processEmailQueue);
-
 async function sendEmail(req) {
     try {
         const emailsArray = req.body;
         if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-            // Bulk add email jobs to the queue
-            // enqueueBulkEmails(emailsArray);
             for (const data of emailsArray) {
                 sendEmailFunc(data);
             }
@@ -2404,33 +2234,10 @@ async function sendEmailSessionWinner(req) {
     }
 }
 
-async function sendEmailMarketing(req) {
-    try {
-        const emailsArray = req.body;
-        if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-            // Bulk add email jobs to the queue
-            // enqueueBulkEmails(emailsArray);
-            for (const data of emailsArray) {
-                sendEmailWinnerFunc(data);
-            }
-            logger.info(`Enqueued ${emailsArray.length} email jobs successfully`);
-        } else {
-            logger.warn("No emails provided to enqueue");
-        }
-        return { message: "Emails have been enqueued successfully" };
-    } catch (error) {
-        logger.error(`Failed to enqueue email jobs: ${error.message}`);
-        throw error;
-    }
-}
-
-
 async function sendEmailPaymentRequestFunc(req) {
     try {
         const emailsArray = req.body;
         if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-            // Bulk add email jobs to the queue
-            // enqueueBulkEmails(emailsArray);
             for (const data of emailsArray) {
                 sendEmailPaymentRequest(data);
             }
@@ -2452,8 +2259,6 @@ async function sendSeatBookingEmailFunc(req) {
         sendSeatBookingEmail(emailsArray);
         logger.info(`Send to ${emailsArray.userName} email successfully`);
         // if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-        //     // Bulk add email jobs to the queue
-        //     // enqueueBulkEmails(emailsArray);
         //     for (const data of emailsArray) {
         //         sendSeatBookingEmail(data);
         //     }
@@ -2499,8 +2304,6 @@ async function sendGeneralSeatingEmailFunc(req) {
 //     try {
 //         const emailsArray = req.body;
 //         if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-//             // Bulk add email jobs to the queue
-//             // enqueueBulkEmails(emailsArray);
 //             for (const data of emailsArray) {
 //                 sendTeamEntryPassEmail(data);
 //             }
@@ -2515,13 +2318,10 @@ async function sendGeneralSeatingEmailFunc(req) {
 //     }
 // }
 
-
 async function sendEmailETicketFunc(req) {
     try {
         const emailsArray = req.body;
         if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-            // Bulk add email jobs to the queue
-            // enqueueBulkEmails(emailsArray);
             for (const data of emailsArray) {
                 sendETicketEmail(data);
             }
@@ -2540,8 +2340,6 @@ async function sendEmailNotifyApcsFunc(req) {
     try {
         const emailsArray = req.body;
         if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-            // Bulk add email jobs to the queue
-            // enqueueBulkEmails(emailsArray);
             for (const data of emailsArray) {
                 sendEmailNotifyApcs(data);
             }
@@ -2560,8 +2358,6 @@ async function sendEmailNotifyBulkUpdateRegistrantFunc(req) {
     try {
         const emailsArray = req.body;
         if (Array.isArray(emailsArray) && emailsArray.length > 0) {
-            // Bulk add email jobs to the queue
-            // enqueueBulkEmails(emailsArray);
             for (const data of emailsArray) {
                 sendEmailNotifyBulkUpdateRegistrant(data);
             }
@@ -2581,9 +2377,6 @@ module.exports = {
     sendEmailSessionWinner,
     sendTeamEntryPassEmail,
     sendSponsorEntryPassEmail,
-    enqueueEmailJob,
-    enqueueBulkEmails,
-    sendEmailMarketing,
     sendEmailPaymentRequestFunc,
     sendSeatBookingEmailFunc,
     sendEmailConfirmSeatSelectionFunc,

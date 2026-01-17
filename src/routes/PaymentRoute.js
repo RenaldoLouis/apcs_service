@@ -12,6 +12,7 @@ const { multipartUploadValidation, partUploadValidation, completeUploadValidatio
 router.post('/createPayment', paymentValidation, paymentController.createPayment)
 
 router.post('/sendEmail', EmailController.sendEmail)
+router.post('/sendEmailFail', EmailController.sendEmailFail)
 router.post('/sendEmailWinner', EmailController.sendEmailWinner)
 router.post('/sendEmailSessionWinner', EmailController.sendEmailSessionWinner)
 router.post('/sendEmailPaymentRequest', EmailController.sendEmailPaymentRequest)
@@ -20,7 +21,6 @@ router.post('/sendGeneralSeatingEmail', EmailController.sendGeneralSeatingEmail)
 router.post('/sendTeamEntryPassEmail', EmailController.sendTeamEntryPassEmail);
 router.post('/sendSponsorEntryPassEmail', EmailController.sendSponsorEntryPassEmail);
 router.post('/sendEmailNotifyApcs', EmailController.sendEmailNotifyApcs)
-router.post('/sendEmailFail', EmailController.sendEmailFail)
 router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNotifyBulkUpdateRegistrant)
 
 router.get('/getGaleries', FirebaseController.getGaleries)
