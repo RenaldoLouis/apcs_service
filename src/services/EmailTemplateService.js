@@ -42,7 +42,7 @@ const templates = {
         };
     },
     CERTIFICATE_FAIL: (data) => ({
-        subject: 'APCS – E-Certificate and Comment Sheet',
+        subject: 'APCS E-Certificate and E-Comment Sheets',
         html: `
             <!DOCTYPE html>
             <html>
@@ -53,7 +53,7 @@ const templates = {
                     .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
                     .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
                     .header { line-height: 0; }
-                    .content { padding: 30px; line-height: 1.6; }
+                    .content { padding: 30px; line-height: 1.6; text-align: justify; }
                     .content p { margin: 0 0 16px 0; }
                     .content strong { color: #333333; }
                     .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
@@ -75,7 +75,7 @@ const templates = {
                                     We regret to inform you that your preliminary performance did not qualify for the APCS The Sound of Asia 2026 Gala Concert. However, we sincerely appreciate your hard work, dedication, and the passion you have shown throughout this competition. Each performance represents valuable progress in your musical journey, and we hope you take pride in your effort and growth.
                                 </p>
                                 <p>
-                                    Please find below your E-certificate and comment sheets.
+                                    Please find below your e-certificate and e-comment sheets.
                                 </p>
                                 <p>
                                     We encourage you to continue pursuing your musical goals with the same enthusiasm and commitment. You have done an excellent job, and we look forward to seeing you again at our future events.
@@ -93,7 +93,7 @@ const templates = {
         `
     }),
     WINNER_ANNOUNCEMENT: (data) => ({
-        subject: "APCS The Sound Of Asia 2025 Winner",
+        subject: "APCS The Sound Of Asia 2026 Winner",
         html: `
             <!DOCTYPE html>
             <html>
@@ -104,7 +104,7 @@ const templates = {
                         .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
                         .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
                         .header { line-height: 0; }
-                        .content { padding: 30px; line-height: 1.6; }
+                        .content { padding: 30px; line-height: 1.6; text-align: justify; }
                         .content p { margin: 0 0 16px 0; }
                         .content strong { color: #333333; }
                         .info-box { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin: 25px 0; }
@@ -147,7 +147,7 @@ const templates = {
             </html>`
     }),
     WINNER_ANNOUNCEMENT_WITHOUT_VENUE: (data) => ({
-        subject: "APCS The Sound Of Asia 2025 Winner",
+        subject: "APCS The Sound Of Asia 2026 Winner",
         html: `
             <!DOCTYPE html>
             <html>
@@ -170,7 +170,7 @@ const templates = {
                     <div class="email-container">
                         ${generateCommonHeader()}
                         <div class="content">
-                            <p style="font-size: 16px;"><strong>APCS Gala Concert 2024 – Winner Announcement</strong></p>
+                            <p style="font-size: 16px;"><strong>APCS Gala Concert 2026 – Winner Announcement</strong></p>
                             <p>Dear <strong>${data.winner}</strong>,</p>
                             <p>Congratulations!</p>
                             <p>
@@ -183,7 +183,7 @@ const templates = {
                                 If you have any further questions, feel free to contact our admin via <a href="https://wa.me/6282213002686" style="color: #1a73e8; text-decoration: none;">WhatsApp.</a>
                             </p>
                             <p>
-                                We look forward to welcoming you at the event & See you at APCS The Sound of Asia 2025!
+                                We look forward to welcoming you at the event & See you at APCS The Sound of Asia 2026!
                             </p>
                             <p>
                                 <strong>Best regards,</strong> <br><strong>APCS Team</strong> 
@@ -197,7 +197,7 @@ const templates = {
     }),
 
     WINNER_FAIL: (data) => ({
-        subject: "APCS The Sound Of Asia 2025 Winner",
+        subject: "APCS The Sound Of Asia 2025",
         html: `
             <!DOCTYPE html>
             <html>

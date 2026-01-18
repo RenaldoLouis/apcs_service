@@ -19,7 +19,7 @@ transporter.verify((error, success) => {
     }
 });
 
-const ATTACHMENT_FILE_PATH = path.join(__dirname, 'attachments/APCS_WINNER_ANNOUNCEMENT.pdf');
+const ATTACHMENT_FILE_PATH = path.join(__dirname, 'attachments/APCS_WINNER_ANNOUNCEMENT_2026.pdf');
 const ATTACHMENT_FILENAME = 'APCS_WINNER_ANNOUNCEMENT.pdf';
 const ATTACHMENT_SESSION_FILE_PATH = path.join(__dirname, 'attachments/RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf');
 const ATTACHMENT_SESSION = 'RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf';
