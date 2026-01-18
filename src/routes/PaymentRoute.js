@@ -4,6 +4,7 @@ const paymentController = require("../controllers/PaymentController");
 const EmailController = require("../controllers/EmailController");
 const FirebaseController = require("../controllers/FirebaseController");
 const RegisterController = require("../controllers/RegisterController");
+const JuryController = require("../controllers/JuryController");
 const BookingController = require("../controllers/BookingController");
 const TicketController = require("../controllers/TicketController");
 const { paymentValidation } = require('../utils/ValidationUtil');
@@ -35,6 +36,8 @@ router.post('/completeMultipartUpload', completeUploadValidation, RegisterContro
 router.post('/download-files-aws', RegisterController.downloadFilesAws)
 router.post('/download-all-files-aws', RegisterController.downloadAllFiles)
 router.post('/getPublicVideoLinkAws', RegisterController.getPublicVideoLinkAws)
+
+router.post('/createJury', JuryController.createJury)
 
 router.get('/verifyTicker', TicketController.verifyTicket)
 router.post('/saveSeatBookProfileInfo', TicketController.saveSeatBookProfileInfo)
