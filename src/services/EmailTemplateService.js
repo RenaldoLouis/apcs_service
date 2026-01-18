@@ -42,7 +42,7 @@ const templates = {
         };
     },
     CERTIFICATE_FAIL: (data) => ({
-        subject: 'APCS E-Certificate and E-Comment Sheets',
+        subject: 'APCS THE SOUND OF ASIA 2025 ANNOUNCEMENT',
         html: `
             <!DOCTYPE html>
             <html>
@@ -147,7 +147,7 @@ const templates = {
             </html>`
     }),
     WINNER_ANNOUNCEMENT_WITHOUT_VENUE: (data) => ({
-        subject: "APCS The Sound Of Asia 2026 Winner",
+        subject: "APCS GALA CONCERT 2026",
         html: `
             <!DOCTYPE html>
             <html>
@@ -195,9 +195,8 @@ const templates = {
             </body>
             </html>`
     }),
-
-    WINNER_FAIL: (data) => ({
-        subject: "APCS The Sound Of Asia 2025",
+    FAIL_ANNOUNCEMENT: (data) => ({
+        subject: "APCS The Sound Of Asia 2026",
         html: `
             <!DOCTYPE html>
             <html>

@@ -177,7 +177,7 @@ async function sendEmailAnnouncement(req) {
                 let attachments = [];
 
                 if (isFail) {
-                    templateType = 'WINNER_FAIL';
+                    templateType = 'FAIL_ANNOUNCEMENT';
                 } else {
                     templateType = 'WINNER_ANNOUNCEMENT_WITHOUT_VENUE';
                     // Only add attachment for winners
