@@ -61,14 +61,15 @@ function getAttachmentsForStudent(studentName) {
     // Filter out system files like .DS_Store (common on Macs)
     const validFiles = files.filter(file => !file.startsWith('.'));
 
-    if (validFiles.length < 2) {
-        throw new Error(`Expected 2 files in folder, but found ${validFiles.length} for ${trimmedStudentName}`);
-    }
+    // if (validFiles.length < 2) {
+    //     throw new Error(`Expected 2 files in folder, but found ${validFiles.length} for ${trimmedStudentName}`);
+    // }
 
     // Create the attachments array for Nodemailer
     return validFiles.slice(0, 2).map(fileName => {
+        const extension = path.extname(fileName);
         return {
-            filename: fileName,
+            filename: `${studentName}${extension}`,
             path: path.join(studentFolderPath, fileName) // Nodemailer can read the file directly from this path
         };
     });
