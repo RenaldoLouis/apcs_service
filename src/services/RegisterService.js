@@ -4,9 +4,9 @@ const db = require('../repositories/RegistrantRepository.js');
 const databaseUtil = require('../utils/DatabaseUtil.js');
 
 async function postRegistrant(req) {
-    const query = req.query;
+    const body = req.body;
     try {
-        return await databaseUtil.executeDatabaseOperation(db.postRegistrant, query);
+        return await databaseUtil.executeDatabaseOperation(db.postRegistrant, body);
     } catch (error) {
         throw error;
     }

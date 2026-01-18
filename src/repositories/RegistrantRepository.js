@@ -6,6 +6,7 @@ const archiver = require('archiver');
 const { AppendFilesToZip } = require('../utils/awsDownload');
 const axios = require('axios');
 const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
+const { db, admin } = require('../configs/firebase-init');
 
 const s3Admin = new S3Client({
     region: process.env.AWS_REGION,
@@ -28,8 +29,37 @@ const getGdriveFileId = (url) => {
 };
 
 
-const postRegistrant = async (params, callback) => {
+const postRegistrant = async (body, callback) => {
+    try {
+        const data = body;
+        const { recaptchaToken, ...dataToSave } = data;
 
+        // 1. Verify ReCAPTCHA
+        const verificationUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${recaptchaToken}`;
+        const captchaResponse = await axios.post(verificationUrl);
+
+        if (!captchaResponse.data.success) {
+            throw new AppError(
+                `Bot detected. Registration failed.`,
+                500
+            );
+        }
+
+        const docRef = await db.collection("Registrants2025").add({
+            ...dataToSave,
+            createdAt: new Date(),
+            // Remove recaptchaToken before saving
+        });
+
+        const returnedObject = {
+            id: docRef.id
+        };
+
+        return callback(null, returnedObject);
+    } catch (error) {
+        console.error(error);
+        return callback(null, error);
+    }
 }
 
 const getUploadUrl = async (params, callback) => {
