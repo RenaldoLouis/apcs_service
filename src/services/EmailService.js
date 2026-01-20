@@ -23,12 +23,12 @@ const ATTACHMENT_FILE_PATH = path.join(__dirname, 'attachments/APCS_WINNER_ANNOU
 const ATTACHMENT_FILENAME = 'APCS_WINNER_ANNOUNCEMENT.pdf';
 const ATTACHMENT_SESSION_FILE_PATH = path.join(__dirname, 'attachments/RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf');
 const ATTACHMENT_SESSION = 'RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 2025).pdf';
-
-const ANNOUNCEMENT_DUMMY_LIST = path.join(__dirname, 'attachments/2026_harp_list.csv');
-const LIST_FAILED = path.join(__dirname, 'attachments/emailFailCert.csv');
 const EXCEL_TEAM_LIST = path.join(__dirname, 'attachments/emailTeam.csv');
 const EXCEL_SPONSOR_LIST = path.join(__dirname, 'attachments/emailSponsor.csv');
 const TNC_APCS_TICKETING = path.join(__dirname, 'attachments/TNCAPCSTICKETING.pdf');
+
+const ANNOUNCEMENT_DUMMY_LIST = path.join(__dirname, 'attachments/2026_harp_list.csv');
+const LIST_FAILED = path.join(__dirname, 'attachments/emailFailCert.csv');
 
 // This is the path to the main folder you downloaded from Google Drive
 const LOCAL_FILES_PATH = path.join(__dirname, 'student_files');
@@ -122,6 +122,7 @@ const sendEmailFail = async () => {
 
                 await transporter.sendMail(mailOptions);
                 console.log(`Email sent successfully to ${recipientEmail}.`);
+                logger.info(`Successfully sent email to ${recipientEmail} for ${recipientName}`);
 
                 // Add a short delay to avoid being flagged as spam
                 await new Promise(resolve => setTimeout(resolve, 500));
@@ -133,6 +134,7 @@ const sendEmailFail = async () => {
         console.log("Campaign finished!");
 
     } catch (error) {
+        logger.error(`Failed to send email to: ${error.message}`);
         console.error("An error occurred during the campaign:", error);
     }
 }
@@ -205,8 +207,8 @@ async function sendEmailAnnouncement(req) {
                 await new Promise(resolve => setTimeout(resolve, 550)); // 1-second delay
             }
         }
-
-        logger.info("🎉 Email campaign finished!");
+        console.log("Email announcement finished!");
+        logger.info("Email announcement finished!");
 
     } catch (error) {
         logger.error(`Failed to send email to: ${error.message}`);
@@ -2265,6 +2267,7 @@ async function sendEmailNotifyBulkUpdateRegistrantFunc(req) {
 
 module.exports = {
     sendEmail,
+    sendEmailFunc,
     sendEmailAnnouncement,
     sendEmailSessionWinner,
     sendTeamEntryPassEmail,
@@ -2273,6 +2276,7 @@ module.exports = {
     sendSeatBookingEmailFunc,
     sendEmailConfirmSeatSelectionFunc,
     sendGeneralSeatingEmailFunc,
+    sendEmailNotifyApcs,
     sendEmailNotifyApcsFunc,
     sendEmailNotifyBulkUpdateRegistrantFunc,
     sendEmailETicketFunc,

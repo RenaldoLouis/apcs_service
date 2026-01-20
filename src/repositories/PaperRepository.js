@@ -3,8 +3,7 @@ const axios = require('axios');
 const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
 const dayjs = require('dayjs');
 
-// const PAPER_BASE_URL = process.env.PAPER_BASE_URL;
-const PAPER_BASE_URL = 'https://open-api.paper.id/api/v1';
+const PAPER_BASE_URL = process.env.PAPER_BASE_URL;
 
 const createInvoice = async (body, callback) => {
     try {
@@ -32,7 +31,7 @@ const createInvoice = async (body, callback) => {
                 name: item.name,
                 description: item.description || "APCS Registration",
                 quantity: 1,
-                price: parseInt(item.price),
+                price: process.env.PAPER_ENV === "development" ? 10000 : parseInt(item.price),
                 discount: 0,
                 tax_id: ""
             })),
@@ -77,9 +76,7 @@ const createInvoice = async (body, callback) => {
         try {
             const invoiceId = invoiceData.id;
 
-            // console.log("invoiceData", invoiceData)
-            // console.log("url", `${PAPER_BASE_URL}/sale-invoices/send-all/${invoiceId}`)
-            // console.log("user.email", user.email)
+            console.log("user.email", user.email)
             await axios.post(
                 `${PAPER_BASE_URL}/sales-invoices/send-all/${invoiceId}/`,
                 {
