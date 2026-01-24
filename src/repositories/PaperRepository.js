@@ -76,7 +76,6 @@ const createInvoice = async (body, callback) => {
         try {
             const invoiceId = invoiceData.id;
 
-            console.log("user.email", user.email)
             await axios.post(
                 `${PAPER_BASE_URL}/sales-invoices/send-all/${invoiceId}/`,
                 {
@@ -96,7 +95,7 @@ const createInvoice = async (body, callback) => {
                 }
             );
 
-            logger.info(`Email sent successfully for Invoice ID: ${invoiceId}`);
+            logger.info(`Email sent successfully for Invoice ID: ${invoiceId},to :${user.email}`);
 
         } catch (emailError) {
             console.error("Failed to send Paper.id email:", emailError?.response?.data || emailError.message);
