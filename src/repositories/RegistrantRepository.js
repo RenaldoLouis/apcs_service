@@ -28,6 +28,9 @@ const getGdriveFileId = (url) => {
     return id;
 };
 
+const BUCKET_NAME = 'registrants2025';
+const URL_EXPIRATION = 300; // 5 minutes
+
 
 const postRegistrant = async (body, callback) => {
     try {
@@ -65,7 +68,7 @@ const postRegistrant = async (body, callback) => {
 const getUploadUrl = async (params, callback) => {
     const { directoryname, fileName, fileType } = params;
     const s3Param = {
-        Bucket: 'registrants2025',
+        Bucket: BUCKET_NAME,
         Key: `${directoryname}/${fileName}`, // Use a unique key
         ContentType: fileType || 'application/octet-stream',
     };
@@ -112,7 +115,7 @@ const downloadFilesAws = async (filesToDownload, res) => {
                 // --- HANDLE S3 LINKS ---
                 try {
                     const command = new GetObjectCommand({
-                        Bucket: 'registrants2025',
+                        Bucket: BUCKET_NAME,
                         Key: stripS3Prefix(link),
                     });
                     const { Body } = await s3Admin.send(command);
@@ -163,11 +166,11 @@ const getPublicVideoLinkAws = async (body, callback) => {
 
     // 1. Extract the Key from the s3:// link
     // e.g., s3://bucket/folder/vid.mp4 -> folder/vid.mp4
-    const key = s3Link?.replace('s3://registrants2025/', '');
+    const key = s3Link?.replace(`s3://${BUCKET_NAME}/`, '');
 
     // 2. Use GetObjectCommand (For Viewing/Downloading)
     const command = new GetObjectCommand({
-        Bucket: 'registrants2025',
+        Bucket: BUCKET_NAME,
         Key: key,
     });
 
@@ -217,7 +220,7 @@ const downloadAllFiles = async (filesToDownload, res) => {
             filesToDownload.map(async (file) => {
                 if (file.s3Key) {
                     const command = new GetObjectCommand({
-                        Bucket: 'registrants2025',
+                        Bucket: BUCKET_NAME,
                         Key: file.s3Key,
                     });
 
@@ -250,9 +253,6 @@ const downloadAllFiles = async (filesToDownload, res) => {
         }
     }
 };
-
-const BUCKET_NAME = 'registrants2025';
-const URL_EXPIRATION = 300; // 5 minutes
 
 /**
  * Initiate a multipart upload
