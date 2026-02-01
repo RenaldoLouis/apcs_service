@@ -14,7 +14,7 @@ const createInvoice = async (body, callback) => {
 
         // 1. Format Dates to DD-MM-YYYY (Required by Paper.id)
         const invoiceDate = dayjs().format('DD-MM-YYYY');
-        const dueDate = dayjs().add(3, 'day').format('DD-MM-YYYY'); // 3 Days expiry
+        const dueDate = dayjs().add(1, 'day').format('DD-MM-YYYY'); // 1 Days expiry
 
         // 2. Construct Payload matching Paper.id Open API
         const payload = {
