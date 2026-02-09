@@ -11,33 +11,7 @@ async function createJury(req, res, next) {
         next(err);
     }
 }
-async function checkPaymentStatus(req, res, next) {
-    try {
-        const { id } = req.params;
-
-        if (!id) return res.status(400).json({ message: "ID required" });
-
-        const docRef = db.collection('Registrants2025').doc(id);
-        const docSnap = await docRef.get();
-
-        if (!docSnap.exists) {
-            return res.status(404).json({ message: "Not found" });
-        }
-
-        const data = docSnap.data();
-
-        // ONLY return the status. Do not return PII (Name, Email, etc).
-        return res.status(200).json({
-            paymentStatus: data.paymentStatus
-        });
-
-    } catch (error) {
-        console.error("Check Status Error:", error);
-        return res.status(500).json({ error: "Server Error" });
-    }
-};
 
 module.exports = {
-    createJury,
-    checkPaymentStatus
+    createJury
 };

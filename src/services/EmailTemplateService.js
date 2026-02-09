@@ -1,3 +1,49 @@
+const juryCss = `
+    ${commonCss}
+    .credential-box { 
+        background-color: #f8f9fa; 
+        border-left: 4px solid #EBBC64; /* Gold border */
+        padding: 20px; 
+        margin: 25px 0; 
+        border-radius: 4px; 
+    }
+    .credential-row {
+        margin-bottom: 10px;
+        font-size: 16px;
+    }
+    .credential-label {
+        font-weight: bold;
+        color: #333;
+        display: inline-block;
+        width: 100px;
+    }
+    .credential-value {
+        color: #555;
+        font-family: monospace;
+        font-size: 16px;
+    }
+    .warning-text {
+        color: #e74c3c;
+        font-size: 13px;
+        font-style: italic;
+        margin-top: 10px;
+    }
+    .action-button {
+        display: inline-block;
+        background-color: #EBBC64; /* Gold */
+        color: #000000;
+        padding: 14px 30px;
+        text-decoration: none;
+        border-radius: 5px;
+        font-weight: bold;
+        margin-top: 25px;
+        text-align: center;
+    }
+    .action-button:hover {
+        background-color: #d4a753;
+    }
+`;
+
 const generateCommonHeader = () => `
     <div class="header">
         <div style="width: 100%; background: black;">
@@ -240,7 +286,71 @@ const templates = {
                 </div>
             </body>
             </html>`
-    })
+    }),
+    JURY_ACCOUNT_CREATION: (data) => ({
+        subject: `Welcome to APCS 2025 - Jury Access Credentials`,
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>${juryCss}</style>
+            </head>
+            <body>
+                <div class="email-wrapper">
+                    <div class="email-container">
+                        ${generateCommonHeader()}
+                        <div class="content">
+                            <p>Dear <strong>${data.name}</strong>,</p>
+                            
+                            <p>
+                                We are honored to welcome you as a Jury member for the <strong>${data.competitionCategory}</strong> category at APCS The Sound of Asia 2025.
+                            </p>
+                            
+                            <p>
+                                An account has been created for you to access the Jury Scoring Dashboard. Please find your login credentials below:
+                            </p>
+
+                            <div class="credential-box">
+                                <div class="credential-row">
+                                    <span class="credential-label">Email:</span>
+                                    <span class="credential-value">${data.email}</span>
+                                </div>
+                                <div class="credential-row">
+                                    <span class="credential-label">Password:</span>
+                                    <span class="credential-value">${data.password}</span>
+                                </div>
+                                <p class="warning-text">
+                                    *Please keep these credentials confidential and do not share them with anyone.
+                                </p>
+                            </div>
+
+                            <p>
+                                You can log in to view contestants and submit your scores using the link below:
+                            </p>
+
+                            <div style="text-align: center;">
+                                <a href="https://www.apcsmusic.com/login" target="_blank" class="action-button">
+                                    Access Jury Dashboard
+                                </a>
+                            </div>
+
+                            <p style="margin-top: 30px;">
+                                If you have any trouble logging in, please contact the committee immediately.
+                            </p>
+
+                            <p style="margin-top: 20px;">
+                                Best regards,<br>
+                                <strong>The APCS Team</strong>
+                            </p>
+                        </div>
+                        ${generateCommonFooter()}
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    }),
 };
 
 const getTemplate = (type, data) => {

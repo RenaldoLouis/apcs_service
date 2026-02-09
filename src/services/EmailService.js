@@ -1675,6 +1675,37 @@ const sendEmailNotifyApcs = async (data) => {
     }
 };
 
+const sendEmailJuryAccountCreationFunc = async (data) => {
+    logger.info(`Sending Jury Account Creation email to: ${data.email}`);
+
+    try {
+        // 1. Get HTML Template
+        const { subject, html } = getTemplate('JURY_ACCOUNT_CREATION', {
+            name: data.name,
+            email: data.email,
+            password: data.password,
+            competitionCategory: data.competitionCategory
+        });
+
+        // 2. Construct Email
+        const mailOptions = {
+            from: '"APCS Music" <hello@apcsmusic.com>',
+            to: data.email,
+            subject: subject,
+            html: html
+        };
+
+        // 3. Send
+        const result = await transporter.sendMail(mailOptions);
+        logger.info(`✅ Jury account email sent successfully to ${data.email}`);
+        return result;
+
+    } catch (error) {
+        logger.error(`❌ Failed to send jury email to ${data.email}: ${error.message}`);
+        throw error;
+    }
+};
+
 const sendEmailNotifyBulkUpdateRegistrant = async (data) => {
     // --- NEW LOGIC TO HANDLE SINGLE OR MULTIPLE NAMES ---
     let greetingName = 'Participant';
@@ -2265,6 +2296,17 @@ async function sendEmailNotifyBulkUpdateRegistrantFunc(req) {
     }
 }
 
+async function sendEmailJuryAccountCreation(req) {
+    try {
+        const data = req.body;
+        sendEmailJuryAccountCreationFunc(data);
+        return { message: "Emails have been enqueued successfully" };
+    } catch (error) {
+        logger.error(`Failed to enqueue email jobs: ${error.message}`);
+        throw error;
+    }
+}
+
 module.exports = {
     sendEmail,
     sendEmailFunc,
@@ -2280,5 +2322,6 @@ module.exports = {
     sendEmailNotifyApcsFunc,
     sendEmailNotifyBulkUpdateRegistrantFunc,
     sendEmailETicketFunc,
-    sendEmailFail
+    sendEmailFail,
+    sendEmailJuryAccountCreation
 };

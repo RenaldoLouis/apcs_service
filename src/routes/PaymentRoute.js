@@ -24,6 +24,7 @@ router.post('/sendSponsorEntryPassEmail', EmailController.sendSponsorEntryPassEm
 router.post('/sendEmailNotifyApcs', EmailController.sendEmailNotifyApcs)
 router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNotifyBulkUpdateRegistrant)
 
+
 router.get('/getGaleries', FirebaseController.getGaleries)
 router.get('/getVideos', FirebaseController.getVideos)
 router.get('/getSponsors', FirebaseController.getSponsors)
@@ -38,6 +39,7 @@ router.post('/download-all-files-aws', RegisterController.downloadAllFiles)
 router.post('/getPublicVideoLinkAws', RegisterController.getPublicVideoLinkAws)
 
 router.post('/createJury', JuryController.createJury)
+router.post('/sendEmailJuryAccountCreation', EmailController.sendEmailJuryAccountCreation)
 
 router.get('/verifyTicker', TicketController.verifyTicket)
 router.post('/saveSeatBookProfileInfo', TicketController.saveSeatBookProfileInfo)

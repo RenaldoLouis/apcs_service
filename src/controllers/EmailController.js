@@ -99,6 +99,16 @@ async function sendEmailNotifyBulkUpdateRegistrant(req, res, next) {
         next(err);
     }
 }
+
+async function sendEmailJuryAccountCreation(req, res, next) {
+    try {
+        const data = await email.sendEmailJuryAccountCreation(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     sendEmail,
     sendEmailAnnouncement,
@@ -110,5 +120,6 @@ module.exports = {
     sendSponsorEntryPassEmail,
     sendEmailNotifyApcs,
     sendEmailNotifyBulkUpdateRegistrant,
-    sendEmailFail
+    sendEmailFail,
+    sendEmailJuryAccountCreation
 };
