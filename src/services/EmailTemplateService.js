@@ -1,3 +1,15 @@
+const commonCss = `
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; color:#333; }
+    .email-wrapper { width: 100%; background-color: #f4f4f4; padding: 20px 0; }
+    .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+    .header { line-height: 0; }
+    .content { padding: 30px; line-height: 1.6; }
+    .content p { margin: 0 0 16px 0; }
+    .content strong { color: #333333; }
+    .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+    .content, .content p, .content strong { color: #333 !important; }
+`;
+
 const juryCss = `
     ${commonCss}
     .credential-box { 
