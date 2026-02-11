@@ -35,10 +35,10 @@ const createInvoice = async (body, callback) => {
                 discount: 0,
                 tax_id: ""
             })),
-            signature_text_header: invoiceDate,
-            signature_text_footer: "APCS Committee",
-            terms_condition: "Please complete payment within 3 days.",
-            notes: "Thank you for registering with APCS.",
+            // signature_text_header: invoiceDate,
+            // signature_text_footer: "APCS Committee",
+            // terms_condition: "Please complete payment within 3 days.",
+            // notes: "Thank you for registering with APCS.",
             // send: {
             //     email: true,
             //     whatsapp: true,
