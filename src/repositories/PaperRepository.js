@@ -20,7 +20,7 @@ const createInvoice = async (body, callback) => {
         const payload = {
             invoice_date: invoiceDate,
             due_date: dueDate,
-            number: `INV-${externalId}`, // Unique Invoice Number based on Firebase ID
+            number: `${externalId}`, // Unique Invoice Number based on Firebase ID
             customer: {
                 id: externalId, // Use Firebase ID as customer ID to prevent duplicates
                 name: user.name,
@@ -39,11 +39,11 @@ const createInvoice = async (body, callback) => {
             // signature_text_footer: "APCS Committee",
             // terms_condition: "Please complete payment within 3 days.",
             // notes: "Thank you for registering with APCS.",
-            // send: {
-            //     email: true,
-            //     whatsapp: true,
-            //     sms: false
-            // }
+            send: {
+                email: true,
+                whatsapp: true,
+                sms: false
+            }
         };
 
         logger.info(`Successfully create payment for ${user.name} with id ${externalId}`);
@@ -76,24 +76,24 @@ const createInvoice = async (body, callback) => {
         try {
             const invoiceId = invoiceData.id;
 
-            await axios.post(
-                `${PAPER_BASE_URL}/sales-invoices/send-all/${invoiceId}/`,
-                {
-                    email: {
-                        to: [user.email],
-                        cc: ['hello@apcsmusic.com']
-                    },
-                    whatsapp: { number: [String(user.phone)] },
-                    // sms: { number: [String(user.phone)] }
-                },
-                {
-                    headers: {
-                        'client_id': process.env.PAPER_CLIENT_ID,
-                        'client_secret': process.env.PAPER_CLIENT_SECRET,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
+            // await axios.post(
+            //     `${PAPER_BASE_URL}/sales-invoices/send-all/${invoiceId}/`,
+            //     {
+            //         email: {
+            //             to: [user.email],
+            //             cc: ['hello@apcsmusic.com']
+            //         },
+            //         whatsapp: { number: [String(user.phone)] },
+            //         // sms: { number: [String(user.phone)] }
+            //     },
+            //     {
+            //         headers: {
+            //             'client_id': process.env.PAPER_CLIENT_ID,
+            //             'client_secret': process.env.PAPER_CLIENT_SECRET,
+            //             'Content-Type': 'application/json'
+            //         }
+            //     }
+            // );
 
             logger.info(`Email sent successfully for Invoice ID: ${invoiceId},to :${user.email}`);
 

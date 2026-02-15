@@ -27,12 +27,13 @@ async function handlePaperWebhook(req, res, next) {
 
         if (isPaid) {
             // 2. Extract Firebase ID
-            // In your createInvoice function, you set the number as: `INV-${externalId}`
-            // Example payload.invoice.number: "INV-7d9f8g7df8g7"
+            // In your createInvoice function, you set the number as: `${externalId}`
+            // Example payload.invoice.number: "7d9f8g7df8g7"
             const invoiceNumber = payloadData.invoice.number;
             console.log("invoiceNumber", invoiceNumber)
             // Remove the prefix to get the raw Firebase ID
-            const firebaseId = invoiceNumber.replace('INV-', '');
+            // const firebaseId = invoiceNumber.replace('INV-', '');
+            const firebaseId = invoiceNumber;
 
             if (firebaseId) {
                 console.log(`Processing successful payment for Registrant ID: ${firebaseId}`);
