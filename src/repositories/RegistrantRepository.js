@@ -7,6 +7,9 @@ const { AppendFilesToZip } = require('../utils/awsDownload');
 const axios = require('axios');
 const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
 const { db, admin } = require('../configs/firebase-init');
+const { customAlphabet } = require('nanoid');
+
+const nanoid = customAlphabet('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', 10);
 
 const s3Admin = new S3Client({
     region: process.env.AWS_REGION,
@@ -44,24 +47,51 @@ const postRegistrant = async (body, callback) => {
         if (!captchaResponse.data.success) {
             throw new AppError(
                 `Bot detected. Registration failed.`,
-                500
+                400 // Use 400 for bad request
             );
         }
 
-        const docRef = await db.collection("Registrants2025").add({
+        // 2. Generate Unique ID with Retry Logic
+        let customId;
+        let isUnique = false;
+        let attempts = 0;
+        const MAX_ATTEMPTS = 5; // Safety break
+
+        while (!isUnique && attempts < MAX_ATTEMPTS) {
+            customId = nanoid();
+
+            // Check if this ID already exists
+            const docRef = db.collection("Registrants2025").doc(customId);
+            const docSnap = await docRef.get();
+
+            if (!docSnap.exists) {
+                isUnique = true;
+            } else {
+                attempts++;
+                console.warn(`ID Collision detected: ${customId}. Retrying... (${attempts}/${MAX_ATTEMPTS})`);
+            }
+        }
+
+        if (!isUnique) {
+            throw new AppError("Server busy: Unable to generate registration ID. Please try again.", 500);
+        }
+
+        // 3. Save Data using the verified unique ID
+        await db.collection("Registrants2025").doc(customId).set({
             ...dataToSave,
-            createdAt: new Date(),
-            // Remove recaptchaToken before saving
+            createdAt: new Date(), // Ensure server timestamp consistency
         });
 
         const returnedObject = {
-            id: docRef.id
+            id: customId
         };
 
         return callback(null, returnedObject);
+
     } catch (error) {
-        console.error(error);
-        return callback(null, error);
+        console.error("postRegistrant Error:", error);
+        // Ensure you return the error correctly based on your callback signature
+        return callback(error);
     }
 }
 

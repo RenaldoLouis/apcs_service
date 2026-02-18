@@ -38,7 +38,7 @@ const createInvoice = async (body, callback) => {
             // signature_text_header: invoiceDate,
             // signature_text_footer: "APCS Committee",
             // terms_condition: "Please complete payment within 3 days.",
-            // notes: "Thank you for registering with APCS.",
+            notes: `Please complete payment before ${dueDate}.`,
             send: {
                 email: true,
                 whatsapp: true,
