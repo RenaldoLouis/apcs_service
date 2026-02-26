@@ -215,6 +215,68 @@ async function sendEmailAnnouncement(req) {
     }
 }
 
+async function sendEmailAnnouncementJson(registrants) {
+    logger.info("sending email Announcement Winner/Fail from JSON...");
+
+    try {
+        if (!registrants || registrants.length === 0) {
+            logger.info("No winners provided in payload. Exiting.");
+            return;
+        }
+
+        logger.info(`Found ${registrants.length} winners to email.`);
+
+        // Loop through each winner and send an email
+        for (const data of registrants) {
+            if (data && data.name && data.email && data.award) {
+                const winnerName = data.name;
+                const to = data.email;
+                const award = data.award;
+                const isFail = award === "FAIL"
+
+                let templateType;
+                let templateData = { winner: winnerName, award };
+                let attachments = [];
+
+                if (isFail) {
+                    templateType = 'FAIL_ANNOUNCEMENT';
+                } else {
+                    templateType = 'WINNER_ANNOUNCEMENT_WITHOUT_VENUE';
+                    // Only add attachment for winners
+                    attachments.push({
+                        filename: ATTACHMENT_FILENAME,
+                        path: ATTACHMENT_FILE_PATH
+                    });
+                }
+
+                // 1. Get HTML Content
+                const { subject, html } = getTemplate(templateType, templateData);
+
+                // 2. Construct Email
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: to,
+                    subject: subject,
+                    html: html,
+                    attachments: attachments
+                };
+
+                await transporter.sendMail(mailOptions);
+                logger.info(`Successfully sent email to ${to}`);
+                // Add a short delay between emails to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 550)); // 1-second delay
+            } else {
+                logger.warn(`Skipping invalid registrant data: ${JSON.stringify(data)}`);
+            }
+        }
+        console.log("Email announcement finished!");
+        logger.info("Email announcement finished!");
+
+    } catch (error) {
+        logger.error(`Failed to send email to: ${error.message}`);
+    }
+}
+
 const sendEmailFunc = async (data) => {
     logger.info(`Processing email: ${data.email}`);
     const participant = data.name
@@ -2311,6 +2373,7 @@ module.exports = {
     sendEmail,
     sendEmailFunc,
     sendEmailAnnouncement,
+    sendEmailAnnouncementJson,
     sendEmailSessionWinner,
     sendTeamEntryPassEmail,
     sendSponsorEntryPassEmail,

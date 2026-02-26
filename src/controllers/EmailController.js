@@ -19,6 +19,15 @@ async function sendEmailAnnouncement(req, res, next) {
     }
 }
 
+async function sendEmailAnnouncementJson(req, res, next) {
+    try {
+        const data = await email.sendEmailAnnouncementJson(req.body.registrants)
+        res.status(200).send({ message: "Emails have been enqueued successfully", data })
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function sendEmailFail(req, res, next) {
     try {
         const data = await email.sendEmailFail(req, next)
@@ -112,6 +121,7 @@ async function sendEmailJuryAccountCreation(req, res, next) {
 module.exports = {
     sendEmail,
     sendEmailAnnouncement,
+    sendEmailAnnouncementJson,
     sendEmailSessionWinner,
     sendEmailPaymentRequest,
     sendSeatBookingEmail,

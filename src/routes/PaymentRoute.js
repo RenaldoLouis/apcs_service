@@ -15,6 +15,7 @@ router.post('/createPayment', paymentValidation, paymentController.createPayment
 router.post('/sendEmail', EmailController.sendEmail)
 router.post('/sendEmailFail', EmailController.sendEmailFail)
 router.post('/sendEmailAnnouncement', EmailController.sendEmailAnnouncement)
+router.post('/sendEmailAnnouncementJson', EmailController.sendEmailAnnouncementJson)
 router.post('/sendEmailSessionWinner', EmailController.sendEmailSessionWinner)
 router.post('/sendEmailPaymentRequest', EmailController.sendEmailPaymentRequest)
 router.post('/sendSeatBookingEmail', EmailController.sendSeatBookingEmail)
