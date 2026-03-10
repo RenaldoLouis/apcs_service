@@ -29,6 +29,7 @@ router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNot
 router.get('/getGaleries', FirebaseController.getGaleries)
 router.get('/getVideos', FirebaseController.getVideos)
 router.get('/getSponsors', FirebaseController.getSponsors)
+router.post('/updatePrices', FirebaseController.updatePrices)
 
 router.post('/register', RegisterController.postRegistrant)
 router.post('/signed-url-images', RegisterController.getUploadUrl)
