@@ -20,21 +20,31 @@ const createInvoice = async (body, callback) => {
         const payload = {
             invoice_date: invoiceDate,
             due_date: dueDate,
-            number: `${externalId}`, // Unique Invoice Number based on Firebase ID
+            number: `${externalId}`,
             customer: {
-                id: externalId, // Use Firebase ID as customer ID to prevent duplicates
+                id: externalId,
                 name: user.name,
                 email: user.email,
                 phone: user.phone
             },
-            items: items.map(item => ({
-                name: item.name,
-                description: item.description || "APCS Registration",
-                quantity: 1,
-                price: process.env.PAPER_ENV === "development" ? 10000 : parseInt(item.price),
-                discount: 0,
-                tax_id: ""
-            })),
+            items: items.map(item => {
+                let finalPrice = parseInt(item.price);
+                let finalDescription = item.description || "APCS Registration";
+
+                if (item.currency === 'USD') {
+                    finalPrice = finalPrice * 16900;
+                    finalDescription = `${finalDescription} (Original: $${item.price} USD)`;
+                }
+
+                return {
+                    name: item.name,
+                    description: finalDescription,
+                    quantity: 1,
+                    price: process.env.PAPER_ENV === "development" ? 10000 : finalPrice,
+                    discount: 0,
+                    tax_id: ""
+                };
+            }),
             // signature_text_header: invoiceDate,
             // signature_text_footer: "APCS Committee",
             terms_condition: `
