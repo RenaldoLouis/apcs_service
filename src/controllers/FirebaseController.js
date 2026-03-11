@@ -23,7 +23,7 @@ async function updatePrices(req, res, next) {
 
             if (beforeData && beforeData.fees && afterData.fees) {
                 afterData.fees.forEach(afterFee => {
-                    const beforeFee = beforeData.fees.find(f => f.category === afterFee.category && f.age_group === afterFee.age_group);
+                    const beforeFee = beforeData.fees.find(f => f.category === afterFee.category && (f.age_group === afterFee.age_group || (!f.age_group && !afterFee.age_group)));
                     if (beforeFee) {
                         let priceChanges = [];
                         const keysToCompare = [
