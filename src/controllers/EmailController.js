@@ -118,6 +118,15 @@ async function sendEmailJuryAccountCreation(req, res, next) {
     }
 }
 
+async function sendEmailStageReschedule(req, res, next) {
+    try {
+        const data = await email.sendEmailStageRescheduleJson(req.body.registrants)
+        res.status(200).send({ message: "Reschedule emails sent successfully", data })
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     sendEmail,
     sendEmailAnnouncement,
@@ -131,5 +140,6 @@ module.exports = {
     sendEmailNotifyApcs,
     sendEmailNotifyBulkUpdateRegistrant,
     sendEmailFail,
-    sendEmailJuryAccountCreation
+    sendEmailJuryAccountCreation,
+    sendEmailStageReschedule
 };

@@ -2369,6 +2369,43 @@ async function sendEmailJuryAccountCreation(req) {
     }
 }
 
+async function sendEmailStageRescheduleJson(registrants) {
+    logger.info("sending Reschedule Stage Update emails from JSON...");
+
+    try {
+        if (!registrants || registrants.length === 0) {
+            logger.info("No registrants provided in payload. Exiting.");
+            return;
+        }
+
+        logger.info(`Found ${registrants.length} registrants to email.`);
+
+        for (const data of registrants) {
+            if (data && data.name && data.email) {
+                const { subject, html } = getTemplate('STAGE_RESCHEDULE_UPDATE', { winner: data.name });
+
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: data.email,
+                    subject: subject,
+                    html: html,
+                };
+
+                await transporter.sendMail(mailOptions);
+                logger.info(`Successfully sent reschedule email to ${data.email}`);
+                await new Promise(resolve => setTimeout(resolve, 550));
+            } else {
+                logger.warn(`Skipping invalid registrant data: ${JSON.stringify(data)}`);
+            }
+        }
+        logger.info("Reschedule email campaign finished!");
+
+    } catch (error) {
+        logger.error(`Failed to send reschedule email: ${error.message}`);
+        throw error;
+    }
+}
+
 module.exports = {
     sendEmail,
     sendEmailFunc,
@@ -2386,5 +2423,6 @@ module.exports = {
     sendEmailNotifyBulkUpdateRegistrantFunc,
     sendEmailETicketFunc,
     sendEmailFail,
-    sendEmailJuryAccountCreation
+    sendEmailJuryAccountCreation,
+    sendEmailStageRescheduleJson
 };

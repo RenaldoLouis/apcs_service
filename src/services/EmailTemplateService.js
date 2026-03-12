@@ -299,6 +299,61 @@ const templates = {
             </body>
             </html>`
     }),
+    STAGE_RESCHEDULE_UPDATE: (data) => ({
+        subject: `Update on Your APCS Official Performance Stage`,
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>${commonCss}
+                    .content { padding: 30px; line-height: 1.6; text-align: justify; }
+                    .footer-contact { background-color: #f9f9f9; border-top: 1px solid #eeeeee; padding: 20px 30px; font-size: 13px; color: #555; }
+                </style>
+            </head>
+            <body>
+                <div class="email-wrapper">
+                    <div class="email-container">
+                        ${generateCommonHeader()}
+                        <div class="content">
+                            <p>Dear <strong>${data.winner}</strong>,</p>
+                            <p>
+                                I hope this message finds you well.
+                            </p>
+                            <p>
+                                Once again, congratulations on being selected as the Winner of the Ensemble 2 Pianos category at APCS The Sound of Asia 2025 Preliminary. Your artistry and musical partnership truly made a lasting impression, and we remain very proud to celebrate your achievement.                            </p>
+                            <p>
+                                We would like to share an important update regarding your official performance stage.
+                            </p>
+                            <p>
+                                While we were initially planning for your performance journey to take place at 2026, due to stage technicality your official stage appearance will now be rescheduled to <strong>2027</strong>.
+                            </p>
+                            <p>
+                                We are fully committed to presenting your performance in a setting that reflects the significance of your accomplishment, and this adjustment allows us to prepare the most meaningful platform for you.
+                            </p>
+                            <p>
+                                We will share further details regarding the 2027 stage schedule in due time and will continue to keep you informed along the way.
+                            </p>
+                            <p>
+                                Thank you for your understanding and continued support. We truly look forward to welcoming you on stage in 2027 and celebrating this special musical milestone together.
+                            </p>
+                            <p style="margin-top: 24px;">
+                                Warm regards,<br>
+                                <strong>APCS Team</strong>
+                            </p>
+                        </div>
+                        <div class="footer-contact">
+                            <p style="margin: 0;">Tel +62 8221 3002 686</p>
+                            <p style="margin: 4px 0 0 0;">Jakarta, Indonesia</p>
+                            <p style="margin: 4px 0 0 0;"><a href="https://www.apcsmusic.com" style="color: #333; text-decoration: none;">www.apcsmusic.com</a></p>
+                        </div>
+                        ${generateCommonFooter()}
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    }),
     JURY_ACCOUNT_CREATION: (data) => ({
         subject: `Welcome to APCS 2025 - Jury Access Credentials`,
         html: `
