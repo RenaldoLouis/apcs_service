@@ -101,9 +101,55 @@ async function getSponsors(req, res, next) {
     }
 }
 
+async function migrateEventId(req, res, next) {
+    try {
+        const { eventId, collectionName } = req.body;
+
+        if (!eventId || !collectionName) {
+            return res.status(400).json({ error: "Both 'eventId' and 'collectionName' are required." });
+        }
+
+        console.log(`[FirebaseController] Starting eventId migration: collection=${collectionName}, eventId=${eventId}`);
+
+        const collectionRef = db.collection(collectionName);
+        const snapshot = await collectionRef.get();
+
+        if (snapshot.empty) {
+            return res.status(200).json({ message: "No documents found in the collection.", updatedCount: 0 });
+        }
+
+        const batchSize = 499;
+        let updatedCount = 0;
+        const docs = snapshot.docs;
+
+        for (let i = 0; i < docs.length; i += batchSize) {
+            const batch = db.batch();
+            const chunk = docs.slice(i, i + batchSize);
+
+            chunk.forEach((docSnap) => {
+                batch.update(docSnap.ref, { eventId: eventId });
+            });
+
+            await batch.commit();
+            updatedCount += chunk.length;
+            console.log(`[FirebaseController] Migrated batch: ${updatedCount}/${docs.length}`);
+        }
+
+        console.log(`[FirebaseController] Migration complete. Updated ${updatedCount} documents.`);
+        res.status(200).json({
+            message: `Successfully migrated ${updatedCount} documents with eventId="${eventId}".`,
+            updatedCount,
+        });
+    } catch (err) {
+        console.error("[FirebaseController] Migration failed:", err);
+        next(err);
+    }
+}
+
 module.exports = {
     getGaleries,
     getVideos,
     getSponsors,
     updatePrices,
+    migrateEventId,
 };
