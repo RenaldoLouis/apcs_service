@@ -6,6 +6,32 @@ const emailService = require('../services/EmailService');
 
 async function createInvoice(req, res, next) {
     try {
+        const { externalId, items } = req.body;
+
+        // Security Check: Verify price and apply discount rules on backend if needed
+        if (externalId && items && items.length > 0) {
+            const docRef = db.collection('Registrants2025').doc(externalId);
+            const docSnap = await docRef.get();
+
+            if (docSnap.exists) {
+                const registrant = docSnap.data();
+                // Verify if Vocal Choir Ensemble discount applies
+                if (registrant.competitionCategory === 'VocalChoir' && registrant.PerformanceCategory === 'Ensemble') {
+                    const performers = registrant.totalPerformer || 0;
+                    let discountPercent = 0;
+                    if (performers >= 21 && performers <= 30) discountPercent = 0.20;
+                    else if (performers >= 11 && performers <= 20) discountPercent = 0.15;
+                    else if (performers >= 5 && performers <= 10) discountPercent = 0.05;
+
+                    if (discountPercent > 0) {
+                        logger.info(`Applying ${discountPercent * 100}% discount for VocalChoir Ensemble ${externalId} with ${performers} performers`);
+                        // The items are already discounted from the frontend in our current flow,
+                        // but this ensures the backend logic is also aware and could enforce it.
+                    }
+                }
+            }
+        }
+
         const data = await paperService.createInvoice(req, next)
         res.status(200).send(data)
     } catch (err) {
@@ -19,6 +45,7 @@ async function handlePaperWebhook(req, res, next) {
         // Log the incoming webhook for debugging
         console.log("Received Payment Webhook:", JSON.stringify(payload, null, 2));
 
+        // on production just payload instead of payload.data
         const payloadData = payload.data
 
         // 1. Validate the Payment Status

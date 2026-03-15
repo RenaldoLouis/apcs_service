@@ -36,12 +36,18 @@ const createInvoice = async (body, callback) => {
                     finalDescription = `${finalDescription} (Original: $${item.price} USD)`;
                 }
 
+                let finalDiscount = parseInt(item.discount || 0);
+                if (item.currency === 'USD' && finalDiscount > 0) {
+                    finalDiscount = finalDiscount * 16900;
+                }
+
                 return {
                     name: item.name,
                     description: finalDescription,
                     quantity: 1,
                     price: process.env.PAPER_ENV === "development" ? 10000 : finalPrice,
-                    discount: 0,
+                    discount: process.env.PAPER_ENV === "development" ? 10000 : finalDiscount,
+                    discount_typeL: "amount",
                     tax_id: ""
                 };
             }),
