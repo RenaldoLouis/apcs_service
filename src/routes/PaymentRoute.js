@@ -25,6 +25,7 @@ router.post('/sendSponsorEntryPassEmail', EmailController.sendSponsorEntryPassEm
 router.post('/sendEmailNotifyApcs', EmailController.sendEmailNotifyApcs)
 router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNotifyBulkUpdateRegistrant)
 router.post('/sendEmailStageReschedule', EmailController.sendEmailStageReschedule)
+router.post('/sendEmailGalaConcertUpdate', EmailController.sendEmailGalaConcertUpdate)
 
 
 router.get('/getGaleries', FirebaseController.getGaleries)

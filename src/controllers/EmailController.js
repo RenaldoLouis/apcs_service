@@ -127,6 +127,15 @@ async function sendEmailStageReschedule(req, res, next) {
     }
 }
 
+async function sendEmailGalaConcertUpdate(req, res, next) {
+    try {
+        const data = await email.sendEmailGalaConcertUpdateJson(req.body.registrants)
+        res.status(200).send({ message: "Gala Concert update emails sent successfully", data })
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     sendEmail,
     sendEmailAnnouncement,
@@ -141,5 +150,6 @@ module.exports = {
     sendEmailNotifyBulkUpdateRegistrant,
     sendEmailFail,
     sendEmailJuryAccountCreation,
-    sendEmailStageReschedule
+    sendEmailStageReschedule,
+    sendEmailGalaConcertUpdate
 };

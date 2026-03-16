@@ -277,6 +277,47 @@ async function sendEmailAnnouncementJson(registrants) {
     }
 }
 
+const sendEmailGalaConcertUpdateJson = async (registrants) => {
+    logger.info("sending email Gala Concert Update 2026 from JSON...");
+
+    try {
+        if (!registrants || registrants.length === 0) {
+            logger.info("No registrants provided in payload. Exiting.");
+            return;
+        }
+
+        logger.info(`Found ${registrants.length} registrants to email.`);
+
+        for (const data of registrants) {
+            if (data && data.name && data.email) {
+                const recipientName = data.name;
+                const to = data.email;
+
+                // 1. Get HTML Content
+                const { subject, html } = getTemplate('GALA_CONCERT_UPDATE_2026', { name: recipientName });
+
+                // 2. Construct Email
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: to,
+                    subject: subject,
+                    html: html
+                };
+
+                await transporter.sendMail(mailOptions);
+                logger.info(`Successfully sent Gala Update email to ${to}`);
+                // Add a short delay between emails to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 550));
+            } else {
+                logger.warn(`Skipping invalid registrant data: ${JSON.stringify(data)}`);
+            }
+        }
+        logger.info("Gala Concert Update email campaign finished!");
+    } catch (error) {
+        logger.error(`Failed to send Gala Update email: ${error.message}`);
+    }
+}
+
 const sendEmailFunc = async (data) => {
     logger.info(`Processing email: ${data.email}`);
     const participant = data.name
@@ -2424,5 +2465,6 @@ module.exports = {
     sendEmailETicketFunc,
     sendEmailFail,
     sendEmailJuryAccountCreation,
+    sendEmailGalaConcertUpdateJson,
     sendEmailStageRescheduleJson
 };
