@@ -435,7 +435,7 @@ const templates = {
                             <p>Dear <strong>${data.name}</strong>,</p>
                             <p>Warm greetings from APCS.</p>
                             <p>Once again, congratulations on being awarded as a <strong>Winner of APCS The Sound of Asia 2026</strong>. We are truly honored to have you as part of the APCS Gala Concert 2026 in Jakarta.</p>
-                            <p>We would like to share an important update regarding the Gala Concert. Your performance will take place on <strong>14–15 November 2026</strong> in Jakarta, Indonesia. The detailed rundown and exact venue location will be shared <strong> no later than two weeks before the event</strong>.</p>
+                            <p>We would like to share an important update regarding the Gala Concert. Due to a technical issue, your performance, which was <strong>previously scheduled for August</strong>, will now take place on <strong>14–15 November 2026 </strong>in Jakarta, Indonesia. The detailed rundown and exact venue location will be shared <strong> no later than two weeks before the event</strong>.</p>
                             <p>To help us arrange the performance schedule, <strong>please kindly contact our admin</strong> via WhatsApp at <a href="https://wa.me/6282213002686" style="color: #1a73e8; text-decoration: none;">+62 822-1300-2686</a> and let us know which date you would prefer to perform: <strong>14 November</strong> or <strong>15 November</strong>.</p>
                             <p>We are very much looking forward to welcoming you to Jakarta and celebrating this special musical moment together.</p>
                             <p>Thank you for being part of the APCS musical journey.</p>
