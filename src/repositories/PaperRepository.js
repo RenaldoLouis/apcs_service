@@ -47,7 +47,7 @@ const createInvoice = async (body, callback) => {
                     quantity: 1,
                     price: process.env.PAPER_ENV === "development" ? 10000 : finalPrice,
                     discount: process.env.PAPER_ENV === "development" ? 10000 : finalDiscount,
-                    discount_typeL: "amount",
+                    discount_type: "amount",
                     tax_id: ""
                 };
             }),
