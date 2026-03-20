@@ -16,6 +16,8 @@ const createInvoice = async (body, callback) => {
         const invoiceDate = dayjs().format('DD-MM-YYYY');
         const dueDate = dayjs().add(1, 'day').format('DD-MM-YYYY'); // 1 Days expiry
 
+        const isInternational = items.some(item => item.currency === 'USD');
+
         // 2. Construct Payload matching Paper.id Open API
         const payload = {
             invoice_date: invoiceDate,
@@ -28,17 +30,17 @@ const createInvoice = async (body, callback) => {
                 phone: user.phone
             },
             items: items.map(item => {
-                let finalPrice = parseInt(item.price);
+                let finalPrice = parseFloat(item.price);
                 let finalDescription = item.description || "APCS Registration";
 
                 if (item.currency === 'USD') {
-                    finalPrice = finalPrice * 16900;
+                    finalPrice = Math.round(finalPrice * 16900);
                     finalDescription = `${finalDescription} (Original: $${item.price} USD)`;
                 }
 
-                let finalDiscount = parseInt(item.discount || 0);
+                let finalDiscount = parseFloat(item.discount || 0);
                 if (item.currency === 'USD' && finalDiscount > 0) {
-                    finalDiscount = finalDiscount * 16900;
+                    finalDiscount = Math.round(finalDiscount * 16900);
                 }
 
                 return {
@@ -63,7 +65,7 @@ const createInvoice = async (body, callback) => {
             Compliance with Competition Rules
             Participants must comply with all competition regulations.Any violation may result in disqualification without refund.
 `,
-            notes: `Please complete payment before ${dueDate}.`,
+            notes: `Please complete payment before ${dueDate}.${isInternational ? '\nNote: International payment uses a fixed rate of Rp 16.900 per USD.' : ''}`,
             send: {
                 email: true,
                 whatsapp: true,
