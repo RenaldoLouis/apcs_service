@@ -174,14 +174,14 @@ const templates = {
                     <div class="email-container">
                         ${generateCommonHeader()}
                         <div class="content">
-                            <p style="font-size: 16px;"><strong>APCS Gala Concert 2024 – Winner Announcement</strong></p>
+                            <p style="font-size: 16px;"><strong>APCS Gala Concert 2025 – Winner Announcement</strong></p>
                             <p>Dear <strong>${data.winner}</strong>,</p>
                             <p>Congratulations!</p>
                             <p>
                                 You have been awarded as a <strong>${data.award}</strong> Winner and are invited to perform at the<strong> Gala Concert APCS The Sound of Asia 2025</strong> , which will be held on:
                             </p>
                             <div class="info-box">
-                                <p style="margin: 0;"><strong>Date:</strong> Sunday, 2 November 2025</p>
+                                <p style="margin: 0;"><strong>Date:</strong> Sunday, 1 November 2025</p>
                                 <p style="margin: 5px 0 0 0;"><strong>Venue:</strong> Jakarta Intercultural School</p>
                                 <p style="margin: 5px 0 0 0;"><strong>Address:</strong> Jl. Terogong Raya No. 33, Cilandak Barat, Kec. Cilandak, Kota Jakarta Selatan, DKI Jakarta 12430 </p>
                             </div>

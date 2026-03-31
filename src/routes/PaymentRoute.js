@@ -26,6 +26,7 @@ router.post('/sendEmailNotifyApcs', EmailController.sendEmailNotifyApcs)
 router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNotifyBulkUpdateRegistrant)
 router.post('/sendEmailStageReschedule', EmailController.sendEmailStageReschedule)
 router.post('/sendEmailGalaConcertUpdate', EmailController.sendEmailGalaConcertUpdate)
+router.post('/sendEmailGalaWinnerAnnouncement', EmailController.sendEmailGalaWinnerAnnouncement)
 
 
 router.get('/getGaleries', FirebaseController.getGaleries)
