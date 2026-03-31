@@ -63,7 +63,7 @@ const createInvoice = async (body, callback) => {
             The registration fee is non- refundable under any circumstances, except in the case that the competition is officially canceled by the organizer.
 
             Compliance with Competition Rules
-            Participants must comply with all competition regulations.Any violation may result in disqualification without refund.
+            Participants must comply with all competition regulations. Any violation may result in disqualification without refund.
 `,
             notes: `Please complete payment before ${dueDate}.${isInternational ? '\nNote: International payment uses a fixed rate of Rp 16.900 per USD.' : ''}`,
             send: {
