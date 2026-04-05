@@ -34,13 +34,13 @@ const createInvoice = async (body, callback) => {
                 let finalDescription = item.description || "APCS Registration";
 
                 if (item.currency === 'USD') {
-                    finalPrice = Math.round(finalPrice * 16900);
+                    finalPrice = Math.round(finalPrice * 17200);
                     finalDescription = `${finalDescription} (Original: $${item.price} USD)`;
                 }
 
                 let finalDiscount = parseFloat(item.discount || 0);
                 if (item.currency === 'USD' && finalDiscount > 0) {
-                    finalDiscount = Math.round(finalDiscount * 16900);
+                    finalDiscount = Math.round(finalDiscount * 17200);
                 }
 
                 return {
