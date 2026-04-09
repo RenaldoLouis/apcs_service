@@ -27,6 +27,7 @@ router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNot
 router.post('/sendEmailStageReschedule', EmailController.sendEmailStageReschedule)
 router.post('/sendEmailGalaConcertUpdate', EmailController.sendEmailGalaConcertUpdate)
 router.post('/sendEmailGalaWinnerAnnouncement', EmailController.sendEmailGalaWinnerAnnouncement)
+router.post('/sendEmailSoundOfAsia2026Invite', EmailController.sendEmailSoundOfAsia2026Invite)
 
 
 router.get('/getGaleries', FirebaseController.getGaleries)

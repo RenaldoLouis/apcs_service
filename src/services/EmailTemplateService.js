@@ -418,6 +418,49 @@ const templates = {
             </html>
         `
     }),
+    SOUND_OF_ASIA_2026_INVITE: (data) => ({
+        subject: "Join Us Again – The Sound of Asia 2026 🎶",
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>${commonCss}</style>
+            </head>
+            <body>
+                <div class="email-wrapper">
+                    <div class="email-container">
+                        ${generateCommonHeader()}
+                        <div class="content">
+                            <p>Dear Talented Musicians,</p>
+                            <p>Warm greetings from APCS Music 🤍</p>
+                            <p>Thank you for being part of the APCS journey. It's always a joy to have passionate musicians like you in our community.</p>
+                            <p>This year, we're excited to introduce a new experience through <strong>The Sound of Asia 2026</strong> 🎶</p>
+                            <p>As part of this finale edition, our <strong>Sapphire Winner</strong> will take the stage in a live orchestra performance, and you'll also have the chance to meet our <strong>International Jury</strong> in person.</p>
+                            <p>We would love to invite you to join us again and be part of this exciting chapter:</p>
+                            <p>
+                                ✨ Last video submission: <strong>1 August 2026</strong><br>
+                                📍 Live stage (Jakarta): <strong>14–15 November 2026</strong><br>
+                                🎹 Categories: Piano, Strings, Woodwinds, Brass, Guitar, Percussion, Harp, Vocal & Choir, Guzheng, Electone<br>
+                                🏆 Prizes up to <strong>IDR 50,000,000</strong> + opportunity to perform with the APCS Orchestra
+                            </p>
+                            <p>From online preliminary to a live international stage, this is your moment to grow, connect, and shine.</p>
+                            <p>If you need any assistance or information, feel free to reach us anytime:<br>
+                                <a href="https://wa.me/6282213002686" style="color: #1a73e8; text-decoration: none;">wa.me/6282213002686</a>
+                            </p>
+                            <p>See you again on the APCS stage 🙌🏻✨</p>
+                            <p style="margin-top: 24px;">
+                                Warm regards,<br>
+                                <strong>APCS Music</strong>
+                            </p>
+                        </div>
+                        ${generateCommonFooter()}
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    }),
     GALA_CONCERT_UPDATE_2026: (data) => ({
         subject: "APCS Gala Concert 2026 – Official Update",
         html: `

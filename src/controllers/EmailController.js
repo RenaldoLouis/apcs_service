@@ -145,6 +145,15 @@ async function sendEmailGalaWinnerAnnouncement(req, res, next) {
     }
 }
 
+async function sendEmailSoundOfAsia2026Invite(req, res, next) {
+    try {
+        const data = await email.sendEmailSoundOfAsia2026InviteJson(req.body.registrants)
+        res.status(200).send({ message: "Sound of Asia 2026 Invite emails sent successfully", data })
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     sendEmail,
     sendEmailAnnouncement,
@@ -161,5 +170,6 @@ module.exports = {
     sendEmailJuryAccountCreation,
     sendEmailStageReschedule,
     sendEmailGalaConcertUpdate,
-    sendEmailGalaWinnerAnnouncement
+    sendEmailGalaWinnerAnnouncement,
+    sendEmailSoundOfAsia2026Invite
 };

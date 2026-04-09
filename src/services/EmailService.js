@@ -2508,6 +2508,55 @@ async function sendEmailGalaWinnerAnnouncementJson(registrants) {
     }
 }
 
+async function sendEmailSoundOfAsia2026InviteJson(registrants) {
+    logger.info("sending Sound of Asia 2026 Invite email from JSON...");
+
+    try {
+        if (!registrants || registrants.length === 0) {
+            logger.info("No registrants provided in payload. Exiting.");
+            return;
+        }
+
+        // Deduplicate by email (case-insensitive) to avoid sending duplicates
+        const seen = new Set();
+        const uniqueRegistrants = registrants.filter(r => {
+            const emailLower = (r.email || '').toLowerCase().trim();
+            if (!emailLower || seen.has(emailLower)) return false;
+            seen.add(emailLower);
+            return true;
+        });
+
+        logger.info(`Found ${uniqueRegistrants.length} unique registrants to email (filtered from ${registrants.length}).`);
+
+        for (const data of uniqueRegistrants) {
+            if (data && data.email) {
+                const to = data.email;
+
+                // 1. Get HTML Content
+                const { subject, html } = getTemplate('SOUND_OF_ASIA_2026_INVITE', {});
+
+                // 2. Construct Email
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: to,
+                    subject: subject,
+                    html: html
+                };
+
+                await transporter.sendMail(mailOptions);
+                logger.info(`Successfully sent Sound of Asia 2026 Invite email to ${to}`);
+                // Add a short delay between emails to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 550));
+            } else {
+                logger.warn(`Skipping invalid registrant data: ${JSON.stringify(data)}`);
+            }
+        }
+        logger.info("Sound of Asia 2026 Invite email campaign finished!");
+    } catch (error) {
+        logger.error(`Failed to send Sound of Asia 2026 Invite email: ${error.message}`);
+    }
+}
+
 module.exports = {
     sendEmail,
     sendEmailFunc,
@@ -2528,5 +2577,6 @@ module.exports = {
     sendEmailJuryAccountCreation,
     sendEmailGalaConcertUpdateJson,
     sendEmailStageRescheduleJson,
-    sendEmailGalaWinnerAnnouncementJson
+    sendEmailGalaWinnerAnnouncementJson,
+    sendEmailSoundOfAsia2026InviteJson
 };
