@@ -7,6 +7,7 @@ const RegisterController = require("../controllers/RegisterController");
 const JuryController = require("../controllers/JuryController");
 const BookingController = require("../controllers/BookingController");
 const TicketController = require("../controllers/TicketController");
+const PublicTicketController = require("../controllers/PublicTicketController");
 const { paymentValidation } = require('../utils/ValidationUtil');
 const { multipartUploadValidation, partUploadValidation, completeUploadValidation } = require('../middlewares/ValidationMiddleware');
 
@@ -54,5 +55,10 @@ router.post('/saveSeatBookProfileInfo', TicketController.saveSeatBookProfileInfo
 router.post('/verify-seat-token', TicketController.verifySeatSelectionToken);
 // Saves the user's final seat selection
 router.post('/confirm-seats', TicketController.confirmSeatSelection);
+
+// --- Public Ticket Booking (self-service, Paper.id integrated) ---
+router.get('/public-ticket/event-data',  PublicTicketController.getPublicTicketEventData);
+router.post('/public-ticket/booking',    PublicTicketController.createPublicTicketBooking);
+router.post('/public-ticket/webhook',    PublicTicketController.handlePublicTicketWebhook);
 
 module.exports = router;
