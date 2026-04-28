@@ -58,6 +58,7 @@ router.post('/confirm-seats', TicketController.confirmSeatSelection);
 
 // --- Public Ticket Booking (self-service, Paper.id integrated) ---
 router.get('/public-ticket/event-data',  PublicTicketController.getPublicTicketEventData);
+router.get('/public-ticket/seats',       PublicTicketController.getPublicTicketSeats);
 router.post('/public-ticket/booking',    PublicTicketController.createPublicTicketBooking);
 router.post('/public-ticket/webhook',    PublicTicketController.handlePublicTicketWebhook);
 

@@ -28,6 +28,48 @@ const getPublicTicketEventData = async (_body, callback) => {
 };
 
 /**
+ * Returns the seat layout for a specific venue and session.
+ * Cleans up sensitive data and evaluates expired locks before returning.
+ */
+const getPublicTicketSeats = async (query, callback) => {
+    try {
+        const { venueId, sessionId } = query;
+        if (!venueId || !sessionId) {
+            return callback(new Error('venueId and sessionId are required.'));
+        }
+
+        const seatsRef = db.collection(`seats${EVENT_ID}`);
+        const q = seatsRef
+            .where('venueId', '==', venueId)
+            .where('sessionId', '==', sessionId);
+        
+        const snap = await q.get();
+        const seats = snap.docs.map(doc => {
+            const data = doc.data();
+            
+            // Clean up sensitive fields
+            delete data.assignedTo;
+            delete data.bookingId;
+            delete data.lockedByBookingId;
+            
+            // Evaluate locks lazily
+            if (data.status === 'locked' && data.lockedAt) {
+                const isExpiredLock = (Date.now() - data.lockedAt.toDate().getTime()) > LOCK_DURATION_MS;
+                if (isExpiredLock) {
+                    data.status = 'available';
+                }
+            }
+
+            return { id: doc.id, ...data };
+        });
+        callback(null, seats);
+    } catch (error) {
+        logger.error(`getPublicTicketSeats failed: ${error.message}`);
+        callback(error);
+    }
+};
+
+/**
  * Creates a public ticket booking.
  * Steps:
  *  1. Server-side price recalculation (never trust client).
@@ -273,4 +315,5 @@ module.exports = {
     getPublicTicketEventData,
     createPublicTicketBooking,
     handlePublicTicketWebhookPaid,
+    getPublicTicketSeats,
 };

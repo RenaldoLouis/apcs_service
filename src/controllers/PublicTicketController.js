@@ -261,8 +261,19 @@ async function sendBookingConfirmationEmail(bookingData) {
     logger.info(`Booking confirmation email sent to ${userEmail}`);
 }
 
+/** GET /api/v1/apcs/public-ticket/seats */
+async function getPublicTicketSeats(req, res, next) {
+    try {
+        const seats = await PublicTicketService.getPublicTicketSeats(req.query);
+        res.status(200).json(seats);
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     getPublicTicketEventData,
     createPublicTicketBooking,
     handlePublicTicketWebhook,
+    getPublicTicketSeats,
 };
