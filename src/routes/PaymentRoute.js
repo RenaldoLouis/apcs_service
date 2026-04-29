@@ -8,6 +8,7 @@ const JuryController = require("../controllers/JuryController");
 const BookingController = require("../controllers/BookingController");
 const TicketController = require("../controllers/TicketController");
 const PublicTicketController = require("../controllers/PublicTicketController");
+const SystemSettingsController = require("../controllers/SystemSettingsController");
 const { paymentValidation } = require('../utils/ValidationUtil');
 const { multipartUploadValidation, partUploadValidation, completeUploadValidation } = require('../middlewares/ValidationMiddleware');
 
@@ -61,5 +62,9 @@ router.get('/public-ticket/event-data',  PublicTicketController.getPublicTicketE
 router.get('/public-ticket/seats',       PublicTicketController.getPublicTicketSeats);
 router.post('/public-ticket/booking',    PublicTicketController.createPublicTicketBooking);
 router.post('/public-ticket/webhook',    PublicTicketController.handlePublicTicketWebhook);
+
+// --- System Settings ---
+router.get('/systemSettings/global', SystemSettingsController.getGlobalSettings);
+router.post('/systemSettings/global', SystemSettingsController.updateGlobalSettings);
 
 module.exports = router;

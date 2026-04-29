@@ -5,19 +5,32 @@ const PaperRepository = require('./PaperRepository');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const LOCK_DURATION_MS = 30 * 60 * 1000; // 30 minutes in milliseconds
-const EVENT_ID = 'APCS2026';
+
+const getCurrentEventId = async () => {
+    try {
+        const docRef = db.collection('systemSettings').doc('global');
+        const docSnap = await docRef.get();
+        if (docSnap.exists && docSnap.data().currentEventId) {
+            return docSnap.data().currentEventId;
+        }
+    } catch (err) {
+        logger.error(`Error fetching global event ID: ${err.message}`);
+    }
+    return 'APCS2026';
+};
 
 /**
- * Returns the events/APCS2026 document for the frontend to render
+ * Returns the events config document for the frontend to render
  * pricing tiers, sessions, and add-ons.
  */
 const getPublicTicketEventData = async (_body, callback) => {
     try {
-        const docRef = db.collection('events').doc(EVENT_ID);
+        const eventId = await getCurrentEventId();
+        const docRef = db.collection('events').doc(eventId);
         const docSnap = await docRef.get();
 
         if (!docSnap.exists) {
-            throw new Error(`Event data for ${EVENT_ID} not found in events collection.`);
+            throw new Error(`Event data for ${eventId} not found in events collection.`);
         }
 
         callback(null, { id: docSnap.id, ...docSnap.data() });
@@ -38,7 +51,8 @@ const getPublicTicketSeats = async (query, callback) => {
             return callback(new Error('venueId and sessionId are required.'));
         }
 
-        const seatsRef = db.collection(`seats${EVENT_ID}`);
+        const eventId = await getCurrentEventId();
+        const seatsRef = db.collection(`seats${eventId}`);
         const q = seatsRef
             .where('venueId', '==', venueId)
             .where('sessionId', '==', sessionId);
@@ -94,10 +108,11 @@ const createPublicTicketBooking = async (body, callback) => {
 
     try {
         // --- 2. Fetch authoritative pricing from Firestore ---
-        const eventRef = db.collection('events').doc(EVENT_ID);
+        const eventId = await getCurrentEventId();
+        const eventRef = db.collection('events').doc(eventId);
         const eventSnap = await eventRef.get();
         if (!eventSnap.exists) {
-            throw new Error(`Event ${EVENT_ID} not found.`);
+            throw new Error(`Event ${eventId} not found.`);
         }
         const eventData = eventSnap.data();
 
@@ -149,7 +164,7 @@ const createPublicTicketBooking = async (body, callback) => {
         await db.runTransaction(async (transaction) => {
             // Check every selected seat is still available
             if (selectedSeatIds && selectedSeatIds.length > 0) {
-                const seatRefs = selectedSeatIds.map(id => db.collection(`seats${EVENT_ID}`).doc(id));
+                const seatRefs = selectedSeatIds.map(id => db.collection(`seats${eventId}`).doc(id));
                 const seatDocs = await transaction.getAll(...seatRefs);
 
                 for (const seatDoc of seatDocs) {
@@ -185,7 +200,7 @@ const createPublicTicketBooking = async (body, callback) => {
 
             // Create the booking document
             transaction.set(bookingRef, {
-                eventId: EVENT_ID,
+                eventId: eventId,
                 userName,
                 userEmail,
                 userPhone,
@@ -246,7 +261,7 @@ const createPublicTicketBooking = async (body, callback) => {
             try {
                 const batch = db.batch();
                 selectedSeatIds.forEach(seatId => {
-                    const seatRef = db.collection(`seats${EVENT_ID}`).doc(seatId);
+                    const seatRef = db.collection(`seats${bookingData.eventId || 'APCS2026'}`).doc(seatId);
                     batch.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
                 });
                 await batch.commit();
@@ -283,9 +298,10 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
 
     // Upgrade seats + mark booking paid in a batch
     const batch = db.batch();
+    const eventId = await getCurrentEventId();
 
     (bookingData.selectedSeatIds || []).forEach(seatId => {
-        const seatRef = db.collection(`seats${EVENT_ID}`).doc(seatId);
+        const seatRef = db.collection(`seats${eventId}`).doc(seatId);
         batch.update(seatRef, {
             status: 'reserved',
             bookingId,
