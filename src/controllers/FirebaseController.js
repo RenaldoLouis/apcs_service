@@ -146,10 +146,54 @@ async function migrateEventId(req, res, next) {
     }
 }
 
+async function saveSessionAssignments(req, res, next) {
+    try {
+        const { eventId, assignments } = req.body;
+        if (!eventId || !assignments) {
+            return res.status(400).json({ error: "eventId and assignments are required." });
+        }
+
+        const docRef = db.collection('sessionAssignments').doc(eventId);
+        await docRef.set({
+            eventId,
+            assignments,
+            updatedAt: new Date().toISOString(),
+        });
+
+        res.status(200).json({ message: "Assignments saved successfully!" });
+    } catch (err) {
+        console.error("[FirebaseController] Failed to save session assignments:", err);
+        next(err);
+    }
+}
+
+async function getSessionAssignments(req, res, next) {
+    try {
+        const { eventId } = req.params;
+        if (!eventId) {
+            return res.status(400).json({ error: "eventId is required." });
+        }
+
+        const docRef = db.collection('sessionAssignments').doc(eventId);
+        const docSnap = await docRef.get();
+
+        if (!docSnap.exists) {
+            return res.status(404).json({ error: "No assignments found for this event." });
+        }
+
+        res.status(200).json(docSnap.data());
+    } catch (err) {
+        console.error("[FirebaseController] Failed to get session assignments:", err);
+        next(err);
+    }
+}
+
 module.exports = {
     getGaleries,
     getVideos,
     getSponsors,
     updatePrices,
     migrateEventId,
+    saveSessionAssignments,
+    getSessionAssignments,
 };

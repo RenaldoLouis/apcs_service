@@ -37,6 +37,8 @@ router.get('/getVideos', FirebaseController.getVideos)
 router.get('/getSponsors', FirebaseController.getSponsors)
 router.post('/updatePrices', FirebaseController.updatePrices)
 router.post('/migrateEventId', FirebaseController.migrateEventId)
+router.post('/saveSessionAssignments', FirebaseController.saveSessionAssignments)
+router.get('/getSessionAssignments/:eventId', FirebaseController.getSessionAssignments)
 
 router.post('/register', RegisterController.postRegistrant)
 router.post('/signed-url-images', RegisterController.getUploadUrl)
