@@ -13,19 +13,33 @@ const QRIS_API_KEY = process.env.QRIS_API_KEY;
 const QRIS_API_SECRET = process.env.QRIS_API_SECRET;
 
 const createBooking = async (body, callback) => {
-    const { eventId, userEmail, ticketQuantity, selectedSeatIds, selectedAddOnIds } = body;
+    const { eventId, userEmail, ticketQuantity, selectedSeatIds, selectedAddOnIds, isPublic, publicUserName, publicUserPhone, complimentaryTickets, orchestraSessionId } = body;
 
     // --- Define refs outside the try block to have access in the catch block ---
     let bookingRef = null;
 
     try {
         // --- 1. Validation ---
-        if (!eventId || !userEmail || !ticketQuantity) {
+        if (!eventId || !userEmail || (ticketQuantity === undefined && complimentaryTickets === undefined)) {
             throw new Error("Missing required booking information.");
-            // callback(null, { message: "Missing required booking information." })
         }
-        if (selectedSeatIds && selectedSeatIds.length !== ticketQuantity) {
-            callback(null, { message: "Number of selected seats must match ticket quantity." })
+        let regularTicketQuantity = ticketQuantity || 0;
+        let complimentaryCount = complimentaryTickets ? parseInt(complimentaryTickets) : 0;
+        
+        if (regularTicketQuantity === 0 && complimentaryCount === 0) {
+            throw new Error("No tickets selected.");
+        }
+
+        if (selectedSeatIds && selectedSeatIds.length !== regularTicketQuantity) {
+            callback(null, { message: "Number of selected seats must match regular ticket quantity." })
+        }
+
+        let customerRef = null;
+        if (isPublic) {
+             if (!publicUserName || !publicUserPhone) {
+                  throw new Error("Missing public user information.");
+             }
+             customerRef = db.collection("customers").doc();
         }
 
         // --- 2. Securely Fetch Pricing Rules & Re-Calculate Price ---
@@ -42,9 +56,15 @@ const createBooking = async (body, callback) => {
         const items = [];
         let calculatedTotal = 0;
 
+        if (complimentaryCount > 0) {
+            items.push({ type: "ticket", description: "Complimentary Orchestra Admission", quantity: complimentaryCount, price: 0 });
+        }
+
         // Base tickets
-        calculatedTotal += eventData.baseTicketPrice * ticketQuantity;
-        items.push({ type: "ticket", description: "General Admission", quantity: ticketQuantity, price: eventData.baseTicketPrice * ticketQuantity });
+        if (regularTicketQuantity > 0) {
+            calculatedTotal += eventData.baseTicketPrice * regularTicketQuantity;
+            items.push({ type: "ticket", description: "General Admission", quantity: regularTicketQuantity, price: eventData.baseTicketPrice * regularTicketQuantity });
+        }
 
         // Selected seats
         if (selectedSeatIds && selectedSeatIds.length > 0) {
@@ -71,6 +91,33 @@ const createBooking = async (body, callback) => {
         console.log("Starting Firestore transaction to lock seats...");
         bookingRef = db.collection("bookings").doc();
         await db.runTransaction(async (transaction) => {
+            // Check and update complimentary quota if requested
+            if (complimentaryCount > 0) {
+                const currentEventDoc = await transaction.get(eventRef);
+                const currentEventData = currentEventDoc.data();
+                const currentSessionIndex = currentEventData.orchestraSessions?.findIndex(s => s.id === orchestraSessionId);
+                
+                if (currentSessionIndex === -1 || currentSessionIndex === undefined) {
+                    throw new Error("Orchestra session not found.");
+                }
+                
+                const currentSession = currentEventData.orchestraSessions[currentSessionIndex];
+                const quota = currentSession.complimentaryQuota || 0;
+                const claimed = currentSession.complimentaryClaimed || 0;
+                
+                if (claimed + complimentaryCount > quota) {
+                    throw new Error("Not enough complimentary quota left for this session.");
+                }
+                
+                // Update the claimed amount
+                const updatedSessions = [...currentEventData.orchestraSessions];
+                updatedSessions[currentSessionIndex] = {
+                    ...currentSession,
+                    complimentaryClaimed: claimed + complimentaryCount
+                };
+                transaction.update(eventRef, { orchestraSessions: updatedSessions });
+            }
+
             if (selectedSeatIds && selectedSeatIds.length > 0) {
                 for (const seatId of selectedSeatIds) {
                     const seatRef = db.collection("seats").doc(seatId);
@@ -86,7 +133,23 @@ const createBooking = async (body, callback) => {
                 summary: { totalPrice: calculatedTotal },
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 checkedIn: false,
+                isPublic: isPublic ? true : false,
+                orchestraSessionId: orchestraSessionId || null,
+                ...(customerRef && { customerId: customerRef.id })
             });
+
+            if (customerRef) {
+                transaction.set(customerRef, {
+                    name: publicUserName,
+                    email: userEmail,
+                    phone: publicUserPhone,
+                    eventId: eventId,
+                    bookingId: bookingRef.id,
+                    orchestraSessionId: orchestraSessionId || null,
+                    paymentStatus: "pending",
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+            }
         });
         console.log("Firestore transaction successful. Seats are locked.");
 
@@ -103,8 +166,10 @@ const createBooking = async (body, callback) => {
         // }
         // console.log("QRIS API call successful.");
 
-        // Update booking with QRIS invoice ID
-        await bookingRef.update({ qrisInvoiceId: qrisResponse.data.invoice_id });
+        // Update booking with QRIS invoice ID (using mock or actual if un-commented)
+        if (typeof qrisResponse !== 'undefined' && qrisResponse && qrisResponse.data) {
+            await bookingRef.update({ qrisInvoiceId: qrisResponse.data.invoice_id });
+        }
 
         // --- 5. Return the final data ---
         // res.status(201).json({
@@ -115,7 +180,7 @@ const createBooking = async (body, callback) => {
         callback(null, {
             message: "Booking initiated successfully!",
             bookingId: bookingRef.id,
-            qrisString: qrisResponse.data.qris_string,
+            qrisString: (typeof qrisResponse !== 'undefined' && qrisResponse && qrisResponse.data) ? qrisResponse.data.qris_string : "MOCK_QRIS_STRING",
         })
 
     } catch (error) {
@@ -175,6 +240,9 @@ const getBookingStatus = async (params, res) => {
         if (qrisStatus === 'paid') {
             // IMPORTANT: Payment confirmed! Update our database and trigger email.
             await bookingRef.update({ status: 'paid' });
+            if (bookingData.customerId) {
+                await db.collection('customers').doc(bookingData.customerId).update({ paymentStatus: 'paid' });
+            }
             // await emailService.sendTicketEmail(bookingId); // You would call your email service here
         }
 
