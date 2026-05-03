@@ -19,15 +19,26 @@ const getGlobalSettings = async (_body, callback) => {
 
 const updateGlobalSettings = async (body, callback) => {
     try {
-        const { currentEventId } = body;
-        if (!currentEventId) {
-            return callback(new Error('currentEventId is required.'));
+        const updatePayload = {};
+
+        // Support currentEventId
+        if (body.currentEventId) {
+            updatePayload.currentEventId = body.currentEventId;
+        }
+
+        // Support ticketEligibility (date-based schedule)
+        if (body.ticketEligibility !== undefined) {
+            updatePayload.ticketEligibility = body.ticketEligibility;
+        }
+
+        if (Object.keys(updatePayload).length === 0) {
+            return callback(new Error('No valid fields to update.'));
         }
 
         const docRef = db.collection('systemSettings').doc('global');
-        await docRef.set({ currentEventId }, { merge: true });
+        await docRef.set(updatePayload, { merge: true });
 
-        callback(null, { success: true, currentEventId });
+        callback(null, { success: true, ...updatePayload });
     } catch (error) {
         logger.error(`updateGlobalSettings failed: ${error.message}`);
         callback(error);

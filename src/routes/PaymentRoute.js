@@ -60,10 +60,11 @@ router.post('/verify-seat-token', TicketController.verifySeatSelectionToken);
 router.post('/confirm-seats', TicketController.confirmSeatSelection);
 
 // --- Public Ticket Booking (self-service, Paper.id integrated) ---
-router.get('/public-ticket/event-data',  PublicTicketController.getPublicTicketEventData);
-router.get('/public-ticket/seats',       PublicTicketController.getPublicTicketSeats);
-router.post('/public-ticket/booking',    PublicTicketController.createPublicTicketBooking);
-router.post('/public-ticket/webhook',    PublicTicketController.handlePublicTicketWebhook);
+router.get('/public-ticket/event-data',       PublicTicketController.getPublicTicketEventData);
+router.get('/public-ticket/seats',            PublicTicketController.getPublicTicketSeats);
+router.get('/public-ticket/eligible-winners', PublicTicketController.getEligibleWinners);
+router.post('/public-ticket/booking',         PublicTicketController.createPublicTicketBooking);
+router.post('/public-ticket/webhook',         PublicTicketController.handlePublicTicketWebhook);
 
 // --- System Settings ---
 router.get('/systemSettings/global', SystemSettingsController.getGlobalSettings);

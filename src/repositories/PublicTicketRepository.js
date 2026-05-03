@@ -20,6 +20,38 @@ const getCurrentEventId = async () => {
 };
 
 /**
+ * Returns today's allowed award tiers from the date-based eligibility schedule.
+ * If eligibility is disabled or no schedule entry matches today, returns null (all tiers allowed).
+ */
+const getTodayAllowedTiers = async () => {
+    try {
+        const docRef = db.collection('systemSettings').doc('global');
+        const docSnap = await docRef.get();
+        if (!docSnap.exists) return null;
+
+        const data = docSnap.data();
+        const eligibility = data.ticketEligibility;
+        if (!eligibility || !eligibility.enabled) return null;
+
+        const schedule = eligibility.schedule || [];
+        if (schedule.length === 0) return null;
+
+        // Get today's date in Asia/Jakarta timezone (YYYY-MM-DD)
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+
+        const todayEntry = schedule.find(entry => entry.date === today);
+        if (!todayEntry || !todayEntry.allowedTiers || todayEntry.allowedTiers.length === 0) {
+            return null; // No entry for today = all tiers allowed
+        }
+
+        return todayEntry.allowedTiers;
+    } catch (err) {
+        logger.error(`Error fetching ticket eligibility: ${err.message}`);
+        return null;
+    }
+};
+
+/**
  * Returns the events config document for the frontend to render
  * pricing tiers, sessions, and add-ons.
  */
@@ -99,11 +131,28 @@ const createPublicTicketBooking = async (body, callback) => {
         tickets,      // [{ id, name, quantity, wantsSeat, seatQuantity }]
         selectedSeatIds, // [seatDocumentId, ...]
         addOnIds,     // ['merchandise', ...]
+        registrantId, // ID of the winner who initiated this booking
     } = body;
 
     // --- 1. Basic validation ---
     if (!userName || !userEmail || !userPhone || !venue || !date || !session || !tickets) {
         return callback(new Error('Missing required booking fields.'));
+    }
+
+    // --- 1b. Validate registrant eligibility (if registrantId provided) ---
+    if (registrantId) {
+        const allowedTiers = await getTodayAllowedTiers();
+        if (allowedTiers) {
+            const regDoc = await db.collection('Registrants2025').doc(registrantId).get();
+            if (!regDoc.exists) {
+                return callback(new Error('Registrant not found.'));
+            }
+            const regData = regDoc.data();
+            const award = regData.finalAward || '';
+            if (!allowedTiers.includes(award)) {
+                return callback(new Error(`Registrants with ${award} award are not eligible to purchase tickets today.`));
+            }
+        }
     }
 
     try {
@@ -327,9 +376,111 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
     return { id: bookingId, ...bookingData };
 };
 
+/**
+ * Returns the list of eligible winners who can purchase tickets today.
+ * Joins sessionAssignments + Registrants2025 + systemSettings (date-based schedule).
+ * Only returns registrants who:
+ *   (a) are assigned to a session in SessionAssignmentManager
+ *   (b) have a finalAward matching today's allowed tiers (or all if no schedule)
+ */
+const getEligibleWinners = async (_query, callback) => {
+    try {
+        const eventId = await getCurrentEventId();
+        const allowedTiers = await getTodayAllowedTiers();
+
+        // 1. Fetch session assignments
+        const assignmentsDoc = await db.collection('sessionAssignments').doc(eventId).get();
+        if (!assignmentsDoc.exists) {
+            return callback(null, { winners: [], allowedTiers: allowedTiers || [], eligibilityEnabled: !!allowedTiers });
+        }
+        const assignmentsData = assignmentsDoc.data().assignments || {};
+
+        // 2. Build a map of registrantId → session info from assignments
+        //    Assignment shape: { [sessionId]: [ { registrantId, name, ... }, ... ] }
+        const registrantSessionMap = {};
+        Object.keys(assignmentsData).forEach(sessionId => {
+            // Session ID format: "Venue1_2026-06-15_10:00"
+            const parts = sessionId.split('_');
+            const venue = parts[0] || '';
+            const date = parts[1] || '';
+            const time = parts.slice(2).join('_') || '';
+
+            (assignmentsData[sessionId] || []).forEach(entry => {
+                if (entry.registrantId) {
+                    registrantSessionMap[entry.registrantId] = {
+                        sessionId,
+                        venue,
+                        date,
+                        time,
+                    };
+                }
+            });
+        });
+
+        const assignedRegistrantIds = Object.keys(registrantSessionMap);
+        if (assignedRegistrantIds.length === 0) {
+            return callback(null, { winners: [], allowedTiers: allowedTiers || [], eligibilityEnabled: !!allowedTiers });
+        }
+
+        // 3. Fetch registrant docs (Firestore 'in' supports max 30 at a time)
+        const winners = [];
+        const batchSize = 30;
+        for (let i = 0; i < assignedRegistrantIds.length; i += batchSize) {
+            const batch = assignedRegistrantIds.slice(i, i + batchSize);
+            const snap = await db.collection('Registrants2025')
+                .where(admin.firestore.FieldPath.documentId(), 'in', batch)
+                .get();
+
+            snap.docs.forEach(doc => {
+                const data = doc.data();
+                const award = data.finalAward || '';
+
+                // Filter by allowed tiers if eligibility is enabled
+                if (allowedTiers && !allowedTiers.includes(award)) {
+                    return; // skip
+                }
+
+                // Skip non-winners (Fail or N/A)
+                if (!award || award === 'Fail' || award === 'N/A') {
+                    return;
+                }
+
+                const performer = data.performers?.[0];
+                const name = performer
+                    ? (performer.fullName || `${performer.firstName || ''} ${performer.lastName || ''}`.trim())
+                    : (data.name || 'Unknown');
+                const email = performer?.email || data.email || '';
+
+                winners.push({
+                    registrantId: doc.id,
+                    name,
+                    email,
+                    finalAward: award,
+                    competitionCategory: data.competitionCategory || '',
+                    teacherName: data.teacherName || '',
+                    session: registrantSessionMap[doc.id],
+                });
+            });
+        }
+
+        // Sort by name
+        winners.sort((a, b) => a.name.localeCompare(b.name));
+
+        callback(null, {
+            winners,
+            allowedTiers: allowedTiers || [],
+            eligibilityEnabled: !!allowedTiers,
+        });
+    } catch (error) {
+        logger.error(`getEligibleWinners failed: ${error.message}`);
+        callback(error);
+    }
+};
+
 module.exports = {
     getPublicTicketEventData,
     createPublicTicketBooking,
     handlePublicTicketWebhookPaid,
     getPublicTicketSeats,
+    getEligibleWinners,
 };

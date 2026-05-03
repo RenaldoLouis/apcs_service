@@ -271,9 +271,20 @@ async function getPublicTicketSeats(req, res, next) {
     }
 }
 
+/** GET /api/v1/apcs/public-ticket/eligible-winners */
+async function getEligibleWinners(req, res, next) {
+    try {
+        const data = await PublicTicketService.getEligibleWinners(req.query);
+        res.status(200).json(data);
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     getPublicTicketEventData,
     createPublicTicketBooking,
     handlePublicTicketWebhook,
     getPublicTicketSeats,
+    getEligibleWinners,
 };

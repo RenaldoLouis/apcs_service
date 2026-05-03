@@ -19,9 +19,14 @@ async function getPublicTicketSeats(query) {
     return databaseUtil.executeDatabaseOperation(PublicTicketRepository.getPublicTicketSeats, query);
 }
 
+async function getEligibleWinners(query) {
+    return databaseUtil.executeDatabaseOperation(PublicTicketRepository.getEligibleWinners, query);
+}
+
 module.exports = {
     getPublicTicketEventData,
     createPublicTicketBooking,
     handlePublicTicketWebhookPaid,
     getPublicTicketSeats,
+    getEligibleWinners,
 };
