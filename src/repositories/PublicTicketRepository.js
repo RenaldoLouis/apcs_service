@@ -34,14 +34,14 @@ const getTodayAllowedTiers = async () => {
         if (!eligibility || !eligibility.enabled) return null;
 
         const schedule = eligibility.schedule || [];
-        if (schedule.length === 0) return null;
+        if (schedule.length === 0) return [];
 
         // Get today's date in Asia/Jakarta timezone (YYYY-MM-DD)
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
 
         const todayEntry = schedule.find(entry => entry.date === today);
         if (!todayEntry || !todayEntry.allowedTiers || todayEntry.allowedTiers.length === 0) {
-            return null; // No entry for today = all tiers allowed
+            return []; // No entry for today = none allowed if enabled
         }
 
         return todayEntry.allowedTiers;
