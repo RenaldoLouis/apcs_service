@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "jest --forceExit --detectOpenHandles"
   },
   "keywords": [],
   "author": "",
@@ -36,5 +37,8 @@
     "winston": "^3.14.1",
     "winston-daily-rotate-file": "^5.0.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
   }
 }

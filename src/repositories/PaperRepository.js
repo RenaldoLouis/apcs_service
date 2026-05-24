@@ -2,6 +2,7 @@ const { logger } = require('../utils/Logger');
 const axios = require('axios');
 const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
 const dayjs = require('dayjs');
+const { buildInvoiceItem, buildInvoiceNotes } = require('../utils/invoiceUtils');
 
 const PAPER_BASE_URL = process.env.PAPER_BASE_URL;
 
@@ -30,25 +31,14 @@ const createInvoice = async (body, callback) => {
                 phone: user.phone
             },
             items: items.map(item => {
-                let finalPrice = parseFloat(item.price);
-                let finalDescription = item.description || "APCS Registration";
-
-                if (item.currency === 'USD') {
-                    finalPrice = Math.round(finalPrice * 17200);
-                    finalDescription = `${finalDescription} (Original: $${item.price} USD)`;
-                }
-
-                let finalDiscount = parseFloat(item.discount || 0);
-                if (item.currency === 'USD' && finalDiscount > 0) {
-                    finalDiscount = Math.round(finalDiscount * 17200);
-                }
+                const converted = buildInvoiceItem(item);
 
                 return {
-                    name: item.name,
-                    description: finalDescription,
+                    name: converted.name,
+                    description: converted.description,
                     quantity: 1,
-                    price: process.env.PAPER_ENV === "development" ? 10000 : finalPrice,
-                    discount: process.env.PAPER_ENV === "development" ? 10000 : finalDiscount,
+                    price: process.env.PAPER_ENV === "development" ? 10000 : converted.price,
+                    discount: process.env.PAPER_ENV === "development" ? 10000 : converted.discount,
                     discount_type: "amount",
                     tax_id: ""
                 };
@@ -65,7 +55,7 @@ const createInvoice = async (body, callback) => {
             Compliance with Competition Rules
             Participants must comply with all competition regulations. Any violation may result in disqualification without refund.
 `,
-            notes: `Please complete payment before ${dueDate}.${isInternational ? '\nNote: International payment uses a fixed rate of Rp 16.900 per USD.' : ''}`,
+            notes: buildInvoiceNotes(dueDate, isInternational),
             send: {
                 email: true,
                 whatsapp: true,
