@@ -3,8 +3,8 @@ const { buildInvoiceItem, buildInvoiceNotes, USD_TO_IDR_RATE } = require('../inv
 describe('invoiceUtils', () => {
 
     describe('USD_TO_IDR_RATE', () => {
-        it('should be 17200', () => {
-            expect(USD_TO_IDR_RATE).toBe(17200);
+        it('should be 17800', () => {
+            expect(USD_TO_IDR_RATE).toBe(17800);
         });
     });
 
@@ -37,8 +37,8 @@ describe('invoiceUtils', () => {
 
             const result = buildInvoiceItem(item);
 
-            // $170 × 17,200 = Rp2,924,000
-            expect(result.price).toBe(2924000);
+            // $170 × 17,800 = Rp3,026,000
+            expect(result.price).toBe(3026000);
             expect(result.description).toBe('Non_Professionals_B - older_than_four (Original: $170 USD)');
         });
 
@@ -53,10 +53,10 @@ describe('invoiceUtils', () => {
 
             const result = buildInvoiceItem(item);
 
-            // $425 × 17,200 = Rp7,310,000
-            expect(result.price).toBe(7310000);
-            // $21.25 × 17,200 = Rp365,500
-            expect(result.discount).toBe(365500);
+            // $425 × 17,800 = Rp7,565,000
+            expect(result.price).toBe(7565000);
+            // $21.25 × 17,800 = Rp378,250
+            expect(result.discount).toBe(378250);
         });
 
         it('does not convert IDR discount', () => {
@@ -85,7 +85,7 @@ describe('invoiceUtils', () => {
 
             const result = buildInvoiceItem(item);
 
-            expect(result.price).toBe(1462000); // $85 × 17,200
+            expect(result.price).toBe(1513000); // $85 × 17,800
             expect(result.discount).toBe(0);
         });
 
@@ -112,10 +112,10 @@ describe('invoiceUtils', () => {
 
             const result = buildInvoiceItem(item);
 
-            // 85.5 × 17,200 = 1,470,600 (exact)
-            expect(result.price).toBe(Math.round(85.5 * 17200));
-            // 4.275 × 17,200 = 73,530 (exact)
-            expect(result.discount).toBe(Math.round(4.275 * 17200));
+            // 85.5 × 17,800 = 1,521,900 (exact)
+            expect(result.price).toBe(Math.round(85.5 * 17800));
+            // 4.275 × 17,800 = 76,095 (exact)
+            expect(result.discount).toBe(Math.round(4.275 * 17800));
         });
 
         // Regression test: the exact scenario from the user's invoice
@@ -130,7 +130,7 @@ describe('invoiceUtils', () => {
 
             const result = buildInvoiceItem(item);
 
-            expect(result.price).toBe(2924000);
+            expect(result.price).toBe(3026000);
             expect(result.discount).toBe(0);
             expect(result.description).toContain('(Original: $170 USD)');
         });
@@ -141,7 +141,7 @@ describe('invoiceUtils', () => {
             const notes = buildInvoiceNotes('25-05-2026', true);
 
             expect(notes).toContain('Please complete payment before 25-05-2026');
-            expect(notes).toContain('17.200');
+            expect(notes).toContain('17.800');
             expect(notes).toContain('USD');
         });
 
@@ -150,7 +150,7 @@ describe('invoiceUtils', () => {
 
             expect(notes).toContain('Please complete payment before 25-05-2026');
             expect(notes).not.toContain('USD');
-            expect(notes).not.toContain('17.200');
+            expect(notes).not.toContain('17.800');
         });
     });
 });

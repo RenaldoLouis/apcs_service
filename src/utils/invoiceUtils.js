@@ -6,7 +6,7 @@
  * the critical USD → IDR conversion logic.
  */
 
-const USD_TO_IDR_RATE = 17200;
+const USD_TO_IDR_RATE = 17800;
 
 /**
  * Converts a single invoice item from the frontend format into the
