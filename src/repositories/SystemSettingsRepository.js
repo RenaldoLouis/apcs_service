@@ -31,6 +31,12 @@ const updateGlobalSettings = async (body, callback) => {
             updatePayload.ticketEligibility = body.ticketEligibility;
         }
 
+        // Support juryDeadlines (per competition category, ISO-8601 strings)
+        // e.g. { "Piano Solo": "2026-06-15T23:59:00+07:00", "Violin Solo": "2026-06-20T23:59:00+07:00" }
+        if (body.juryDeadlines !== undefined) {
+            updatePayload.juryDeadlines = body.juryDeadlines;
+        }
+
         if (Object.keys(updatePayload).length === 0) {
             return callback(new Error('No valid fields to update.'));
         }
