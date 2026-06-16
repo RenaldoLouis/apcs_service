@@ -1743,7 +1743,7 @@ const sendEmailNotifyApcs = async (data) => {
                                 <h1>New Event Registration</h1>
                             </div>
                             <div class="content">
-                                <p style="font-size: 18px;">A new participant has registered for an APCS 2025 event.</p>
+                                <p style="font-size: 18px;">A new participant has registered for an APCS 2026 event.</p>
                                 <hr>
                                 <div class="info-item">
                                     <strong>Participant Name:</strong> ${data.name}

@@ -355,7 +355,7 @@ const templates = {
         `
     }),
     JURY_ACCOUNT_CREATION: (data) => ({
-        subject: `Welcome to APCS 2025 - Jury Access Credentials`,
+        subject: `Welcome to APCS 2026 - Jury Access Credentials`,
         html: `
             <!DOCTYPE html>
             <html>
