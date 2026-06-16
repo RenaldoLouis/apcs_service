@@ -42,6 +42,11 @@ const updateGlobalSettings = async (body, callback) => {
             updatePayload.usdToIdrRate = body.usdToIdrRate;
         }
 
+        // Support isRegistrationEnabled
+        if (body.isRegistrationEnabled !== undefined) {
+            updatePayload.isRegistrationEnabled = body.isRegistrationEnabled;
+        }
+
         if (Object.keys(updatePayload).length === 0) {
             return callback(new Error('No valid fields to update.'));
         }
