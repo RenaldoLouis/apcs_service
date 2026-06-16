@@ -192,8 +192,95 @@ async function checkPaymentStatus(req, res, next) {
     }
 };
 
+async function resendConfirmationEmail(req, res, next) {
+    try {
+        const { registrantId } = req.body;
+
+        if (!registrantId) {
+            return res.status(400).json({ message: "registrantId is required" });
+        }
+
+        logger.info(`[RESEND_EMAIL] Admin triggered resend for registrant: ${registrantId}`);
+
+        const docRef = db.collection('Registrants2025').doc(registrantId);
+        const docSnap = await docRef.get();
+
+        if (!docSnap.exists) {
+            logger.error(`[RESEND_EMAIL] Registrant document ${registrantId} not found`);
+            return res.status(404).json({ message: `Registrant ${registrantId} not found` });
+        }
+
+        const docData = docSnap.data();
+        const performers = docData.performers || [];
+
+        if (performers.length === 0) {
+            return res.status(400).json({ message: "No performers found for this registrant" });
+        }
+
+        // Format the price (same logic as webhook)
+        const formattedPrice = new Intl.NumberFormat('id-ID', {
+            style: 'currency',
+            currency: 'IDR',
+            minimumFractionDigits: 0
+        }).format(docData.amountToPay || 0);
+
+        // Group performers by email (same logic as webhook)
+        const emailGroups = performers.reduce((acc, performer) => {
+            const email = performer.email;
+            if (!acc[email]) {
+                acc[email] = {
+                    email: email,
+                    names: [],
+                    competitionCategory: docData.competitionCategory,
+                    instrumentCategory: docData.instrumentCategory,
+                    price: formattedPrice
+                };
+            }
+            const fullName = performer.fullName || `${performer.firstName} ${performer.lastName}`;
+            acc[email].names.push(fullName);
+            return acc;
+        }, {});
+
+        const dataEmailList = Object.values(emailGroups).map(group => ({
+            email: group.email,
+            name: group.names.join(' and '),
+            competitionCategory: group.competitionCategory,
+            instrumentCategory: group.instrumentCategory,
+            price: group.price
+        }));
+
+        logger.info(`[RESEND_EMAIL] Sending confirmation emails for ${dataEmailList.length} groups...`);
+
+        const results = [];
+        for (const emailData of dataEmailList) {
+            try {
+                const sendUserResult = await emailService.sendEmailFunc(emailData);
+                logger.info(`[RESEND_EMAIL_SUCCESS] ✅ Confirmation email sent to ${emailData.email}`);
+
+                const sendAdminResult = await emailService.sendEmailNotifyApcs(emailData);
+                logger.info(`[RESEND_EMAIL_SUCCESS] ✅ Admin notification sent for ${emailData.name}`);
+
+                results.push({ email: emailData.email, status: 'sent' });
+            } catch (emailError) {
+                logger.error(`[RESEND_EMAIL_ERROR] ❌ Failed for ${emailData.email}: ${emailError.message}`);
+                results.push({ email: emailData.email, status: 'failed', error: emailError.message });
+            }
+        }
+
+        return res.status(200).json({
+            message: `Resend completed for ${registrantId}`,
+            results
+        });
+
+    } catch (error) {
+        logger.error(`[RESEND_EMAIL_FATAL] Error: ${error.message}`);
+        next(error);
+    }
+}
+
 module.exports = {
     createInvoice,
     handlePaperWebhook,
-    checkPaymentStatus
+    checkPaymentStatus,
+    resendConfirmationEmail
 };

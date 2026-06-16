@@ -31,6 +31,9 @@ router.post('/sendEmailGalaConcertUpdate', EmailController.sendEmailGalaConcertU
 router.post('/sendEmailGalaWinnerAnnouncement', EmailController.sendEmailGalaWinnerAnnouncement)
 router.post('/sendEmailSoundOfAsia2026Invite', EmailController.sendEmailSoundOfAsia2026Invite)
 
+const PaperController = require("../controllers/PaperController");
+router.post('/resendConfirmationEmail', PaperController.resendConfirmationEmail)
+
 
 router.get('/getGaleries', FirebaseController.getGaleries)
 router.get('/getVideos', FirebaseController.getVideos)
