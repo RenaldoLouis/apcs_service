@@ -39,12 +39,13 @@ const createInvoice = async (body, callback) => {
             },
             items: items.map(item => {
                 const converted = buildInvoiceItem(item, usdToIdrRate);
+                const quantity = item.quantity || 1;
 
                 return {
                     name: converted.name,
                     description: converted.description,
-                    quantity: 1,
-                    price: process.env.PAPER_ENV === "development" ? 10000 : converted.price,
+                    quantity: quantity,
+                    price: process.env.PAPER_ENV === "development" ? 10000 : (converted.price / quantity),
                     discount: process.env.PAPER_ENV === "development" ? 10000 : converted.discount,
                     discount_type: "amount",
                     tax_id: ""
