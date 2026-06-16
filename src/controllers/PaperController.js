@@ -44,8 +44,8 @@ async function handlePaperWebhook(req, res, next) {
         // Log the incoming webhook for debugging
         console.log("Received Payment Webhook:", JSON.stringify(payload, null, 2));
 
-        // on production just payload instead of payload.data
-        const payloadData = payload.data
+        // IMPORTANT TODO: on production just payload instead of payload.data
+        const payloadData = payload
 
         // 1. Validate the Payment Status
         // Based on your example: payload.invoice.status === 'paid'

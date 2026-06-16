@@ -2,7 +2,8 @@ const { logger } = require('../utils/Logger');
 const axios = require('axios');
 const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
 const dayjs = require('dayjs');
-const { buildInvoiceItem, buildInvoiceNotes } = require('../utils/invoiceUtils');
+const { buildInvoiceItem, buildInvoiceNotes, DEFAULT_USD_TO_IDR_RATE } = require('../utils/invoiceUtils');
+const { db } = require('../configs/firebase-init');
 
 const PAPER_BASE_URL = process.env.PAPER_BASE_URL;
 
@@ -12,6 +13,12 @@ const createInvoice = async (body, callback) => {
         // items: [{ name, price, description }]
         // externalId: The Firebase Document ID
         const { user, items, externalId } = body;
+
+        // Fetch the current USD→IDR exchange rate from Firestore
+        const settingsDoc = await db.collection('systemSettings').doc('global').get();
+        const usdToIdrRate = settingsDoc.exists
+            ? (settingsDoc.data().usdToIdrRate || DEFAULT_USD_TO_IDR_RATE)
+            : DEFAULT_USD_TO_IDR_RATE;
 
         // 1. Format Dates to DD-MM-YYYY (Required by Paper.id)
         const invoiceDate = dayjs().format('DD-MM-YYYY');
@@ -31,7 +38,7 @@ const createInvoice = async (body, callback) => {
                 phone: user.phone
             },
             items: items.map(item => {
-                const converted = buildInvoiceItem(item);
+                const converted = buildInvoiceItem(item, usdToIdrRate);
 
                 return {
                     name: converted.name,
@@ -55,7 +62,7 @@ const createInvoice = async (body, callback) => {
             Compliance with Competition Rules
             Participants must comply with all competition regulations. Any violation may result in disqualification without refund.
 `,
-            notes: buildInvoiceNotes(dueDate, isInternational),
+            notes: buildInvoiceNotes(dueDate, isInternational, usdToIdrRate),
             send: {
                 email: true,
                 whatsapp: true,

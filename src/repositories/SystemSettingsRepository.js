@@ -37,6 +37,11 @@ const updateGlobalSettings = async (body, callback) => {
             updatePayload.juryDeadlines = body.juryDeadlines;
         }
 
+        // Support usdToIdrRate (exchange rate for international invoices)
+        if (body.usdToIdrRate !== undefined) {
+            updatePayload.usdToIdrRate = body.usdToIdrRate;
+        }
+
         if (Object.keys(updatePayload).length === 0) {
             return callback(new Error('No valid fields to update.'));
         }
