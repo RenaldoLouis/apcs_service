@@ -43,9 +43,11 @@ async function handlePaperWebhook(req, res, next) {
         const payload = req.body;
         // Log the incoming webhook for debugging
         console.log("Received Payment Webhook:", JSON.stringify(payload, null, 2));
+        logger.info(`[PAPER_WEBHOOK_RECEIVED] Payload: ${JSON.stringify(payload)}`);
 
         // IMPORTANT TODO: on production just payload instead of payload.data
         const payloadData = payload
+        // const payloadData = payload.data
 
         // 1. Validate the Payment Status
         // Based on your example: payload.invoice.status === 'paid'
@@ -82,6 +84,7 @@ async function handlePaperWebhook(req, res, next) {
 
                     const docData = docSnap.data();
                     const performers = docData.performers || [];
+                    logger.info(`[PAPER_WEBHOOK_PERFORMERS] Registrant ${firebaseId} performers data: ${JSON.stringify(performers)}`);
 
                     // Format the price (e.g., 100000 -> "Rp 100.000")
                     const formattedPrice = new Intl.NumberFormat('id-ID', {
@@ -122,23 +125,23 @@ async function handlePaperWebhook(req, res, next) {
                     }));
 
                     // --- 5. SEND EMAILS ---
-                    logger.info(`Sending confirmation emails for ${dataEmailList.length} groups...`);
+                    logger.info(`[PAPER_WEBHOOK] Sending confirmation emails for ${dataEmailList.length} groups... Email list: ${JSON.stringify(dataEmailList)}`);
 
                     // Iterate and send emails individually (since we are in the backend)
                     for (const emailData of dataEmailList) {
                         try {
                             // A. Send Confirmation Email to User
                             // Ensure 'sendEmailFunc' is exported in your EmailService module
-                            await emailService.sendEmailFunc(emailData);
-                            logger.info(`✅ Confirmation email sent to ${emailData.email}`);
+                            const sendUserResult = await emailService.sendEmailFunc(emailData);
+                            logger.info(`[PAPER_WEBHOOK_EMAIL_SUCCESS_1] ✅ Confirmation email sent to ${emailData.email}. Result: ${JSON.stringify(sendUserResult || {})}`);
 
                             // B. Send Notification Email to APCS Admin
-                            await emailService.sendEmailNotifyApcs(emailData);
-                            logger.info(`✅ Admin notification sent for ${emailData.name}`);
+                            const sendAdminResult = await emailService.sendEmailNotifyApcs(emailData);
+                            logger.info(`[PAPER_WEBHOOK_EMAIL_SUCCESS_2] ✅ Admin notification sent for ${emailData.name}. Result: ${JSON.stringify(sendAdminResult || {})}`);
 
                         } catch (emailError) {
                             // Log error but don't fail the webhook response
-                            logger.error(`❌ Failed to send email for ${emailData.email}: ${emailError.message}`);
+                            logger.error(`[PAPER_WEBHOOK_EMAIL_ERROR] ❌ Failed to send email for ${emailData.email}: ${emailError.message} - Stack: ${emailError.stack}`);
                         }
                     }
 
@@ -148,6 +151,7 @@ async function handlePaperWebhook(req, res, next) {
                 }
             }
         } else {
+            logger.error("Webhook received but status is not 'paid', ignoring.");
             console.log("Webhook received but status is not 'paid', ignoring.");
         }
 
@@ -156,6 +160,7 @@ async function handlePaperWebhook(req, res, next) {
 
     } catch (error) {
         console.error("Webhook Processing Error:", error);
+        logger.error(`[PAPER_WEBHOOK_FATAL_ERROR] Webhook Processing Error: ${error.message} - Stack: ${error.stack}`);
         // Return 200 even on error to prevent Paper.id from retrying indefinitely
         res.status(200).json({ status: 'Error handled' });
     }

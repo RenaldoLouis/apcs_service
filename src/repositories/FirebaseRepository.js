@@ -14,8 +14,6 @@ const getGaleries = async (params, callback) => {
     const { eventName } = params;
     const normalizedNameEvent = eventName.replace(/\s+/g, '').toLowerCase()
 
-    logger.info(`Retrieving Galeries ${normalizedNameEvent}`);
-
     //AWS
     const bucketName = "apcsgalery";
 
@@ -34,8 +32,6 @@ const getGaleries = async (params, callback) => {
 };
 
 const getSponsors = async (params, callback) => {
-    logger.info(`Retrieving Sponsors`);
-
     //AWS
     const bucketName = "sponsorlogo";
 
@@ -55,8 +51,6 @@ const getSponsors = async (params, callback) => {
 const getVideos = async (params, callback) => {
     // const { eventName } = params;
     // const normalizedNameEvent = eventName.replace(/\s+/g, '').toLowerCase()
-
-    logger.info(`Retrieving Videos`);
 
     //AWS
     const bucketName = "apcsgalery";
