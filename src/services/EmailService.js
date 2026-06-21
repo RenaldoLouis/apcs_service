@@ -2575,6 +2575,7 @@ module.exports = {
     sendEmailETicketFunc,
     sendEmailFail,
     sendEmailJuryAccountCreation,
+    sendEmailJuryAccountCreationFunc,
     sendEmailGalaConcertUpdateJson,
     sendEmailStageRescheduleJson,
     sendEmailGalaWinnerAnnouncementJson,

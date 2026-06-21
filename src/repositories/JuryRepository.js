@@ -45,7 +45,7 @@ const createJury = async (body, callback) => {
         // 4. Send Email Notification with Credentials
         // We do this asynchronously so we don't block the response if email takes a second
         try {
-            await emailService.sendEmailJuryAccountCreation({
+            await emailService.sendEmailJuryAccountCreationFunc({
                 name: name,
                 email: email,
                 password: password,
