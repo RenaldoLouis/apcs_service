@@ -10,10 +10,10 @@ const createJury = async (body, callback) => {
 
     if (!email || !password || !name || !category) {
         // Assuming AppError is defined in your scope
-        throw new AppError(
+        return callback(new AppError(
             `Missing required fields: email, password, name, or category`,
             400
-        );
+        ));
     }
 
     try {
@@ -40,7 +40,7 @@ const createJury = async (body, callback) => {
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        console.log(`Successfully created new Jury: ${email}`);
+        logger.info(`Successfully created new Jury: ${email}`);
 
         // 4. Send Email Notification with Credentials
         // We do this asynchronously so we don't block the response if email takes a second
@@ -69,10 +69,10 @@ const createJury = async (body, callback) => {
         // Pass error to callback or throw depending on your architecture
         // return callback(error); 
         // OR
-        throw new AppError(
+        return callback(new AppError(
             `Failed to create jury: ${error.message}`,
             500
-        );
+        ));
     }
 }
 

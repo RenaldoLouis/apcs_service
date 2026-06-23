@@ -135,10 +135,10 @@ const createInvoice = async (body, callback) => {
     } catch (error) {
         console.error("Paper.id Error:", error?.response?.data || error.message);
         logger.info(`fail create payment: ${error.message}}`);
-        throw new AppError(
+        return callback(new AppError(
             `Failed to initiate upload: ${error.message}`,
             error.$metadata?.httpStatusCode || 500
-        );
+        ));
     }
 }
 

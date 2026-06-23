@@ -1,5 +1,4 @@
 
-const { AppError } = require('../middlewares/ErrorHandlerMiddleware.js');
 const db = require('../repositories/JuryRepository.js');
 const databaseUtil = require('../utils/DatabaseUtil.js');
 
