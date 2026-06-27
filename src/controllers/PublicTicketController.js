@@ -22,12 +22,24 @@ async function createPublicTicketBooking(req, res, next) {
         const data = await PublicTicketService.createPublicTicketBooking(req);
         // data = { bookingId, paymentUrl, lockExpiresAt }
 
+        // Resolve dynamic venue label
+        let resolvedVenueLabel = req.body.venue;
+        try {
+            const eventData = await PublicTicketService.getPublicTicketEventData();
+            if (eventData && eventData.venues) {
+                const venueObj = eventData.venues.find(v => v.id === req.body.venue);
+                if (venueObj) resolvedVenueLabel = venueObj.label;
+            }
+        } catch (e) {
+            logger.warn(`Could not fetch dynamic venue label: ${e.message}`);
+        }
+
         // Send "seats locked" holding email
         try {
             await sendSeatHoldEmail({
                 to: req.body.userEmail,
                 name: req.body.userName,
-                venue: req.body.venue,
+                venueName: resolvedVenueLabel,
                 date: req.body.date,
                 session: req.body.session,
                 paymentUrl: data.paymentUrl,
@@ -61,9 +73,21 @@ async function handlePublicTicketWebhook(req, res, next) {
 
             const bookingData = await PublicTicketService.handlePublicTicketWebhookPaid(bookingId, payloadData);
 
+            // Resolve dynamic venue label
+            let resolvedVenueLabel = bookingData.venue;
+            try {
+                const eventData = await PublicTicketService.getPublicTicketEventData();
+                if (eventData && eventData.venues) {
+                    const venueObj = eventData.venues.find(v => v.id === bookingData.venue);
+                    if (venueObj) resolvedVenueLabel = venueObj.label;
+                }
+            } catch (e) {
+                logger.warn(`Could not fetch dynamic venue label: ${e.message}`);
+            }
+
             // Send booking confirmation email
             try {
-                await sendBookingConfirmationEmail(bookingData);
+                await sendBookingConfirmationEmail(bookingData, resolvedVenueLabel);
             } catch (emailErr) {
                 logger.error(`Confirmation email failed for ${bookingData.userEmail}: ${emailErr.message}`);
             }
@@ -86,12 +110,10 @@ async function handlePublicTicketWebhook(req, res, next) {
 const formatRupiah = (amount) =>
     new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(amount);
 
-const venueLabel = (venueId) => venueId === 'Venue1' ? 'Jatayu Hall' : 'Melati Hall';
-
 /**
  * Sent immediately after "Pay Now" — seat is locked, waiting for payment.
  */
-async function sendSeatHoldEmail({ to, name, venue, date, session, paymentUrl, lockExpiresAt }) {
+async function sendSeatHoldEmail({ to, name, venueName, date, session, paymentUrl, lockExpiresAt }) {
     const deadline = new Date(lockExpiresAt).toLocaleString('id-ID', {
         timeZone: 'Asia/Jakarta',
         day: '2-digit', month: 'long', year: 'numeric',
@@ -142,7 +164,7 @@ async function sendSeatHoldEmail({ to, name, venue, date, session, paymentUrl, l
       </div>
 
       <p><strong>Booking Details:</strong></p>
-      <div class="info-row"><span class="info-label">Venue</span><span class="info-value">${venueLabel(venue)}</span></div>
+      <div class="info-row"><span class="info-label">Venue</span><span class="info-value">${venueName}</span></div>
       <div class="info-row"><span class="info-label">Date</span><span class="info-value">${date}</span></div>
       <div class="info-row"><span class="info-label">Session</span><span class="info-value">${session}</span></div>
 
@@ -172,8 +194,8 @@ async function sendSeatHoldEmail({ to, name, venue, date, session, paymentUrl, l
 /**
  * Sent after Paper.id webhook confirms payment — seats permanently reserved.
  */
-async function sendBookingConfirmationEmail(bookingData) {
-    const { userEmail, userName, venue, date, session, selectedSeatIds, tickets, totalAmount, id: bookingId } = bookingData;
+async function sendBookingConfirmationEmail(bookingData, venueName) {
+    const { userEmail, userName, date, session, selectedSeatIds, tickets, totalAmount, id: bookingId } = bookingData;
 
     // Build a human-readable seat list (seat IDs contain the label, e.g. "presto-A1_APCS2026_...")
     const seatLabels = (selectedSeatIds || []).map(id => {
@@ -230,7 +252,7 @@ async function sendBookingConfirmationEmail(bookingData) {
 
       <div class="ticket-card">
         <div class="info-row"><span class="info-label">Booking ID</span><span class="info-value">${bookingId}</span></div>
-        <div class="info-row"><span class="info-label">Venue</span><span class="info-value">${venueLabel(venue)}</span></div>
+        <div class="info-row"><span class="info-label">Venue</span><span class="info-value">${venueName}</span></div>
         <div class="info-row"><span class="info-label">Date</span><span class="info-value">${date}</span></div>
         <div class="info-row"><span class="info-label">Session</span><span class="info-value">${session}</span></div>
         <div class="info-row"><span class="info-label">Tickets</span><span class="info-value">${ticketSummary}</span></div>

@@ -39,12 +39,19 @@ const getTodayAllowedTiers = async () => {
         // Get today's date in Asia/Jakarta timezone (YYYY-MM-DD)
         const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
 
-        const todayEntry = schedule.find(entry => entry.date === today);
-        if (!todayEntry || !todayEntry.allowedTiers || todayEntry.allowedTiers.length === 0) {
+        const todayEntries = schedule.filter(entry => entry.date === today);
+        if (todayEntries.length === 0) {
             return []; // No entry for today = none allowed if enabled
         }
 
-        return todayEntry.allowedTiers;
+        const allTiers = todayEntries.reduce((acc, entry) => {
+            if (entry.allowedTiers) {
+                acc.push(...entry.allowedTiers);
+            }
+            return acc;
+        }, []);
+
+        return [...new Set(allTiers)];
     } catch (err) {
         logger.error(`Error fetching ticket eligibility: ${err.message}`);
         return null;
@@ -205,7 +212,7 @@ const createPublicTicketBooking = async (body, callback) => {
         });
 
         // --- 4. Atomic Firestore transaction: lock seats + create booking ---
-        const bookingRef = db.collection('publicBookings2026').doc();
+        const bookingRef = db.collection('publicBookings').doc();
         const bookingId = bookingRef.id;
         const lockedAt = admin.firestore.FieldValue.serverTimestamp();
         const lockExpiresAt = new Date(Date.now() + LOCK_DURATION_MS);
@@ -235,7 +242,7 @@ const createPublicTicketBooking = async (body, callback) => {
 
                     // If we're reclaiming an expired lock, also mark the old booking as expired
                     if (isExpiredLock && seatData.lockedByBookingId) {
-                        const oldBookingRef = db.collection('publicBookings2026').doc(seatData.lockedByBookingId);
+                        const oldBookingRef = db.collection('publicBookings').doc(seatData.lockedByBookingId);
                         transaction.update(oldBookingRef, { paymentStatus: 'expired' });
                     }
                     // Lock the seat
@@ -310,7 +317,7 @@ const createPublicTicketBooking = async (body, callback) => {
             try {
                 const batch = db.batch();
                 selectedSeatIds.forEach(seatId => {
-                    const seatRef = db.collection(`seats${bookingData.eventId || 'APCS2026'}`).doc(seatId);
+                    const seatRef = db.collection(`seats${eventId}`).doc(seatId);
                     batch.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
                 });
                 await batch.commit();
@@ -330,7 +337,7 @@ const createPublicTicketBooking = async (body, callback) => {
  * Returns the booking data for the caller to use when sending the confirmation email.
  */
 const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
-    const bookingRef = db.collection('publicBookings2026').doc(bookingId);
+    const bookingRef = db.collection('publicBookings').doc(bookingId);
     const bookingSnap = await bookingRef.get();
 
     if (!bookingSnap.exists) {
