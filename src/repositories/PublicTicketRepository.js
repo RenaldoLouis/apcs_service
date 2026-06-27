@@ -179,6 +179,9 @@ const createPublicTicketBooking = async (body, callback) => {
         const addOnPriceMap = {};
         (eventData.addOns || []).forEach(a => { addOnPriceMap[a.id] = { price: a.price, name: a.name }; });
 
+        const venueMap = {};
+        (eventData.venues || []).forEach(v => { venueMap[v.id] = v.label || v.id; });
+
         // --- 3. Recalculate total server-side ---
         let totalAmount = 0;
         const lineItems = [];
@@ -191,7 +194,7 @@ const createPublicTicketBooking = async (body, callback) => {
                 totalAmount += subtotal;
                 lineItems.push({
                     name: `${ticket.name} Ticket`,
-                    description: `${ticket.quantity}x ${ticket.name} – ${venue === 'Venue1' ? 'Jatayu' : 'Melati'} | ${date} ${session}`,
+                    description: `${ticket.quantity}x ${ticket.name} – ${venueMap[venue] || venue} | ${date} ${session}`,
                     price: subtotal,
                     currency: 'IDR',
                 });
@@ -406,11 +409,11 @@ const getEligibleWinners = async (_query, callback) => {
         //    Assignment shape: { [sessionId]: [ { registrantId, name, ... }, ... ] }
         const registrantSessionMap = {};
         Object.keys(assignmentsData).forEach(sessionId => {
-            // Session ID format: "Venue1_2026-06-15_10:00"
+            // Session ID format: "Venue_uuid_2026-07-01_09:00-10:00"
             const parts = sessionId.split('_');
-            const venue = parts[0] || '';
-            const date = parts[1] || '';
-            const time = parts.slice(2).join('_') || '';
+            const time = parts.pop() || '';
+            const date = parts.pop() || '';
+            const venue = parts.join('_') || '';
 
             (assignmentsData[sessionId] || []).forEach(entry => {
                 if (entry.registrantId) {
