@@ -2579,5 +2579,63 @@ module.exports = {
     sendEmailGalaConcertUpdateJson,
     sendEmailStageRescheduleJson,
     sendEmailGalaWinnerAnnouncementJson,
-    sendEmailSoundOfAsia2026InviteJson
+    sendEmailSoundOfAsia2026InviteJson,
+    sendPublicSeatHoldEmail,
+    sendPublicBookingConfirmationEmail
 };
+
+async function sendPublicSeatHoldEmail({ to, name, venueName, date, session, paymentUrl, lockExpiresAt }) {
+    const deadline = new Date(lockExpiresAt).toLocaleString('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        day: '2-digit', month: 'long', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+    }) + ' WIB';
+
+    const html = getTemplate('publicSeatHold', {
+        name,
+        venueName,
+        date,
+        session,
+        paymentUrl,
+        deadline
+    });
+
+    const mailOptions = {
+        from: '"APCS Music" <hello@apcsmusic.com>',
+        to,
+        subject: 'Your APCS 2026 Seat is Held – Complete Payment Within 30 Minutes',
+        html
+    };
+
+    await transporter.sendMail(mailOptions);
+    logger.info(`Seat-hold email sent to ${to}`);
+}
+
+async function sendPublicBookingConfirmationEmail(bookingData, venueName) {
+    const { userEmail, userName, date, session, selectedSeatIds, tickets, totalAmount, id: bookingId } = bookingData;
+
+    const seatLabels = (selectedSeatIds || []).map(id => id.split('_')[0]).join(', ');
+    const ticketSummary = (tickets || []).filter(t => t.quantity > 0).map(t => `${t.quantity}x ${t.name}`).join(', ');
+    const totalAmountFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalAmount);
+
+    const html = getTemplate('publicBookingConfirmation', {
+        userName,
+        venueName,
+        date,
+        session,
+        bookingId,
+        seatLabels,
+        ticketSummary,
+        totalAmountFormatted
+    });
+
+    const mailOptions = {
+        from: '"APCS Music" <hello@apcsmusic.com>',
+        to: userEmail,
+        subject: 'Payment Confirmed — Your APCS 2026 Gala Concert Tickets',
+        html
+    };
+
+    await transporter.sendMail(mailOptions);
+    logger.info(`Booking confirmation email sent to ${userEmail}`);
+}

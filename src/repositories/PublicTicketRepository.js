@@ -305,6 +305,42 @@ const createPublicTicketBooking = async (body, callback) => {
                 else resolve(result);
             });
         });
+        // Store the invoiceId on the booking
+        await bookingRef.update({
+            invoiceId: paperResult.invoiceId
+        });
+
+        // Setup the expiry timeout to cancel the invoice in Paper.id
+        setTimeout(async () => {
+            try {
+                const bSnap = await bookingRef.get();
+                if (bSnap.exists) {
+                    const bData = bSnap.data();
+                    if (bData.paymentStatus === 'pending') {
+                        logger.info(`Lock expired for booking ${bookingId}. Deleting invoice ${paperResult.invoiceId}.`);
+                        
+                        // Delete from Paper.id
+                        await PaperRepository.deleteInvoice(paperResult.invoiceId);
+                        
+                        // Update status to expired
+                        await bookingRef.update({ paymentStatus: 'expired' });
+
+                        // Release seats
+                        if (selectedSeatIds && selectedSeatIds.length > 0) {
+                            const batch = db.batch();
+                            selectedSeatIds.forEach(seatId => {
+                                const seatRef = db.collection(`seats${eventId}`).doc(seatId);
+                                batch.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
+                            });
+                            await batch.commit();
+                            logger.info(`Seats released for expired booking ${bookingId}`);
+                        }
+                    }
+                }
+            } catch (timeoutErr) {
+                logger.error(`Error in expiry timeout for booking ${bookingId}: ${timeoutErr.message}`);
+            }
+        }, LOCK_DURATION_MS + 2000); // add 2s buffer to ensure it is fully expired
 
         callback(null, {
             bookingId,
@@ -353,6 +389,12 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
     if (bookingData.paymentStatus === 'PAID') {
         logger.info(`Booking ${bookingId} already marked PAID. Skipping.`);
         return bookingData;
+    }
+
+    // Safety guard: if lock has expired, reject
+    if (bookingData.paymentStatus === 'expired' || Date.now() > bookingData.lockExpiresAt.toDate().getTime()) {
+        logger.warn(`Received webhook for EXPIRED booking ${bookingId}. Rejecting to prevent race condition.`);
+        throw new Error(`Booking ${bookingId} lock has already expired.`);
     }
 
     // Upgrade seats + mark booking paid in a batch

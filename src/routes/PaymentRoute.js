@@ -66,6 +66,7 @@ router.post('/confirm-seats', TicketController.confirmSeatSelection);
 router.get('/public-ticket/event-data',       PublicTicketController.getPublicTicketEventData);
 router.get('/public-ticket/seats',            PublicTicketController.getPublicTicketSeats);
 router.get('/public-ticket/eligible-winners', PublicTicketController.getEligibleWinners);
+router.get('/public-ticket/booking-status/:bookingId', PublicTicketController.getBookingStatus);
 router.post('/public-ticket/booking',         PublicTicketController.createPublicTicketBooking);
 router.post('/public-ticket/webhook',         PublicTicketController.handlePublicTicketWebhook);
 

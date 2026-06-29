@@ -12,7 +12,7 @@ const createInvoice = async (body, callback) => {
         // user: { name, email, phone }
         // items: [{ name, price, description }]
         // externalId: The Firebase Document ID
-        const { user, items, externalId } = body;
+        const { user, items, externalId, notes } = body;
 
         // Fetch the current USD→IDR exchange rate from Firestore
         const settingsDoc = await db.collection('systemSettings').doc('global').get();
@@ -63,7 +63,7 @@ const createInvoice = async (body, callback) => {
             Compliance with Competition Rules
             Participants must comply with all competition regulations. Any violation may result in disqualification without refund.
 `,
-            notes: buildInvoiceNotes(dueDate, isInternational, usdToIdrRate),
+            notes: notes || buildInvoiceNotes(dueDate, isInternational, usdToIdrRate),
             send: {
                 email: true,
                 whatsapp: true,
@@ -142,6 +142,29 @@ const createInvoice = async (body, callback) => {
     }
 }
 
+const deleteInvoice = async (invoiceId) => {
+    try {
+        const response = await axios.delete(
+            `${PAPER_BASE_URL}/sales-invoices/${invoiceId}`,
+            {
+                headers: {
+                    'client_id': process.env.PAPER_CLIENT_ID,
+                    'client_secret': process.env.PAPER_CLIENT_SECRET,
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
+        logger.info(`Successfully deleted Paper.id invoice ${invoiceId}`);
+        return response.data;
+    } catch (error) {
+        logger.error(`Failed to delete Paper.id invoice ${invoiceId}: ${error?.response?.data || error.message}`);
+        // Do not throw here to avoid crashing the caller (e.g. timeout sweepers). 
+        // Just return false.
+        return false;
+    }
+}
+
 module.exports = {
-    createInvoice
+    createInvoice,
+    deleteInvoice
 }

@@ -494,6 +494,122 @@ const templates = {
             </html>
         `
     }),
+
+    publicSeatHold: (data) => {
+        return `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Your Seat is Held</title>
+                <style>
+                    ${commonCss}
+                    .alert-box { background: #fff3cd; border: 1px solid #ffeeba; border-radius: 8px; padding: 16px 20px; margin: 24px 0; }
+                    .alert-box p { margin: 0; color: #856404; font-weight: 600; font-size: 14px; }
+                    .info-row { display: flex; margin-bottom: 8px; }
+                    .info-label { color: #888; min-width: 120px; font-size: 13px; }
+                    .info-value { color: #333; font-size: 13px; font-weight: 600; }
+                    .cta-button { display: inline-block; width: fit-content; margin: 28px 0; background: #EBBC64; color: #000; font-weight: 700; font-size: 16px; padding: 14px 40px; border-radius: 8px; text-decoration: none; text-align: center; }
+                </style>
+            </head>
+            <body>
+                <div class="email-wrapper">
+                    <div class="email-container">
+                        ${generateCommonHeader()}
+                        <div class="content">
+                            <p>Dear <strong>${data.name}</strong>,</p>
+                            <p>Your selected seat(s) are now <strong>temporarily reserved</strong> for you.</p>
+
+                            <div class="alert-box">
+                                <p>Complete your payment before <strong>${data.deadline}</strong>.<br>
+                                After this time, your seat reservation will be automatically released.</p>
+                            </div>
+
+                            <p><strong>Booking Details:</strong></p>
+                            <div class="info-row"><span class="info-label">Venue</span><span class="info-value">${data.venueName}</span></div>
+                            <div class="info-row"><span class="info-label">Date</span><span class="info-value">${data.date}</span></div>
+                            <div class="info-row"><span class="info-label">Session</span><span class="info-value">${data.session}</span></div>
+
+                            <div style="text-align: center;">
+                                <a href="${data.paymentUrl}" class="cta-button">Complete Payment Now</a>
+                            </div>
+
+                            <p style="color:#888; font-size:13px;">If the button doesn't work, copy and paste this link into your browser:<br>
+                            <a href="${data.paymentUrl}" style="color:#1a73e8; word-break:break-all;">${data.paymentUrl}</a></p>
+
+                            <p>If you did not initiate this booking, please ignore this email — your seats will be released automatically.</p>
+                            <p style="margin-top: 24px;">
+                                Warm regards,<br>
+                                <strong>APCS Team</strong>
+                            </p>
+                        </div>
+                        ${generateCommonFooter()}
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+    },
+
+    publicBookingConfirmation: (data) => {
+        return `
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Payment Confirmed</title>
+                <style>
+                    ${commonCss}
+                    .success-badge { background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 12px 20px; margin: 0 0 24px; text-align: center; color: #155724; font-weight: 700; font-size: 15px; }
+                    .ticket-card { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin: 16px 0; }
+                    .info-row { display: flex; margin-bottom: 8px; }
+                    .info-label { color: #888; min-width: 140px; font-size: 13px; }
+                    .info-value { color: #333; font-size: 13px; font-weight: 600; }
+                    .divider { border: none; border-top: 1px solid #e9ecef; margin: 20px 0; }
+                    .total-row { display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; }
+                    .total-amount { color: #333; }
+                </style>
+            </head>
+            <body>
+                <div class="email-wrapper">
+                    <div class="email-container">
+                        ${generateCommonHeader()}
+                        <div class="content">
+                            <div class="success-badge">Payment Confirmed</div>
+
+                            <p>Dear <strong>${data.userName}</strong>,</p>
+                            <p>Thank you! Your payment has been received and your seat(s) for the <strong>APCS 2026 Gala Concert</strong> are now <strong>permanently reserved</strong>.</p>
+
+                            <div class="ticket-card">
+                                <div class="info-row"><span class="info-label">Booking ID</span><span class="info-value">${data.bookingId}</span></div>
+                                <div class="info-row"><span class="info-label">Venue</span><span class="info-value">${data.venueName}</span></div>
+                                <div class="info-row"><span class="info-label">Date</span><span class="info-value">${data.date}</span></div>
+                                <div class="info-row"><span class="info-label">Session</span><span class="info-value">${data.session}</span></div>
+                                <div class="info-row"><span class="info-label">Tickets</span><span class="info-value">${data.ticketSummary}</span></div>
+                                ${data.seatLabels ? `<div class="info-row"><span class="info-label">Seats</span><span class="info-value">${data.seatLabels}</span></div>` : ''}
+                                <hr class="divider">
+                                <div class="total-row">
+                                    <span>Total Paid</span>
+                                    <span class="total-amount">${data.totalAmountFormatted}</span>
+                                </div>
+                            </div>
+
+                            <p>Please present this email or your Booking ID at the venue entrance. Our team will verify your booking.</p>
+                            <p>We look forward to seeing you at the concert!</p>
+                            <p style="margin-top: 24px;">
+                                Warm regards,<br>
+                                <strong>APCS Team</strong>
+                            </p>
+                        </div>
+                        ${generateCommonFooter()}
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+    }
 };
 
 const getTemplate = (type, data) => {

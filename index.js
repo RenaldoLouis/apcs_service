@@ -8,6 +8,7 @@ const paymentRoute = require('./src/routes/PaymentRoute.js')
 const paperRoute = require('./src/routes/PaperRoute.js')
 const PaymentIntegrationRoute = require('./src/routes/PaymentIntegrationRoute.js')
 const wasteRoute = require('./src/routes/WasteRoutes.js')
+const { startPublicTicketSweeper } = require('./src/jobs/PublicTicketSweeper.js')
 
 app.use(cors())
 app.use(bodyParser.json())
@@ -25,6 +26,9 @@ app.use('/api/v1/apcs/paymentIntegration', PaymentIntegrationRoute)
 // app.use('/api/v1/apcs', wasteRoute)
 
 app.use(errorHandler)
+
+// Start background jobs
+startPublicTicketSweeper()
 
 app.listen(port, () => {
     console.log(`App running on port ${port}.`)
