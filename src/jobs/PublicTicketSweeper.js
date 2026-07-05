@@ -14,7 +14,6 @@ const startPublicTicketSweeper = () => {
                 
             if (pendingBookingsSnap.empty) return;
             
-            const batch = db.batch();
             let expiredCount = 0;
             
             for (const doc of pendingBookingsSnap.docs) {
@@ -22,30 +21,71 @@ const startPublicTicketSweeper = () => {
                 
                 // If the lock has expired
                 if (data.lockExpiresAt && data.lockExpiresAt.toDate().getTime() < Date.now()) {
-                    expiredCount++;
                     const bookingId = doc.id;
                     logger.info(`[SWEEPER] Found expired pending booking ${bookingId}. Cleaning up.`);
                     
                     // 1. Delete invoice in Paper.id
                     if (data.invoiceId) {
-                        await PaperRepository.deleteInvoice(data.invoiceId);
+                        try {
+                            await PaperRepository.deleteInvoice(data.invoiceId);
+                        } catch (err) {
+                            logger.error(`[SWEEPER] Failed to delete invoice ${data.invoiceId}: ${err.message}`);
+                        }
                     }
                     
-                    // 2. Mark as expired
-                    batch.update(doc.ref, { paymentStatus: 'expired' });
-                    
-                    // 3. Release seats
-                    if (data.eventId && data.selectedSeatIds && data.selectedSeatIds.length > 0) {
-                        data.selectedSeatIds.forEach(seatId => {
-                            const seatRef = db.collection(`seats${data.eventId}`).doc(seatId);
-                            batch.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
+                    // 2. Perform Firestore cleanup atomically
+                    try {
+                        await db.runTransaction(async (transaction) => {
+                            const bDoc = await transaction.get(doc.ref);
+                            if (!bDoc.exists || bDoc.data().paymentStatus !== 'pending') return;
+
+                            // Mark as expired
+                            transaction.update(doc.ref, { paymentStatus: 'expired' });
+
+                            // Release normal seats
+                            if (data.eventId && data.selectedSeatIds && data.selectedSeatIds.length > 0) {
+                                data.selectedSeatIds.forEach(seatId => {
+                                    const seatRef = db.collection(`seats${data.eventId}`).doc(seatId);
+                                    transaction.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
+                                });
+                            }
+                            
+                            // Release orchestra complimentary seats
+                            if (data.eventId && data.orchestraSelectedSeatIds && data.orchestraSelectedSeatIds.length > 0) {
+                                data.orchestraSelectedSeatIds.forEach(seatId => {
+                                    const seatRef = db.collection(`seats${data.eventId}`).doc(seatId);
+                                    transaction.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
+                                });
+                            }
+
+                            // Refund complimentary quota
+                            if (data.eventId && data.orchestraSessionId && data.complimentaryTickets > 0) {
+                                const eventRef = db.collection('events').doc(data.eventId);
+                                const eventDoc = await transaction.get(eventRef);
+                                if (eventDoc.exists) {
+                                    const eventData = eventDoc.data();
+                                    const osIndex = (eventData.orchestraSessions || []).findIndex(s => s.id === data.orchestraSessionId);
+                                    if (osIndex !== -1) {
+                                        const currentSession = eventData.orchestraSessions[osIndex];
+                                        const claimed = currentSession.complimentaryClaimed || 0;
+                                        const updatedSessions = [...eventData.orchestraSessions];
+                                        updatedSessions[osIndex] = {
+                                            ...currentSession,
+                                            complimentaryClaimed: Math.max(0, claimed - data.complimentaryTickets)
+                                        };
+                                        transaction.update(eventRef, { orchestraSessions: updatedSessions });
+                                    }
+                                }
+                            }
                         });
+                        expiredCount++;
+                    } catch (err) {
+                        logger.error(`[SWEEPER] Firestore transaction failed for ${bookingId}: ${err.message}`);
                     }
                 }
             }
             
             if (expiredCount > 0) {
-                await batch.commit();
                 logger.info(`[SWEEPER] Cleaned up ${expiredCount} expired public bookings.`);
             }
             

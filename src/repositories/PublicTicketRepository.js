@@ -138,6 +138,7 @@ const createPublicTicketBooking = async (body, callback) => {
         orchestraSessionId,
         tickets,      // [{ id, name, quantity, priceEach }]
         selectedSeatIds, // [seatDocumentId, ...]
+        orchestraSelectedSeatIds, // [seatDocumentId, ...]
         addOnIds,     // ['merchandise', ...]
         registrantId, // ID of the winner who initiated this booking
     } = body;
@@ -193,9 +194,11 @@ const createPublicTicketBooking = async (body, callback) => {
         const totalSelected = (selectedSeatIds || []).length;
         
         let quotaLeft = 0;
+        let osIndex = -1;
         if (isWinner) {
-            const os = (eventData.orchestraSessions || []).find(s => s.id === orchestraSessionId);
-            if (os) {
+            osIndex = (eventData.orchestraSessions || []).findIndex(s => s.id === orchestraSessionId);
+            if (osIndex !== -1) {
+                const os = eventData.orchestraSessions[osIndex];
                 quotaLeft = Math.max(0, (os.complimentaryQuota || 0) - (os.complimentaryClaimed || 0));
             }
         }
@@ -262,6 +265,25 @@ const createPublicTicketBooking = async (body, callback) => {
         const lockExpiresAt = new Date(Date.now() + LOCK_DURATION_MS);
 
         await db.runTransaction(async (transaction) => {
+            // 0. Update complimentary quota if F_expected > 0
+            if (F_expected > 0 && osIndex !== -1) {
+                const currentEventDoc = await transaction.get(eventRef);
+                const currentEventData = currentEventDoc.data();
+                const currentSession = currentEventData.orchestraSessions[osIndex];
+                const claimed = currentSession.complimentaryClaimed || 0;
+                
+                if (claimed + F_expected > currentSession.complimentaryQuota) {
+                    throw new Error("Not enough complimentary quota left for the orchestra session.");
+                }
+                
+                const updatedSessions = [...currentEventData.orchestraSessions];
+                updatedSessions[osIndex] = {
+                    ...currentSession,
+                    complimentaryClaimed: claimed + F_expected
+                };
+                transaction.update(eventRef, { orchestraSessions: updatedSessions });
+            }
+
             // Check every selected seat is still available
             if (selectedSeatIds && selectedSeatIds.length > 0) {
                 const seatRefs = selectedSeatIds.map(id => db.collection(`seats${eventId}`).doc(id));
@@ -298,6 +320,39 @@ const createPublicTicketBooking = async (body, callback) => {
                 }
             }
 
+            // Lock orchestra seats
+            if (orchestraSelectedSeatIds && orchestraSelectedSeatIds.length > 0) {
+                const orchRefs = orchestraSelectedSeatIds.map(id => db.collection(`seats${eventId}`).doc(id));
+                const orchDocs = await transaction.getAll(...orchRefs);
+
+                for (const seatDoc of orchDocs) {
+                    if (!seatDoc.exists) {
+                        throw new Error(`Orchestra seat ${seatDoc.id} does not exist.`);
+                    }
+                    const seatData = seatDoc.data();
+
+                    const isAvailable = seatData.status === 'available';
+                    const isExpiredLock = seatData.status === 'locked'
+                        && seatData.lockedAt
+                        && (Date.now() - seatData.lockedAt.toDate().getTime()) > LOCK_DURATION_MS;
+
+                    if (!isAvailable && !isExpiredLock) {
+                        throw new Error(`Orchestra seat ${seatData.seatLabel} is no longer available. Please go back and re-select.`);
+                    }
+
+                    if (isExpiredLock && seatData.lockedByBookingId) {
+                        const oldBookingRef = db.collection('publicBookings').doc(seatData.lockedByBookingId);
+                        transaction.update(oldBookingRef, { paymentStatus: 'expired' });
+                    }
+                    
+                    transaction.update(seatDoc.ref, {
+                        status: 'locked',
+                        lockedAt: lockedAt,
+                        lockedByBookingId: bookingId,
+                    });
+                }
+            }
+
             // Create the booking document
             transaction.set(bookingRef, {
                 eventId: eventId,
@@ -312,6 +367,7 @@ const createPublicTicketBooking = async (body, callback) => {
                 orchestraSessionId: orchestraSessionId || '',
                 tickets,
                 selectedSeatIds: selectedSeatIds || [],
+                orchestraSelectedSeatIds: orchestraSelectedSeatIds || [],
                 addOnIds: addOnIds || [],
                 totalAmount,
                 complimentaryTickets: F_expected,
@@ -367,18 +423,54 @@ const createPublicTicketBooking = async (body, callback) => {
                         // Delete from Paper.id
                         await PaperRepository.deleteInvoice(paperResult.invoiceId);
                         
-                        // Update status to expired
-                        await bookingRef.update({ paymentStatus: 'expired' });
+                        // Perform Firestore cleanup atomically
+                        try {
+                            await db.runTransaction(async (transaction) => {
+                                const bDoc = await transaction.get(bookingRef);
+                                if (!bDoc.exists || bDoc.data().paymentStatus !== 'pending') return;
 
-                        // Release seats
-                        if (selectedSeatIds && selectedSeatIds.length > 0) {
-                            const batch = db.batch();
-                            selectedSeatIds.forEach(seatId => {
-                                const seatRef = db.collection(`seats${eventId}`).doc(seatId);
-                                batch.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
+                                // Update status to expired
+                                transaction.update(bookingRef, { paymentStatus: 'expired' });
+
+                                // Release normal seats
+                                if (selectedSeatIds && selectedSeatIds.length > 0) {
+                                    selectedSeatIds.forEach(seatId => {
+                                        const seatRef = db.collection(`seats${eventId}`).doc(seatId);
+                                        transaction.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
+                                    });
+                                }
+
+                                // Release orchestra complimentary seats
+                                if (orchestraSelectedSeatIds && orchestraSelectedSeatIds.length > 0) {
+                                    orchestraSelectedSeatIds.forEach(seatId => {
+                                        const seatRef = db.collection(`seats${eventId}`).doc(seatId);
+                                        transaction.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
+                                    });
+                                }
+
+                                // Refund complimentary quota
+                                if (orchestraSessionId && F_expected > 0) {
+                                    const evtRef = db.collection('events').doc(eventId);
+                                    const evtDoc = await transaction.get(evtRef);
+                                    if (evtDoc.exists) {
+                                        const evtData = evtDoc.data();
+                                        const osIdx = (evtData.orchestraSessions || []).findIndex(s => s.id === orchestraSessionId);
+                                        if (osIdx !== -1) {
+                                            const currentSession = evtData.orchestraSessions[osIdx];
+                                            const claimed = currentSession.complimentaryClaimed || 0;
+                                            const updatedSessions = [...evtData.orchestraSessions];
+                                            updatedSessions[osIdx] = {
+                                                ...currentSession,
+                                                complimentaryClaimed: Math.max(0, claimed - F_expected)
+                                            };
+                                            transaction.update(evtRef, { orchestraSessions: updatedSessions });
+                                        }
+                                    }
+                                }
                             });
-                            await batch.commit();
-                            logger.info(`Seats released for expired booking ${bookingId}`);
+                            logger.info(`Seats and quota released for expired booking ${bookingId}`);
+                        } catch (err) {
+                            logger.error(`Error in expiry transaction for booking ${bookingId}: ${err.message}`);
                         }
                     }
                 }
@@ -446,7 +538,9 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
     const batch = db.batch();
     const eventId = await getCurrentEventId();
 
-    (bookingData.selectedSeatIds || []).forEach(seatId => {
+    const allSeatsToReserve = [...(bookingData.selectedSeatIds || []), ...(bookingData.orchestraSelectedSeatIds || [])];
+
+    allSeatsToReserve.forEach(seatId => {
         const seatRef = db.collection(`seats${eventId}`).doc(seatId);
         batch.update(seatRef, {
             status: 'reserved',
