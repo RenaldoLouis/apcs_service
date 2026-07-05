@@ -74,7 +74,7 @@ async function handlePaperWebhook(req, res, next) {
                     await docRef.update({
                         paymentStatus: 'PAID',
                         paidAt: new Date(),
-                        amountPaid: payloadData.invoice.total_amount,
+                        amountPaid: payloadData.invoice.amount || payloadData.invoice.amount_due || 0,
                         paymentMethod: payloadData.payment_info?.method || 'paper_id',
                         paymentDetails: payloadData // Save full log for audit trail
                     });
