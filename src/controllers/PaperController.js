@@ -46,7 +46,7 @@ async function handlePaperWebhook(req, res, next) {
         logger.info(`[PAPER_WEBHOOK_RECEIVED] Payload: ${JSON.stringify(payload)}`);
 
         const paperEnv = process.env.PAPER_ENV || 'development';
-        const payloadData = (paperEnv === 'production' || paperEnv === 'prod') ? payload : payload.data;
+        const payloadData = (paperEnv === 'production' || paperEnv === 'Production' || paperEnv === 'prod') ? payload : payload.data;
 
         // 1. Validate the Payment Status
         // Based on your example: payload.invoice.status === 'paid'

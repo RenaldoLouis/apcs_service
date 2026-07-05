@@ -86,7 +86,7 @@ async function handlePublicTicketWebhook(req, res, next) {
         logger.info('Public ticket webhook received: ' + JSON.stringify(payload));
 
         const paperEnv = process.env.PAPER_ENV || 'development';
-        const payloadData = (paperEnv === 'production' || paperEnv === 'prod') ? payload : payload.data;
+        const payloadData = (paperEnv === 'production' || paperEnv === 'Production' || paperEnv === 'prod') ? payload : payload.data;
         const isPaid = payloadData.invoice && payloadData.invoice.status?.toLowerCase() === 'paid';
 
         if (isPaid) {

@@ -510,6 +510,7 @@ const getEligibleWinners = async (_query, callback) => {
                     finalAward: award,
                     competitionCategory: data.competitionCategory || '',
                     teacherName: data.teacherName || '',
+                    repertoireTitle: data.repertoireTitle || '',
                     session: registrantSessionMap[doc.id],
                 });
             });
