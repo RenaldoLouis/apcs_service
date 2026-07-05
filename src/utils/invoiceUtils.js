@@ -10,7 +10,7 @@
  * when the Firestore value is unavailable.
  */
 
-const DEFAULT_USD_TO_IDR_RATE = 17800;
+const DEFAULT_USD_TO_IDR_RATE = 17900;
 
 /**
  * Converts a single invoice item from the frontend format into the
