@@ -60,7 +60,8 @@ async function createPublicTicketBooking(req, res, next) {
         try {
             await emailService.sendPublicSeatHoldEmail({
                 to: req.body.userEmail,
-                name: req.body.userName,
+                name: req.body.buyerName,
+                registrantName: req.body.registrantName,
                 venueName: resolvedVenueLabel,
                 date: req.body.date,
                 session: req.body.session,

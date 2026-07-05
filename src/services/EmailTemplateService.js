@@ -519,6 +519,7 @@ const templates = {
                         ${generateCommonHeader()}
                         <div class="content">
                             <p>Dear <strong>${data.name}</strong>,</p>
+                            ${data.registrantName ? `<p style="margin-top: -10px; color: #555; font-size: 14px;">Paying for Registrant: <strong>${data.registrantName}</strong></p>` : ''}
                             <p>Your selected seat(s) are now <strong>temporarily reserved</strong> for you.</p>
 
                             <div class="alert-box">
@@ -580,6 +581,7 @@ const templates = {
                             <div class="success-badge">Payment Confirmed</div>
 
                             <p>Dear <strong>${data.userName}</strong>,</p>
+                            ${data.registrantName ? `<p style="margin-top: -10px; color: #555; font-size: 14px;">Paying for Registrant: <strong>${data.registrantName}</strong></p>` : ''}
                             <p>Thank you! Your payment has been received and your seat(s) for the <strong>APCS 2026 Gala Concert</strong> are now <strong>permanently reserved</strong>.</p>
 
                             <div class="ticket-card">
@@ -609,7 +611,46 @@ const templates = {
             </body>
             </html>
         `;
-    }
+    },
+    PERFORMANCE_INVITATION: (data) => ({
+        subject: `APCS Gala Concert 2026 – Performance Invitation`,
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    ${commonCss}
+                </style>
+            </head>
+            <body>
+                <div class="email-wrapper">
+                    <div class="email-container">
+                        ${generateCommonHeader()}
+                        <div class="content">
+                            <p>Dear <strong>${data.name}</strong>,</p>
+                            <p>Congratulations!</p>
+                            <p>You have been awarded as a <strong>${data.awardTier ? data.awardTier.toUpperCase() : 'SILVER/GOLD/DIAMOND'} WINNER</strong> and are invited to perform at the APCS Gala Concert The Sound of Asia 2026.</p>
+                            <p>Date: 14–15 November 2026<br>
+                            Venue: Titan Center<br>
+                            Address: Jln. Boulevard Bintaro, Block B7/B1 No.5, Bintaro Jaya, Sektor 7, Tangerang 15424, Indonesia</p>
+                            <p>Please read the attached <strong>PDF</strong> carefully, as it contains all important event guidelines and performance information.</p>
+                            <p>Kindly confirm your attendance by <strong>${data.confirmationDeadline}</strong>. After the deadline, no changes or performer substitutions can be made.</p>
+                            <p>The final performance rundown will be shared on <strong>${data.rundownReleaseDate}</strong>.</p>
+                            <p>If you have any questions, feel free to <a href="https://wa.me/6281222625296">contact our admin via WhatsApp</a>.</p>
+                            <p>We look forward to seeing you at APCS The Sound of Asia 2026!</p>
+                            <p>
+                                Best regards,<br>
+                                <strong>APCS Team</strong>
+                            </p>
+                        </div>
+                        ${generateCommonFooter()}
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    })
 };
 
 const getTemplate = (type, data) => {

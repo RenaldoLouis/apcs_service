@@ -29,6 +29,7 @@ router.post('/sendEmailNotifyBulkUpdateRegistrant', EmailController.sendEmailNot
 router.post('/sendEmailStageReschedule', EmailController.sendEmailStageReschedule)
 router.post('/sendEmailGalaConcertUpdate', EmailController.sendEmailGalaConcertUpdate)
 router.post('/sendEmailGalaWinnerAnnouncement', EmailController.sendEmailGalaWinnerAnnouncement)
+router.post('/sendEmailPerformanceInvitation', EmailController.sendEmailPerformanceInvitation)
 router.post('/sendEmailSoundOfAsia2026Invite', EmailController.sendEmailSoundOfAsia2026Invite)
 
 const PaperController = require("../controllers/PaperController");

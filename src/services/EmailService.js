@@ -27,6 +27,7 @@ const ATTACHMENT_SESSION = 'RUNDOWN APCS THE SOUND OF ASIA 2025 (1&2 NOVEMBER 20
 const EXCEL_TEAM_LIST = path.join(__dirname, 'attachments/emailTeam.csv');
 const EXCEL_SPONSOR_LIST = path.join(__dirname, 'attachments/emailSponsor.csv');
 const TNC_APCS_TICKETING = path.join(__dirname, 'attachments/TNCAPCSTICKETING.pdf');
+const PERFORMANCE_INVITATION_PDF = path.join(__dirname, 'attachments/PERFORMANCE_INVITATION_2026.pdf');
 
 const ANNOUNCEMENT_DUMMY_LIST = path.join(__dirname, 'attachments/2026_harp_list.csv');
 const LIST_FAILED = path.join(__dirname, 'attachments/emailFailCert.csv');
@@ -2508,6 +2509,69 @@ async function sendEmailGalaWinnerAnnouncementJson(registrants) {
     }
 }
 
+async function sendEmailPerformanceInvitationJson(registrants, confirmationDeadline, rundownReleaseDate) {
+    logger.info("sending Performance Invitation emails from JSON...");
+
+    try {
+        if (!registrants || registrants.length === 0) {
+            logger.info("No registrants provided in payload. Exiting.");
+            return;
+        }
+
+        logger.info(`Found ${registrants.length} registrants to email.`);
+
+        for (const data of registrants) {
+            if (data && data.name && data.email) {
+                const awardTier = data.award || '';
+                
+                if (!awardTier || awardTier.toLowerCase() === 'participant') {
+                    logger.error(`Registrant ${data.name} (${data.email}) has no valid award. Skipping Performance Invitation.`);
+                    continue;
+                }
+
+                const to = data.email;
+                const templateData = { 
+                    name: data.name, 
+                    awardTier: awardTier,
+                    confirmationDeadline: confirmationDeadline || '[Confirmation Deadline]',
+                    rundownReleaseDate: rundownReleaseDate || '[Rundown Release Date]'
+                };
+                
+                const { subject, html } = getTemplate('PERFORMANCE_INVITATION', templateData);
+
+                let attachments = [];
+                if (fs.existsSync(PERFORMANCE_INVITATION_PDF)) {
+                    attachments.push({
+                        filename: 'PERFORMANCE_INVITATION.pdf',
+                        path: PERFORMANCE_INVITATION_PDF
+                    });
+                } else {
+                    logger.warn(`PERFORMANCE_INVITATION_PDF not found at ${PERFORMANCE_INVITATION_PDF}. Sending without attachment.`);
+                }
+
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: to,
+                    subject: subject,
+                    html: html,
+                    attachments: attachments
+                };
+
+                await transporter.sendMail(mailOptions);
+                logger.info(`Successfully sent Performance Invitation email to ${to}`);
+                
+                // Add a short delay between emails to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 550));
+            } else {
+                logger.warn(`Skipping invalid registrant data: ${JSON.stringify(data)}`);
+            }
+        }
+        logger.info("Performance Invitation email campaign finished!");
+    } catch (error) {
+        logger.error(`Failed to send Performance Invitation email: ${error.message}`);
+    }
+}
+
 async function sendEmailSoundOfAsia2026InviteJson(registrants) {
     logger.info("sending Sound of Asia 2026 Invite email from JSON...");
 
@@ -2579,12 +2643,13 @@ module.exports = {
     sendEmailGalaConcertUpdateJson,
     sendEmailStageRescheduleJson,
     sendEmailGalaWinnerAnnouncementJson,
+    sendEmailPerformanceInvitationJson,
     sendEmailSoundOfAsia2026InviteJson,
     sendPublicSeatHoldEmail,
     sendPublicBookingConfirmationEmail
 };
 
-async function sendPublicSeatHoldEmail({ to, name, venueName, date, session, paymentUrl, lockExpiresAt }) {
+async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, date, session, paymentUrl, lockExpiresAt }) {
     const deadline = new Date(lockExpiresAt).toLocaleString('id-ID', {
         timeZone: 'Asia/Jakarta',
         day: '2-digit', month: 'long', year: 'numeric',
@@ -2593,6 +2658,7 @@ async function sendPublicSeatHoldEmail({ to, name, venueName, date, session, pay
 
     const html = getTemplate('publicSeatHold', {
         name,
+        registrantName,
         venueName,
         date,
         session,
@@ -2612,14 +2678,15 @@ async function sendPublicSeatHoldEmail({ to, name, venueName, date, session, pay
 }
 
 async function sendPublicBookingConfirmationEmail(bookingData, venueName) {
-    const { userEmail, userName, date, session, selectedSeatIds, tickets, totalAmount, id: bookingId } = bookingData;
+    const { userEmail, userName, buyerName, registrantName, date, session, selectedSeatIds, tickets, totalAmount, id: bookingId } = bookingData;
 
     const seatLabels = (selectedSeatIds || []).map(id => id.split('_')[0]).join(', ');
     const ticketSummary = (tickets || []).filter(t => t.quantity > 0).map(t => `${t.quantity}x ${t.name}`).join(', ');
     const totalAmountFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalAmount);
 
     const html = getTemplate('publicBookingConfirmation', {
-        userName,
+        userName: buyerName || userName,
+        registrantName,
         venueName,
         date,
         session,

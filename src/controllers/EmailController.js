@@ -145,6 +145,16 @@ async function sendEmailGalaWinnerAnnouncement(req, res, next) {
     }
 }
 
+async function sendEmailPerformanceInvitation(req, res, next) {
+    try {
+        const { registrants, confirmationDeadline, rundownReleaseDate } = req.body;
+        const data = await email.sendEmailPerformanceInvitationJson(registrants, confirmationDeadline, rundownReleaseDate);
+        res.status(200).send({ message: "Performance Invitation emails sent successfully", data });
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function sendEmailSoundOfAsia2026Invite(req, res, next) {
     try {
         const data = await email.sendEmailSoundOfAsia2026InviteJson(req.body.registrants)
@@ -171,5 +181,6 @@ module.exports = {
     sendEmailStageReschedule,
     sendEmailGalaConcertUpdate,
     sendEmailGalaWinnerAnnouncement,
+    sendEmailPerformanceInvitation,
     sendEmailSoundOfAsia2026Invite
 };

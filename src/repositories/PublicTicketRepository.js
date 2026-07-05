@@ -133,16 +133,17 @@ const getPublicTicketSeats = async (query, callback) => {
  */
 const createPublicTicketBooking = async (body, callback) => {
     const {
-        userName, userEmail, userPhone,
+        registrantName, buyerName, userEmail, userPhone,
         venue, date, session,
-        tickets,      // [{ id, name, quantity, wantsSeat, seatQuantity }]
+        orchestraSessionId,
+        tickets,      // [{ id, name, quantity, priceEach }]
         selectedSeatIds, // [seatDocumentId, ...]
         addOnIds,     // ['merchandise', ...]
         registrantId, // ID of the winner who initiated this booking
     } = body;
 
     // --- 1. Basic validation ---
-    if (!userName || !userEmail || !userPhone || !venue || !date || !session || !tickets) {
+    if (!buyerName || !userEmail || !userPhone || !venue || !date || !session || !tickets) {
         return callback(new Error('Missing required booking fields.'));
     }
 
@@ -186,6 +187,37 @@ const createPublicTicketBooking = async (body, callback) => {
         let totalAmount = 0;
         const lineItems = [];
 
+        // Verify expected seat count vs paid tickets
+        const isWinner = !!registrantId;
+        const hasSeatSelectionAddon = (addOnIds || []).includes('seat_selection');
+        const totalSelected = (selectedSeatIds || []).length;
+        
+        let quotaLeft = 0;
+        if (isWinner) {
+            const os = (eventData.orchestraSessions || []).find(s => s.id === orchestraSessionId);
+            if (os) {
+                quotaLeft = Math.max(0, (os.complimentaryQuota || 0) - (os.complimentaryClaimed || 0));
+            }
+        }
+        
+        let P_expected = totalSelected;
+        let F_expected = 0;
+        
+        if (isWinner) {
+            if (hasSeatSelectionAddon) {
+                F_expected = Math.min(Math.floor((totalSelected + 1) / 2), quotaLeft);
+                P_expected = Math.max(0, totalSelected - F_expected);
+            } else {
+                P_expected = totalSelected;
+                F_expected = Math.min(P_expected + 1, quotaLeft);
+            }
+        }
+
+        const ticketsQty = tickets.reduce((acc, t) => acc + (t.quantity > 0 ? t.quantity : 0), 0);
+        if (ticketsQty !== P_expected) {
+            throw new Error(`Ticket quantity mismatch. Expected ${P_expected} paid tickets based on seat selection, got ${ticketsQty}.`);
+        }
+
         tickets.forEach(ticket => {
             if (ticket.quantity > 0) {
                 const price = tierPriceMap[ticket.id];
@@ -200,6 +232,15 @@ const createPublicTicketBooking = async (body, callback) => {
                 });
             }
         });
+        
+        if (hasSeatSelectionAddon && F_expected > 0) {
+            lineItems.push({
+                name: `Complimentary Tickets Discount`,
+                description: `${F_expected}x Free Tickets`,
+                price: 0,
+                currency: 'IDR',
+            });
+        }
 
         (addOnIds || []).forEach(addOnId => {
             const addOn = addOnPriceMap[addOnId];
@@ -260,16 +301,20 @@ const createPublicTicketBooking = async (body, callback) => {
             // Create the booking document
             transaction.set(bookingRef, {
                 eventId: eventId,
-                userName,
+                registrantName: registrantName || '',
+                buyerName,
+                userName: buyerName, // For backwards compatibility
                 userEmail,
                 userPhone,
                 venue,
                 date,
                 session,
+                orchestraSessionId: orchestraSessionId || '',
                 tickets,
                 selectedSeatIds: selectedSeatIds || [],
                 addOnIds: addOnIds || [],
                 totalAmount,
+                complimentaryTickets: F_expected,
                 paymentStatus: 'pending',
                 seatsSelected: (selectedSeatIds || []).length > 0,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -290,12 +335,12 @@ const createPublicTicketBooking = async (body, callback) => {
         const invoiceBody = {
             externalId: bookingId,
             user: {
-                name: userName,
+                name: buyerName,
                 email: userEmail,
                 phone: userPhone.replace('+', ''),
             },
             items: lineItems,
-            notes: `Your selected seat(s) are held for 30 minutes. Please complete payment before ${deadlineStr}. After this time your seat reservation will be released.`,
+            notes: `Buyer: ${buyerName}${registrantName ? ` | Paying for: ${registrantName}` : ''}\n\nYour selected seat(s) are held for 30 minutes. Please complete payment before ${deadlineStr}. After this time your seat reservation will be released.`,
         };
 
         // Use PaperRepository directly (same pattern it already uses)

@@ -13,7 +13,7 @@ const QRIS_API_KEY = process.env.QRIS_API_KEY;
 const QRIS_API_SECRET = process.env.QRIS_API_SECRET;
 
 const createBooking = async (body, callback) => {
-    const { eventId, userEmail, ticketQuantity, selectedSeatIds, selectedAddOnIds, isPublic, publicUserName, publicUserPhone, complimentaryTickets, orchestraSessionId } = body;
+    const { eventId, userEmail, ticketQuantity, selectedSeatIds, orchestraSelectedSeatIds, selectedAddOnIds, isPublic, publicUserName, publicUserPhone, complimentaryTickets, orchestraSessionId } = body;
 
     // --- Define refs outside the try block to have access in the catch block ---
     let bookingRef = null;
@@ -76,6 +76,15 @@ const createBooking = async (body, callback) => {
                 items.push({ type: "seat", description: `Seat ${seatData.seatLabel}`, seatId, price: seatPrice });
             }
         }
+        
+        // Orchestra Selected seats (Free)
+        if (orchestraSelectedSeatIds && orchestraSelectedSeatIds.length > 0) {
+            for (const seatId of orchestraSelectedSeatIds) {
+                const seatDoc = await db.collection('seats').doc(seatId).get();
+                const seatData = seatDoc.data();
+                items.push({ type: "orchestra_seat", description: `Orchestra Seat ${seatData.seatLabel}`, seatId, price: 0 });
+            }
+        }
 
         // Add-ons
         if (selectedAddOnIds && selectedAddOnIds.length > 0) {
@@ -124,6 +133,16 @@ const createBooking = async (body, callback) => {
                     const seatDoc = await transaction.get(seatRef);
                     if (seatDoc.data().status !== 'available') {
                         throw new Error(`Seat ${seatDoc.data().seatLabel} is no longer available.`);
+                    }
+                    transaction.update(seatRef, { status: 'locked' });
+                }
+            }
+            if (orchestraSelectedSeatIds && orchestraSelectedSeatIds.length > 0) {
+                for (const seatId of orchestraSelectedSeatIds) {
+                    const seatRef = db.collection("seats").doc(seatId);
+                    const seatDoc = await transaction.get(seatRef);
+                    if (seatDoc.data().status !== 'available') {
+                        throw new Error(`Orchestra Seat ${seatDoc.data().seatLabel} is no longer available.`);
                     }
                     transaction.update(seatRef, { status: 'locked' });
                 }
@@ -188,10 +207,15 @@ const createBooking = async (body, callback) => {
 
         // --- THIS IS THE CRUCIAL ROLLBACK LOGIC ---
         // If the error happened after seats were locked, we unlock them.
-        if (selectedSeatIds && selectedSeatIds.length > 0) {
+        const allSeatsToUnlock = [
+            ...(selectedSeatIds || []),
+            ...(orchestraSelectedSeatIds || [])
+        ];
+        
+        if (allSeatsToUnlock.length > 0) {
             console.log("An error occurred. Rolling back locked seats...");
             // Use Promise.all to run all updates in parallel
-            const unlockPromises = selectedSeatIds.map(seatId => {
+            const unlockPromises = allSeatsToUnlock.map(seatId => {
                 const seatRef = db.collection("seats").doc(seatId);
                 return seatRef.update({ status: "available" });
             });
