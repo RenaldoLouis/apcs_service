@@ -26,9 +26,17 @@ const completeUploadValidation = [
     validateRequest
 ];
 
+const abortUploadValidation = [
+    body('directoryname').trim().notEmpty().withMessage('Directory name is required'),
+    body('fileName').trim().notEmpty().withMessage('File name is required'),
+    body('uploadId').trim().notEmpty().withMessage('Upload ID is required'),
+    validateRequest
+];
+
 // Use module.exports instead of export
 module.exports = {
     multipartUploadValidation,
     partUploadValidation,
-    completeUploadValidation
+    completeUploadValidation,
+    abortUploadValidation
 };

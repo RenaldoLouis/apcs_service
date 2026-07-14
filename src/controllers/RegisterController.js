@@ -103,6 +103,25 @@ async function completeMultipartUpload(req, res, next) {
     }
 }
 
+async function abortMultipartUpload(req, res, next) {
+    try {
+        const { directoryname, fileName, uploadId } = req.body;
+        
+        const result = await registerService.abortMultipartUpload({
+            directoryname,
+            fileName,
+            uploadId
+        });
+
+        res.status(200).json({
+            status: 'success',
+            data: result
+        });
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     postRegistrant,
     getUploadUrl,
@@ -112,4 +131,5 @@ module.exports = {
     initiateMultipartUpload,
     getPartUploadUrl,
     completeMultipartUpload,
+    abortMultipartUpload
 };

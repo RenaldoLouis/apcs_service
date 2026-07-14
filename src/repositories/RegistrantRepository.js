@@ -1,6 +1,6 @@
 const pool = require('../configs/DbConfig');
 const { logger } = require('../utils/Logger');
-const { S3Client, ListObjectsV2Command, PutObjectCommand, GetObjectCommand, CompleteMultipartUploadCommand, UploadPartCommand, CreateMultipartUploadCommand } = require("@aws-sdk/client-s3");
+const { S3Client, ListObjectsV2Command, PutObjectCommand, GetObjectCommand, CompleteMultipartUploadCommand, UploadPartCommand, CreateMultipartUploadCommand, AbortMultipartUploadCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const archiver = require('archiver');
 const { AppendFilesToZip } = require('../utils/awsDownload');
@@ -389,6 +389,30 @@ async function completeMultipartUpload(params) {
 }
 
 
+/**
+ * Abort a multipart upload
+ */
+async function abortMultipartUpload(params) {
+    const { directoryname, fileName, uploadId } = params;
+
+    const command = new AbortMultipartUploadCommand({
+        Bucket: BUCKET_NAME,
+        Key: `${directoryname}/${fileName}`,
+        UploadId: uploadId,
+    });
+
+    try {
+        await s3Admin.send(command);
+        return { success: true };
+    } catch (error) {
+        console.error('S3 abort multipart upload error:', error);
+        throw new AppError(
+            `Failed to abort upload: ${error.message}`,
+            error.$metadata?.httpStatusCode || 500
+        );
+    }
+}
+
 module.exports = {
     postRegistrant,
     getUploadUrl,
@@ -397,5 +421,6 @@ module.exports = {
     getPublicVideoLinkAws,
     initiateMultipartUpload,
     getPartUploadUrl,
-    completeMultipartUpload
+    completeMultipartUpload,
+    abortMultipartUpload
 }

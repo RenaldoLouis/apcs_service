@@ -103,6 +103,20 @@ async function completeMultipartUpload(params) {
     return result;
 }
 
+async function abortMultipartUpload(params) {
+    if (!params.directoryname || !params.fileName || !params.uploadId) {
+        throw new AppError('Missing required multipart upload parameters', 400);
+    }
+
+    const result = await db.abortMultipartUpload({
+        directoryname: params.directoryname,
+        fileName: params.fileName,
+        uploadId: params.uploadId
+    });
+
+    return result;
+}
+
 module.exports = {
     postRegistrant,
     getUploadUrl,
@@ -111,5 +125,6 @@ module.exports = {
     getPublicVideoLinkAws,
     initiateMultipartUpload,
     getPartUploadUrl,
-    completeMultipartUpload
+    completeMultipartUpload,
+    abortMultipartUpload
 };
