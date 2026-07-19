@@ -86,8 +86,8 @@ async function handlePublicTicketWebhook(req, res, next) {
         const payload = req.body;
         logger.info('Public ticket webhook received: ' + JSON.stringify(payload));
 
-        const paperEnv = process.env.PAPER_ENV || 'development';
-        const payloadData = (paperEnv === 'production' || paperEnv === 'Production' || paperEnv === 'prod') ? payload : payload.data;
+        // Safely handle both Production (flat) and Development (nested in .data) payload structures automatically
+        const payloadData = payload.invoice ? payload : (payload.data ? payload.data : payload);
         const isPaid = payloadData.invoice && payloadData.invoice.status?.toLowerCase() === 'paid';
 
         if (isPaid) {
