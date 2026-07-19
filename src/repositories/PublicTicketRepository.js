@@ -207,12 +207,14 @@ const createPublicTicketBooking = async (body, callback) => {
         let F_expected = 0;
         
         if (isWinner) {
-            if (hasSeatSelectionAddon) {
-                F_expected = Math.min(Math.floor((totalSelected + 1) / 2), quotaLeft);
-                P_expected = Math.max(0, totalSelected - F_expected);
-            } else {
-                P_expected = totalSelected;
-                F_expected = Math.min(P_expected + 1, quotaLeft);
+            P_expected = totalSelected;
+            F_expected = Math.min(P_expected + 1, quotaLeft);
+            
+            if (hasSeatSelectionAddon && F_expected > 0) {
+                const orchSelectedCount = (orchestraSelectedSeatIds || []).length;
+                if (orchSelectedCount !== F_expected) {
+                    throw new Error(`Expected ${F_expected} free orchestra seats to be selected, but got ${orchSelectedCount}.`);
+                }
             }
         }
 
@@ -265,9 +267,31 @@ const createPublicTicketBooking = async (body, callback) => {
         const lockExpiresAt = new Date(Date.now() + LOCK_DURATION_MS);
 
         await db.runTransaction(async (transaction) => {
-            // 0. Update complimentary quota if F_expected > 0
+            // --- READ PHASE ---
+            let currentEventDoc = null;
             if (F_expected > 0 && osIndex !== -1) {
-                const currentEventDoc = await transaction.get(eventRef);
+                currentEventDoc = await transaction.get(eventRef);
+            }
+
+            const seatRefs = (selectedSeatIds && selectedSeatIds.length > 0)
+                ? selectedSeatIds.map(id => db.collection(`seats${eventId}`).doc(id))
+                : [];
+            
+            const orchRefs = (orchestraSelectedSeatIds && orchestraSelectedSeatIds.length > 0)
+                ? orchestraSelectedSeatIds.map(id => db.collection(`seats${eventId}`).doc(id))
+                : [];
+
+            // Perform all remaining reads
+            const allSeatRefs = [...seatRefs, ...orchRefs];
+            let allSeatDocs = [];
+            if (allSeatRefs.length > 0) {
+                allSeatDocs = await transaction.getAll(...allSeatRefs);
+            }
+
+            // --- VALIDATION & WRITE PREP PHASE ---
+            
+            // 1. Validate Event Quota
+            if (F_expected > 0 && osIndex !== -1 && currentEventDoc) {
                 const currentEventData = currentEventDoc.data();
                 const currentSession = currentEventData.orchestraSessions[osIndex];
                 const claimed = currentSession.complimentaryClaimed || 0;
@@ -284,75 +308,36 @@ const createPublicTicketBooking = async (body, callback) => {
                 transaction.update(eventRef, { orchestraSessions: updatedSessions });
             }
 
-            // Check every selected seat is still available
-            if (selectedSeatIds && selectedSeatIds.length > 0) {
-                const seatRefs = selectedSeatIds.map(id => db.collection(`seats${eventId}`).doc(id));
-                const seatDocs = await transaction.getAll(...seatRefs);
-
-                for (const seatDoc of seatDocs) {
-                    if (!seatDoc.exists) {
-                        throw new Error(`Seat ${seatDoc.id} does not exist.`);
-                    }
-                    const seatData = seatDoc.data();
-
-                    // A seat is bookable if it's 'available', OR if it's 'locked' but the lock has expired (>30 min).
-                    // This lazy check eliminates the need for a separate cleanup cron job.
-                    const isAvailable = seatData.status === 'available';
-                    const isExpiredLock = seatData.status === 'locked'
-                        && seatData.lockedAt
-                        && (Date.now() - seatData.lockedAt.toDate().getTime()) > LOCK_DURATION_MS;
-
-                    if (!isAvailable && !isExpiredLock) {
-                        throw new Error(`Seat ${seatData.seatLabel} is no longer available. Please go back and re-select.`);
-                    }
-
-                    // If we're reclaiming an expired lock, also mark the old booking as expired
-                    if (isExpiredLock && seatData.lockedByBookingId) {
-                        const oldBookingRef = db.collection('publicBookings').doc(seatData.lockedByBookingId);
-                        transaction.update(oldBookingRef, { paymentStatus: 'expired' });
-                    }
-                    // Lock the seat
-                    transaction.update(seatDoc.ref, {
-                        status: 'locked',
-                        lockedAt: lockedAt,
-                        lockedByBookingId: bookingId,
-                    });
+            // 2. Validate and Lock Seats
+            for (let i = 0; i < allSeatDocs.length; i++) {
+                const seatDoc = allSeatDocs[i];
+                if (!seatDoc.exists) {
+                    throw new Error(`Seat ${seatDoc.id} does not exist.`);
                 }
+                const seatData = seatDoc.data();
+
+                const isAvailable = seatData.status === 'available';
+                const isExpiredLock = seatData.status === 'locked'
+                    && seatData.lockedAt
+                    && (Date.now() - seatData.lockedAt.toDate().getTime()) > LOCK_DURATION_MS;
+
+                if (!isAvailable && !isExpiredLock) {
+                    throw new Error(`Seat ${seatData.seatLabel} is no longer available. Please go back and re-select.`);
+                }
+
+                if (isExpiredLock && seatData.lockedByBookingId) {
+                    const oldBookingRef = db.collection('publicBookings').doc(seatData.lockedByBookingId);
+                    transaction.update(oldBookingRef, { paymentStatus: 'expired' });
+                }
+                
+                transaction.update(seatDoc.ref, {
+                    status: 'locked',
+                    lockedAt: lockedAt,
+                    lockedByBookingId: bookingId,
+                });
             }
 
-            // Lock orchestra seats
-            if (orchestraSelectedSeatIds && orchestraSelectedSeatIds.length > 0) {
-                const orchRefs = orchestraSelectedSeatIds.map(id => db.collection(`seats${eventId}`).doc(id));
-                const orchDocs = await transaction.getAll(...orchRefs);
-
-                for (const seatDoc of orchDocs) {
-                    if (!seatDoc.exists) {
-                        throw new Error(`Orchestra seat ${seatDoc.id} does not exist.`);
-                    }
-                    const seatData = seatDoc.data();
-
-                    const isAvailable = seatData.status === 'available';
-                    const isExpiredLock = seatData.status === 'locked'
-                        && seatData.lockedAt
-                        && (Date.now() - seatData.lockedAt.toDate().getTime()) > LOCK_DURATION_MS;
-
-                    if (!isAvailable && !isExpiredLock) {
-                        throw new Error(`Orchestra seat ${seatData.seatLabel} is no longer available. Please go back and re-select.`);
-                    }
-
-                    if (isExpiredLock && seatData.lockedByBookingId) {
-                        const oldBookingRef = db.collection('publicBookings').doc(seatData.lockedByBookingId);
-                        transaction.update(oldBookingRef, { paymentStatus: 'expired' });
-                    }
-                    
-                    transaction.update(seatDoc.ref, {
-                        status: 'locked',
-                        lockedAt: lockedAt,
-                        lockedByBookingId: bookingId,
-                    });
-                }
-            }
-
+            // --- FINALIZE WRITE PHASE ---
             // Create the booking document
             transaction.set(bookingRef, {
                 eventId: eventId,
