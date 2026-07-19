@@ -13,6 +13,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.806.0",
     "@aws-sdk/s3-request-presigner": "^3.806.0",
+    "@google-cloud/recaptcha-enterprise": "^6.4.2",
     "archiver": "^7.0.1",
     "axios": "^1.13.2",
     "axios-cookiejar-support": "^6.0.4",
@@ -23,6 +24,7 @@
     "db-migrate-pg": "^1.5.2",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.5.2",
     "express-validator": "^7.0.1",
     "firebase-admin": "^13.4.0",
     "fs": "^0.0.1-security",

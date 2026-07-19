@@ -6,7 +6,15 @@ const FirebaseController = require("../controllers/FirebaseController");
 const RegisterController = require("../controllers/RegisterController");
 const JuryController = require("../controllers/JuryController");
 const BookingController = require("../controllers/BookingController");
-const TicketController = require("../controllers/TicketController");
+const TicketController = require('../controllers/TicketController')
+
+const rateLimit = require('express-rate-limit')
+
+const registerLimiter = rateLimit({ windowMs: 1 * 60 * 1000, max: 5, message: { error: 'Too many registration attempts, please try again later.' } })
+const initUploadLimiter = rateLimit({ windowMs: 1 * 60 * 1000, max: 10, message: { error: 'Too many upload initiations, please try again later.' } })
+const partUploadLimiter = rateLimit({ windowMs: 1 * 60 * 1000, max: 300, message: { error: 'Too many chunk uploads, please try again later.' } })
+const completeUploadLimiter = rateLimit({ windowMs: 1 * 60 * 1000, max: 10, message: { error: 'Too many complete requests, please try again later.' } })
+const signedUrlLimiter = rateLimit({ windowMs: 1 * 60 * 1000, max: 30, message: { error: 'Too many signed URL requests, please try again later.' } });
 const PublicTicketController = require("../controllers/PublicTicketController");
 const SystemSettingsController = require("../controllers/SystemSettingsController");
 const { paymentValidation } = require('../utils/ValidationUtil');
@@ -44,11 +52,11 @@ router.post('/migrateEventId', FirebaseController.migrateEventId)
 router.post('/saveSessionAssignments', FirebaseController.saveSessionAssignments)
 router.get('/getSessionAssignments/:eventId', FirebaseController.getSessionAssignments)
 
-router.post('/register', RegisterController.postRegistrant)
-router.post('/signed-url-images', RegisterController.getUploadUrl)
-router.post('/initiateMultipartUpload', multipartUploadValidation, RegisterController.initiateMultipartUpload);
-router.post('/getPartUploadUrl', partUploadValidation, RegisterController.getPartUploadUrl);
-router.post('/completeMultipartUpload', completeUploadValidation, RegisterController.completeMultipartUpload);
+router.post('/register', registerLimiter, RegisterController.postRegistrant)
+router.post('/signed-url-images', signedUrlLimiter, RegisterController.getUploadUrl)
+router.post('/initiateMultipartUpload', initUploadLimiter, multipartUploadValidation, RegisterController.initiateMultipartUpload);
+router.post('/getPartUploadUrl', partUploadLimiter, partUploadValidation, RegisterController.getPartUploadUrl);
+router.post('/completeMultipartUpload', completeUploadLimiter, completeUploadValidation, RegisterController.completeMultipartUpload);
 router.post('/abortMultipartUpload', abortUploadValidation, RegisterController.abortMultipartUpload);
 router.post('/download-files-aws', RegisterController.downloadFilesAws)
 router.post('/download-all-files-aws', RegisterController.downloadAllFiles)

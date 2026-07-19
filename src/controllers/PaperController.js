@@ -32,8 +32,37 @@ async function createInvoice(req, res, next) {
         }
 
         const data = await paperService.createInvoice(req, next)
+
+        // Update Firestore if it is a Registration
+        if (externalId) {
+            const docRef = db.collection('Registrants2025').doc(externalId);
+            const docSnap = await docRef.get();
+            if (docSnap.exists && data && data.paymentUrl) {
+                await docRef.update({
+                    invoiceStatus: "CREATED",
+                    paymentUrl: data.paymentUrl,
+                    invoiceId: data.invoiceId
+                });
+            }
+        }
+
         res.status(200).send(data)
     } catch (err) {
+        // Update Firestore to indicate invoice generation failed
+        const { externalId } = req.body;
+        if (externalId) {
+            try {
+                const docRef = db.collection('Registrants2025').doc(externalId);
+                const docSnap = await docRef.get();
+                if (docSnap.exists) {
+                    await docRef.update({
+                        invoiceStatus: "FAILED"
+                    });
+                }
+            } catch (dbErr) {
+                logger.error(`Failed to update invoiceStatus to FAILED for ${externalId}: ${dbErr.message}`);
+            }
+        }
         next(err);
     }
 }
