@@ -590,7 +590,9 @@ const templates = {
                                 <div class="info-row"><span class="info-label">Date</span><span class="info-value">${data.date}</span></div>
                                 <div class="info-row"><span class="info-label">Session</span><span class="info-value">${data.session}</span></div>
                                 <div class="info-row"><span class="info-label">Tickets</span><span class="info-value">${data.ticketSummary}</span></div>
-                                ${data.seatLabels ? `<div class="info-row"><span class="info-label">Seats</span><span class="info-value">${data.seatLabels}</span></div>` : ''}
+                                ${data.performanceSeatLabels ? `<div class="info-row"><span class="info-label">Competition Seats</span><span class="info-value">${data.performanceSeatLabels}</span></div>` : ''}
+                                ${data.orchestraSeatLabels ? `<div class="info-row"><span class="info-label">Orchestra Seats</span><span class="info-value">${data.orchestraSeatLabels}</span></div>` : ''}
+                                ${(!data.performanceSeatLabels && !data.orchestraSeatLabels && data.seatLabels) ? `<div class="info-row"><span class="info-label">Seats</span><span class="info-value">${data.seatLabels}</span></div>` : ''}
                                 <hr class="divider">
                                 <div class="total-row">
                                     <span>Total Paid</span>

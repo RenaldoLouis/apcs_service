@@ -139,6 +139,8 @@ const createPublicTicketBooking = async (body, callback) => {
         tickets,      // [{ id, name, quantity, priceEach }]
         selectedSeatIds, // [seatDocumentId, ...]
         orchestraSelectedSeatIds, // [seatDocumentId, ...]
+        performanceSeatLabels, // ['L9', 'G9', ...]
+        orchestraSeatLabels, // ['A1', 'A2', ...]
         addOnIds,     // ['merchandise', ...]
         registrantId, // ID of the winner who initiated this booking
     } = body;
@@ -353,6 +355,8 @@ const createPublicTicketBooking = async (body, callback) => {
                 tickets,
                 selectedSeatIds: selectedSeatIds || [],
                 orchestraSelectedSeatIds: orchestraSelectedSeatIds || [],
+                performanceSeatLabels: performanceSeatLabels || [],
+                orchestraSeatLabels: orchestraSeatLabels || [],
                 addOnIds: addOnIds || [],
                 totalAmount,
                 complimentaryTickets: F_expected,
@@ -528,13 +532,14 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
     allSeatsToReserve.forEach(seatId => {
         const seatRef = db.collection(`seats${eventId}`).doc(seatId);
         batch.update(seatRef, {
-            status: 'reserved',
+            status: 'booked',
             bookingId,
             lockedAt: admin.firestore.FieldValue.delete(),
             lockedByBookingId: admin.firestore.FieldValue.delete(),
             assignedTo: {
-                name: bookingData.userName,
-                email: bookingData.userEmail,
+                userName: bookingData.userName || '',
+                userEmail: bookingData.userEmail || '',
+                registrantName: bookingData.registrantName || ''
             },
         });
     });

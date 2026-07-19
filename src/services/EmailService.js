@@ -2680,7 +2680,27 @@ async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, da
 async function sendPublicBookingConfirmationEmail(bookingData, venueName) {
     const { userEmail, userName, buyerName, registrantName, date, session, selectedSeatIds, tickets, totalAmount, id: bookingId } = bookingData;
 
-    const seatLabels = (selectedSeatIds || []).map(id => id.split('_')[0]).join(', ');
+    const formatSeatIds = (seatIds) => {
+        if (!seatIds || seatIds.length === 0) return '';
+        return seatIds.map(id => {
+            const prefix = id.split('_')[0]; // e.g., Venue1-Right-C-1
+            const parts = prefix.split('-');
+            if (parts.length > 3) {
+                // Strip the venue prefix: "Venue1-Right-C-1" -> "Right-C-1"
+                return parts.slice(1).join('-');
+            }
+            return prefix;
+        }).join(', ');
+    };
+
+    const performanceSeatLabels = bookingData.performanceSeatLabels && bookingData.performanceSeatLabels.length > 0 
+        ? bookingData.performanceSeatLabels.join(', ') 
+        : formatSeatIds(selectedSeatIds);
+        
+    const orchestraSeatLabels = bookingData.orchestraSeatLabels && bookingData.orchestraSeatLabels.length > 0
+        ? bookingData.orchestraSeatLabels.join(', ')
+        : formatSeatIds(bookingData.orchestraSelectedSeatIds);
+
     const ticketSummary = (tickets || []).filter(t => t.quantity > 0).map(t => `${t.quantity}x ${t.name}`).join(', ');
     const totalAmountFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalAmount);
 
@@ -2691,7 +2711,8 @@ async function sendPublicBookingConfirmationEmail(bookingData, venueName) {
         date,
         session,
         bookingId,
-        seatLabels,
+        performanceSeatLabels,
+        orchestraSeatLabels,
         ticketSummary,
         totalAmountFormatted
     });
