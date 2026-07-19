@@ -101,11 +101,11 @@ async function handlePaperWebhook(req, res, next) {
 
                 if (publicBookingDoc.exists) {
                     logger.info(`Routing payment ${firebaseId} to Public Tickets Webhook Handler`);
-                    
+
                     // Route to public ticket logic
                     const PublicTicketService = require('../services/PublicTicketService');
                     const bookingData = await PublicTicketService.handlePublicTicketWebhookPaid(firebaseId, payloadData);
-                    
+
                     // Resolve dynamic venue label
                     let resolvedVenueLabel = bookingData.venue;
                     try {
@@ -124,7 +124,7 @@ async function handlePaperWebhook(req, res, next) {
                     } catch (emailErr) {
                         logger.error(`Confirmation email failed for ${bookingData.userEmail}: ${emailErr.message}`);
                     }
-                    
+
                     return res.status(200).json({ status: 'OK' });
                 }
 
@@ -142,7 +142,7 @@ async function handlePaperWebhook(req, res, next) {
                         paymentDetails: payloadData // Save full log for audit trail
                     });
                     logger.info(`payment status updated successfully for ${firebaseId}`)
-                    console.log(`✅ Firebase updated successfully for ${firebaseId}`);
+                    console.log(` Firebase updated successfully for ${firebaseId}`);
 
                     const docData = docSnap.data();
                     const performers = docData.performers || [];
@@ -195,21 +195,21 @@ async function handlePaperWebhook(req, res, next) {
                             // A. Send Confirmation Email to User
                             // Ensure 'sendEmailFunc' is exported in your EmailService module
                             const sendUserResult = await emailService.sendEmailFunc(emailData);
-                            logger.info(`[PAPER_WEBHOOK_EMAIL_SUCCESS_1] ✅ Confirmation email sent to ${emailData.email}. Result: ${JSON.stringify(sendUserResult || {})}`);
+                            logger.info(`[PAPER_WEBHOOK_EMAIL_SUCCESS_1]  Confirmation email sent to ${emailData.email}. Result: ${JSON.stringify(sendUserResult || {})}`);
 
                             // B. Send Notification Email to APCS Admin
                             const sendAdminResult = await emailService.sendEmailNotifyApcs(emailData);
-                            logger.info(`[PAPER_WEBHOOK_EMAIL_SUCCESS_2] ✅ Admin notification sent for ${emailData.name}. Result: ${JSON.stringify(sendAdminResult || {})}`);
+                            logger.info(`[PAPER_WEBHOOK_EMAIL_SUCCESS_2]  Admin notification sent for ${emailData.name}. Result: ${JSON.stringify(sendAdminResult || {})}`);
 
                         } catch (emailError) {
                             // Log error but don't fail the webhook response
-                            logger.error(`[PAPER_WEBHOOK_EMAIL_ERROR] ❌ Failed to send email for ${emailData.email}: ${emailError.message} - Stack: ${emailError.stack}`);
+                            logger.error(`[PAPER_WEBHOOK_EMAIL_ERROR]  Failed to send email for ${emailData.email}: ${emailError.message} - Stack: ${emailError.stack}`);
                         }
                     }
 
                 } else {
-                    logger.error(`⚠️ Registrant document ${firebaseId} not found!`);
-                    console.warn(`⚠️ Registrant document ${firebaseId} not found!`);
+                    logger.error(` Registrant document ${firebaseId} not found!`);
+                    console.warn(` Registrant document ${firebaseId} not found!`);
                 }
             }
         } else {
