@@ -95,6 +95,40 @@ async function handlePaperWebhook(req, res, next) {
                 console.log(`Processing successful payment for Registrant ID: ${firebaseId}`);
 
                 // 3. Update Firebase
+                // First, check if it's a public ticket booking
+                const publicBookingRef = db.collection('publicBookings').doc(firebaseId);
+                const publicBookingDoc = await publicBookingRef.get();
+
+                if (publicBookingDoc.exists) {
+                    logger.info(`Routing payment ${firebaseId} to Public Tickets Webhook Handler`);
+                    
+                    // Route to public ticket logic
+                    const PublicTicketService = require('../services/PublicTicketService');
+                    const bookingData = await PublicTicketService.handlePublicTicketWebhookPaid(firebaseId, payloadData);
+                    
+                    // Resolve dynamic venue label
+                    let resolvedVenueLabel = bookingData.venue;
+                    try {
+                        const eventData = await PublicTicketService.getPublicTicketEventData();
+                        if (eventData && eventData.venues) {
+                            const venueObj = eventData.venues.find(v => v.id === bookingData.venue);
+                            if (venueObj) resolvedVenueLabel = venueObj.label;
+                        }
+                    } catch (e) {
+                        logger.warn(`Could not fetch dynamic venue label: ${e.message}`);
+                    }
+
+                    // Send booking confirmation email
+                    try {
+                        await emailService.sendPublicBookingConfirmationEmail(bookingData, resolvedVenueLabel);
+                    } catch (emailErr) {
+                        logger.error(`Confirmation email failed for ${bookingData.userEmail}: ${emailErr.message}`);
+                    }
+                    
+                    return res.status(200).json({ status: 'OK' });
+                }
+
+                // If not a public ticket, assume it's a Competition Registration
                 const docRef = db.collection('Registrants2025').doc(firebaseId);
 
                 // Double check if doc exists before updating
