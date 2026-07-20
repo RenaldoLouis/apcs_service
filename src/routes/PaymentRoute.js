@@ -28,6 +28,7 @@ router.post('/sendEmailAnnouncement', EmailController.sendEmailAnnouncement)
 router.post('/sendEmailAnnouncementJson', EmailController.sendEmailAnnouncementJson)
 router.post('/sendEmailSessionWinner', EmailController.sendEmailSessionWinner)
 router.post('/sendEmailPaymentRequest', EmailController.sendEmailPaymentRequest)
+router.post('/sendEmailPaymentRequestPaynow', EmailController.sendEmailPaymentRequestPaynow)
 router.post('/sendSeatBookingEmail', EmailController.sendSeatBookingEmail)
 router.post('/sendGeneralSeatingEmail', EmailController.sendGeneralSeatingEmail);
 router.post('/sendTeamEntryPassEmail', EmailController.sendTeamEntryPassEmail);

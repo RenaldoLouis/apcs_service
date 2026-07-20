@@ -718,6 +718,7 @@ const sendEmailPaymentRequest = async (data) => {
     const registrantName = data.name;
     const to = data.email;
     const price = data.price ?? "Please Check PDF on website"
+    const feeNote = data.feeNote || '';
 
     try {
         const mailOptions = {
@@ -778,15 +779,17 @@ const sendEmailPaymentRequest = async (data) => {
                                     <div><strong>Branch Address:</strong> BCA KCU Pematang Siantar, Indonesia</div>
                                     <div><strong>Category:</strong> ${data.competitionCategory}</div>
                                     <div><strong>Amount:</strong> ${price}</div>
-                                    <div><strong>Payment Reference:</strong> Your Full Name – Category</div>
-                                    <div style="font-size: 13px; color: #777;"><em>Example: Jason Smith – Violin</em></div>
+                                    <div><strong>Payment Reference:</strong> ${data.paymentReferenceOverride || `${registrantName} – ${data.instrumentCategory || data.competitionCategory}`}</div>
+                                    <div style="color: #7f8c8d; font-size: 13px; font-style: italic; margin-top: 4px;">Example: Jason Smith – Violin</div>
                                 </div>
 
                                 <h3>Important Notes</h3>
                                 <div class="important-notes">
                                     <ul>
-                                        <li>Please double-check that the account number is entered correctly.</li>
+                                        <li>Please double-check that the bank transfer details are entered correctly before making the payment.</li>
+                                        <li>Kindly ensure that the payment amount is correct and that the transaction is completed successfully.</li>
                                         <li>For international transfers, ensure all associated bank fees are covered so we receive the full amount.</li>
+                                        ${feeNote ? `<li style="color: #3498db; font-size: 13px; font-weight: bold; margin-top: 10px;">Registration Fee: ${price} (${feeNote})</li>` : ''}
                                     </ul>
                                 </div>
 
@@ -794,8 +797,6 @@ const sendEmailPaymentRequest = async (data) => {
                                 <p>Once you've completed the transfer, kindly reply to this email with your payment proof (transfer receipt).</p>
                                 <p>If you have any questions, feel free to contact us.</p>
                                 <p>Best regards,<br>APCS Music Team</p>
-                                <br>
-                                <p class="ps-note">P.S. A confirmation email will be sent once your payment has been verified by our team.</p>
                             </div>
                             <div class="footer">
                                 <p>&copy; ${new Date().getFullYear()} APCS Music</p>
@@ -812,6 +813,106 @@ const sendEmailPaymentRequest = async (data) => {
         return result;
     } catch (error) {
         logger.error(`Failed to send payment request to ${to}: ${error.message}`);
+        throw error;
+    }
+}
+
+const sendEmailPaymentRequestPaynow = async (data) => {
+    logger.info(`Sending PayNow payment request to: ${data.email}`);
+    const registrantName = data.name;
+    const to = data.email;
+    const price = data.price ?? "Please Check PDF on website";
+    const feeNote = data.feeNote || '';
+
+    try {
+        const mailOptions = {
+            from: '"APCS Music" <hello@apcsmusic.com>',
+            to: to,
+            subject: `Payment Instructions – APCS Music Competition`,
+            html: `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="utf-8">
+                    <style>
+                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+                        .email-wrapper { width: 100%; background-color: #f4f4f4; }
+                        .email-container { width: 100%; max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; }
+                        .header {color: #333333; text-align: center; }
+                        .header h1 { margin: 0; font-size: 24px; }
+                        .content { padding: 30px; line-height: 1.6; color: #555555; }
+                        .content p { margin: 0 0 20px 0; }
+                        .content h3 { color: #333333; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
+                        .payment-details { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 25px; }
+                        .payment-details div { margin-bottom: 10px; }
+                        .payment-details strong { color: #333333; width: 180px; display: inline-block; }
+                        .important-notes ul { padding-left: 20px; }
+                        .important-notes li { margin-bottom: 10px; }
+                        .footer { text-align: center; font-size: 12px; color: #7f8c8d; padding: 20px; }
+                        .ps-note { font-size: 12px; color: #7f8c8d; }
+                    </style>
+                </head>
+                <body>
+                    <div class="email-wrapper">
+                        <div class="email-container">
+                              <div class="header">
+                                <div style="color:#393d47;font-family:Georgia,Times,'Times New Roman',serif;font-size:24px;line-height:120%;text-align:left;mso-line-height-alt:28.799999999999997px;">
+
+                                    <div style="width: 100%;background: black;">
+
+                                        <img
+                                            src="https://apcsgalery.s3.ap-southeast-1.amazonaws.com/assets/apcs_logo_white_background_black.png"
+                                            style="display: block; height: auto; border: 0; width: 50%; max-width: 400px; margin: 0 auto;"
+                                            alt="APCS Logo"
+                                            title="APCS Logo">
+
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="content">
+                                <p>Dear <strong>${registrantName}</strong>,</p>
+                                <p>Thank you for registering for the APCS Music Competition.</p>
+                                <p>To complete your registration, please proceed with the payment. The fee for your category is listed in the <strong>Registration Guide PDF</strong> available on our <a href="https://www.apcsmusic.com/register" target="_blank" style="color: #3498db;">website</a>.</p>
+                                
+                                <h3>Payment Details</h3>
+                                <div class="payment-details">
+                                    <div><strong>PayNow Account:</strong> +65 9127 0871</div>
+                                    <div><strong>Name:</strong> Winarta Prawira</div>
+                                    <div><strong>Category:</strong> ${data.competitionCategory}</div>
+                                    <div><strong>Amount:</strong> ${price}</div>
+                                    <div><strong>Payment Reference:</strong> ${data.paymentReferenceOverride || `${registrantName} – ${data.instrumentCategory || data.competitionCategory}`}</div>
+                                    <div style="color: #7f8c8d; font-size: 13px; font-style: italic; margin-top: 4px;">Example: Jason Smith – Violin</div>
+                                </div>
+
+                                <h3>Important Notes</h3>
+                                <div class="important-notes">
+                                    <ul>
+                                        <li>Please double-check that the PayNow details are entered correctly before making the payment.</li>
+                                        <li>Kindly ensure that the payment amount is correct and that the transaction is completed successfully.</li>
+                                        ${feeNote ? `<li style="color: #3498db; font-size: 13px; font-weight: bold; margin-top: 10px;">Registration Fee: ${price} (${feeNote})</li>` : ''}
+                                    </ul>
+                                </div>
+
+                                <h3>What's Next?</h3>
+                                <p>Once you've completed the transfer, kindly reply to this email with your payment proof (transfer receipt).</p>
+                                <p>If you have any questions, feel free to contact us.</p>
+                                <p>Best regards,<br>APCS Music Team</p>
+                            </div>
+                            <div class="footer">
+                                <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+                            </div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+                `
+        };
+
+        const result = await transporter.sendMail(mailOptions);
+        logger.info(`Successfully sent PayNow payment request to ${to}`);
+        return result;
+    } catch (error) {
+        logger.error(`Failed to send PayNow payment request to ${to}: ${error.message}`);
         throw error;
     }
 }
@@ -2281,6 +2382,24 @@ async function sendEmailPaymentRequestFunc(req) {
     }
 }
 
+async function sendEmailPaymentRequestPaynowFunc(req) {
+    try {
+        const emailsArray = req.body;
+        if (Array.isArray(emailsArray) && emailsArray.length > 0) {
+            for (const data of emailsArray) {
+                sendEmailPaymentRequestPaynow(data);
+            }
+            logger.info(`Enqueued ${emailsArray.length} PayNow email jobs successfully`);
+        } else {
+            logger.warn("No PayNow emails provided to enqueue");
+        }
+        return { message: "PayNow emails have been enqueued successfully" };
+    } catch (error) {
+        logger.error(`Failed to enqueue PayNow email jobs: ${error.message}`);
+        throw error;
+    }
+}
+
 async function sendSeatBookingEmailFunc(req) {
     try {
         const emailsArray = req.body;
@@ -2523,20 +2642,20 @@ async function sendEmailPerformanceInvitationJson(registrants, confirmationDeadl
         for (const data of registrants) {
             if (data && data.name && data.email) {
                 const awardTier = data.award || '';
-                
+
                 if (!awardTier || awardTier.toLowerCase() === 'participant') {
                     logger.error(`Registrant ${data.name} (${data.email}) has no valid award. Skipping Performance Invitation.`);
                     continue;
                 }
 
                 const to = data.email;
-                const templateData = { 
-                    name: data.name, 
+                const templateData = {
+                    name: data.name,
                     awardTier: awardTier,
                     confirmationDeadline: confirmationDeadline || '[Confirmation Deadline]',
                     rundownReleaseDate: rundownReleaseDate || '[Rundown Release Date]'
                 };
-                
+
                 const { subject, html } = getTemplate('PERFORMANCE_INVITATION', templateData);
 
                 let attachments = [];
@@ -2559,7 +2678,7 @@ async function sendEmailPerformanceInvitationJson(registrants, confirmationDeadl
 
                 await transporter.sendMail(mailOptions);
                 logger.info(`Successfully sent Performance Invitation email to ${to}`);
-                
+
                 // Add a short delay between emails to avoid being flagged as spam
                 await new Promise(resolve => setTimeout(resolve, 550));
             } else {
@@ -2630,6 +2749,7 @@ module.exports = {
     sendTeamEntryPassEmail,
     sendSponsorEntryPassEmail,
     sendEmailPaymentRequestFunc,
+    sendEmailPaymentRequestPaynowFunc,
     sendSeatBookingEmailFunc,
     sendEmailConfirmSeatSelectionFunc,
     sendGeneralSeatingEmailFunc,
@@ -2693,10 +2813,10 @@ async function sendPublicBookingConfirmationEmail(bookingData, venueName) {
         }).join(', ');
     };
 
-    const performanceSeatLabels = bookingData.performanceSeatLabels && bookingData.performanceSeatLabels.length > 0 
-        ? bookingData.performanceSeatLabels.join(', ') 
+    const performanceSeatLabels = bookingData.performanceSeatLabels && bookingData.performanceSeatLabels.length > 0
+        ? bookingData.performanceSeatLabels.join(', ')
         : formatSeatIds(selectedSeatIds);
-        
+
     const orchestraSeatLabels = bookingData.orchestraSeatLabels && bookingData.orchestraSeatLabels.length > 0
         ? bookingData.orchestraSeatLabels.join(', ')
         : formatSeatIds(bookingData.orchestraSelectedSeatIds);

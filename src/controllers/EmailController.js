@@ -55,6 +55,15 @@ async function sendEmailPaymentRequest(req, res, next) {
     }
 }
 
+async function sendEmailPaymentRequestPaynow(req, res, next) {
+    try {
+        const data = await email.sendEmailPaymentRequestPaynowFunc(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 async function sendSeatBookingEmail(req, res, next) {
     try {
         const data = await email.sendSeatBookingEmailFunc(req, next)
@@ -170,6 +179,7 @@ module.exports = {
     sendEmailAnnouncementJson,
     sendEmailSessionWinner,
     sendEmailPaymentRequest,
+    sendEmailPaymentRequestPaynow,
     sendSeatBookingEmail,
     sendGeneralSeatingEmail,
     sendTeamEntryPassEmail,
