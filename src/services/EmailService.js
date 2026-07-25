@@ -2740,6 +2740,44 @@ async function sendEmailSoundOfAsia2026InviteJson(registrants) {
     }
 }
 
+async function sendEmailPaymentInfoOptionsJson(registrants) {
+    logger.info("sending Payment Info Options email from JSON...");
+
+    try {
+        if (!registrants || registrants.length === 0) {
+            logger.info("No registrants provided in payload. Exiting.");
+            return;
+        }
+
+        logger.info(`Found ${registrants.length} registrants to email.`);
+
+        for (const data of registrants) {
+            if (data && data.email && data.name) {
+                const to = data.email;
+
+                const { subject, html } = getTemplate('PAYMENT_INFO_OPTIONS', { name: data.name });
+
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: to,
+                    subject: subject,
+                    html: html
+                };
+
+                await transporter.sendMail(mailOptions);
+                logger.info(`Successfully sent Payment Info Options email to ${to}`);
+                // Add a short delay between emails to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 550));
+            } else {
+                logger.warn(`Skipping invalid registrant data: ${JSON.stringify(data)}`);
+            }
+        }
+        logger.info("Payment Info Options email campaign finished!");
+    } catch (error) {
+        logger.error(`Failed to send Payment Info Options email: ${error.message}`);
+    }
+}
+
 module.exports = {
     sendEmail,
     sendEmailFunc,
@@ -2765,6 +2803,7 @@ module.exports = {
     sendEmailGalaWinnerAnnouncementJson,
     sendEmailPerformanceInvitationJson,
     sendEmailSoundOfAsia2026InviteJson,
+    sendEmailPaymentInfoOptionsJson,
     sendPublicSeatHoldEmail,
     sendPublicBookingConfirmationEmail
 };

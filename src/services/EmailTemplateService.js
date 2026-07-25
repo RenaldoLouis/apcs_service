@@ -614,6 +614,79 @@ const templates = {
             </html>
         `;
     },
+    PAYMENT_INFO_OPTIONS: (data) => ({
+        subject: `Payment Information – APCS Music Competition`,
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    ${commonCss}
+                    .payment-option { background-color: #f9f9f9; border: 1px solid #eeeeee; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
+                    .payment-option h3 { color: #333333; margin-top: 0; margin-bottom: 15px; border-bottom: 1px solid #eeeeee; padding-bottom: 5px; }
+                    .payment-option div { margin-bottom: 10px; }
+                    .payment-option strong { color: #333333; width: 200px; display: inline-block; }
+                    .note-box { background-color: #fffbe6; border: 1px solid #ffe58f; padding: 12px 16px; border-radius: 5px; margin-top: 8px; font-size: 13px; color: #614700; }
+                    .ref-box { background-color: #f0f5ff; border: 1px solid #adc6ff; padding: 16px 20px; border-radius: 5px; margin: 20px 0; }
+                    .ref-box div { margin-bottom: 8px; }
+                    .ref-example { color: #7f8c8d; font-size: 13px; font-style: italic; }
+                </style>
+            </head>
+            <body>
+                <div class="email-wrapper">
+                    <div class="email-container">
+                        ${generateCommonHeader()}
+                        <div class="content">
+                            <p>Dear <strong>${data.name}</strong>,</p>
+                            <p>We would like to share the payment information for your APCS Music Competition registration. You may choose one of the following payment methods:</p>
+
+                            <div class="payment-option">
+                                <h3>Option 1 – PayNow (Recommended)</h3>
+                                <div><strong>PayNow Number:</strong> +65 9127 0871</div>
+                                <div><strong>Account Name:</strong> Winarta Prawira</div>
+                                <div class="note-box">
+                                    <strong>Please note:</strong><br>
+                                    As PayNow does not support payments in USD, the registration fee will be converted to SGD. Please contact our admin to confirm the applicable amount based on the daily exchange rate before making your payment.
+                                </div>
+                            </div>
+
+                            <div class="payment-option">
+                                <h3>Option 2 – Bank Transfer</h3>
+                                <div><strong>Bank Name:</strong> Bank Central Asia (BCA)</div>
+                                <div><strong>Account Number:</strong> 8200409915</div>
+                                <div><strong>Account Holder Name:</strong> Michaela Sutejo</div>
+                                <div><strong>SWIFT Code:</strong> CENAIDJA</div>
+                                <div><strong>Branch Address:</strong> BCA KCU Pematang Siantar, Indonesia</div>
+                                <div class="note-box">
+                                    <strong>Please note:</strong><br>
+                                    International bank transfers may take 1–3 business days to be processed, depending on your bank.
+                                </div>
+                            </div>
+
+                            <div class="ref-box">
+                                <h3 style="margin-top: 0; margin-bottom: 10px; color: #333;">Payment Reference</h3>
+                                <p style="margin: 0 0 8px;">For either payment method, please use the following payment reference:</p>
+                                <p style="margin: 0 0 4px;"><strong>Your Full Name – Category</strong></p>
+                                <p class="ref-example">Example: Jason Smith – Violin</p>
+                            </div>
+
+                            <h3 style="color: #333; margin-top: 25px;">What's Next?</h3>
+                            <p>Once you have completed your payment, please reply to this email with your payment proof (transfer receipt) so we can verify your registration.</p>
+                            <p>If you have any questions, please don't hesitate to contact us. We look forward to welcoming you to the APCS Music Competition!</p>
+
+                            <p style="margin-top: 24px;">
+                                Best regards,<br>
+                                <strong>APCS Music Team</strong>
+                            </p>
+                        </div>
+                        ${generateCommonFooter()}
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    }),
     PERFORMANCE_INVITATION: (data) => ({
         subject: `APCS Gala Concert 2026 – Performance Invitation`,
         html: `
