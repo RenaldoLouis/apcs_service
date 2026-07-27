@@ -641,13 +641,22 @@ const templates = {
                             <p>Dear <strong>${data.name}</strong>,</p>
                             <p>We would like to share the payment information for your APCS Music Competition registration. You may choose one of the following payment methods:</p>
 
+                            <div class="ref-box" style="margin-bottom: 20px; margin-top: 0;">
+                                <h3 style="margin-top: 0; margin-bottom: 15px; color: #333; border-bottom: 1px solid #adc6ff; padding-bottom: 5px;">Registration Details</h3>
+                                <div><strong>Name:</strong> ${data.name}</div>
+                                <div><strong>Category:</strong> ${data.competitionCategory}</div>
+                                <div><strong>Amount:</strong> ${data.price}</div>
+                                <div style="margin-top: 15px;"><strong>Payment Reference:</strong> ${data.paymentReferenceOverride}</div>
+                                <div class="ref-example">Example: Jason Smith – Violin</div>
+                            </div>
+
                             <div class="payment-option">
-                                <h3>Option 1 – PayNow (Recommended)</h3>
+                                <h3>Option 1 – PayNow</h3>
                                 <div><strong>PayNow Number:</strong> +65 9127 0871</div>
                                 <div><strong>Account Name:</strong> Winarta Prawira</div>
                                 <div class="note-box">
                                     <strong>Please note:</strong><br>
-                                    As PayNow does not support payments in USD, the registration fee will be converted to SGD. Please contact our admin to confirm the applicable amount based on the daily exchange rate before making your payment.
+                                    As PayNow does not support payments in USD, the registration fee will be converted to SGD. Please contact our admin via whatsapp (<a href="https://wa.me/6282213002686" style="color: #1890ff; text-decoration: none;">+62822 - 1300 - 2686</a>) to confirm the applicable amount based on the daily exchange rate before making your payment.
                                 </div>
                             </div>
 
@@ -664,12 +673,7 @@ const templates = {
                                 </div>
                             </div>
 
-                            <div class="ref-box">
-                                <h3 style="margin-top: 0; margin-bottom: 10px; color: #333;">Payment Reference</h3>
-                                <p style="margin: 0 0 8px;">For either payment method, please use the following payment reference:</p>
-                                <p style="margin: 0 0 4px;"><strong>Your Full Name – Category</strong></p>
-                                <p class="ref-example">Example: Jason Smith – Violin</p>
-                            </div>
+
 
                             <h3 style="color: #333; margin-top: 25px;">What's Next?</h3>
                             <p>Once you have completed your payment, please reply to this email with your payment proof (transfer receipt) so we can verify your registration.</p>

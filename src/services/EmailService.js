@@ -2755,7 +2755,12 @@ async function sendEmailPaymentInfoOptionsJson(registrants) {
             if (data && data.email && data.name) {
                 const to = data.email;
 
-                const { subject, html } = getTemplate('PAYMENT_INFO_OPTIONS', { name: data.name });
+                const { subject, html } = getTemplate('PAYMENT_INFO_OPTIONS', { 
+                    name: data.name,
+                    price: data.price,
+                    competitionCategory: data.competitionCategory,
+                    paymentReferenceOverride: data.paymentReferenceOverride
+                });
 
                 const mailOptions = {
                     from: '"APCS Music" <hello@apcsmusic.com>',
