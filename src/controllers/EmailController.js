@@ -182,6 +182,15 @@ async function sendEmailPaymentInfoOptions(req, res, next) {
     }
 }
 
+async function sendEmailGalaConcert2026ConfirmationFromCSV(req, res, next) {
+    try {
+        const data = await email.sendEmailGalaConcert2026ConfirmationFromCSV(req.body.registrants)
+        res.status(200).send({ message: "Gala Concert 2026 Confirmation emails sent successfully from CSV", data })
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     sendEmail,
     sendEmailAnnouncement,
@@ -202,5 +211,6 @@ module.exports = {
     sendEmailGalaWinnerAnnouncement,
     sendEmailPerformanceInvitation,
     sendEmailSoundOfAsia2026Invite,
-    sendEmailPaymentInfoOptions
+    sendEmailPaymentInfoOptions,
+    sendEmailGalaConcert2026ConfirmationFromCSV
 };

@@ -47,6 +47,14 @@ const updateGlobalSettings = async (body, callback) => {
             updatePayload.isRegistrationEnabled = body.isRegistrationEnabled;
         }
 
+        // Support video penalty configs
+        if (body.videoPenaltyThresholdMinutes !== undefined) {
+            updatePayload.videoPenaltyThresholdMinutes = body.videoPenaltyThresholdMinutes;
+        }
+        if (body.videoPenaltyScore !== undefined) {
+            updatePayload.videoPenaltyScore = body.videoPenaltyScore;
+        }
+
         if (Object.keys(updatePayload).length === 0) {
             return callback(new Error('No valid fields to update.'));
         }

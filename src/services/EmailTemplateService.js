@@ -494,6 +494,43 @@ const templates = {
             </html>
         `
     }),
+    GALA_CONCERT_2026_CONFIRMATION: (data) => ({
+        subject: "APCS Gala Concert 2026 – Confirmation",
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>${commonCss}</style>
+            </head>
+            <body>
+                <div class="email-wrapper">
+                    <div class="email-container">
+                        ${generateCommonHeader()}
+                        <div class="content">
+                            <p style="text-align: justify;">Dear <strong>${data.name}</strong>,</p>
+                            <p style="text-align: justify;">Warm greetings from APCS. We hope you are doing well.</p>
+                            <p style="text-align: justify;">We would like to kindly follow up on our previous email regarding your participation as a Winner of APCS 2025 in the APCS Gala Concert 2026 in Jakarta.</p>
+                            <p style="text-align: justify;">To assist us in finalizing the performance schedule, we would greatly appreciate it if you could let us know your preferred performance date:</p>
+                            <ul>
+                                <li>14 November 2026</li>
+                                <li>15 November 2026</li>
+                            </ul>
+                            <p style="text-align: justify;">Please kindly confirm your preferred date no later than <strong>30 September 2026</strong>. You may simply reply to this email or contact our admin via WhatsApp at <a href="https://wa.me/6282213002686" style="color: #1a73e8; text-decoration: none;">+62 822-1300-2686</a>.</p>
+                            <p style="text-align: justify;">We are truly excited to welcome you to Jakarta and look forward to celebrating this memorable musical experience with you.</p>
+                            <p style="text-align: justify;">Thank you, and we look forward to hearing from you soon.</p>
+                            <p style="margin-top: 24px;">
+                                Warm regards,<br>
+                                <strong>APCS Team</strong>
+                            </p>
+                        </div>
+                        ${generateCommonFooter()}
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
+    }),
 
     publicSeatHold: (data) => {
         return `

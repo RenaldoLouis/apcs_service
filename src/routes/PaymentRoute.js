@@ -41,6 +41,7 @@ router.post('/sendEmailGalaWinnerAnnouncement', EmailController.sendEmailGalaWin
 router.post('/sendEmailPerformanceInvitation', EmailController.sendEmailPerformanceInvitation)
 router.post('/sendEmailSoundOfAsia2026Invite', EmailController.sendEmailSoundOfAsia2026Invite)
 router.post('/sendEmailPaymentInfoOptions', EmailController.sendEmailPaymentInfoOptions)
+router.post('/sendEmailGalaConcert2026ConfirmationFromCSV', EmailController.sendEmailGalaConcert2026ConfirmationFromCSV)
 
 const PaperController = require("../controllers/PaperController");
 router.post('/resendConfirmationEmail', PaperController.resendConfirmationEmail)

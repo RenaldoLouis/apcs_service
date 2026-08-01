@@ -31,6 +31,7 @@ const PERFORMANCE_INVITATION_PDF = path.join(__dirname, 'attachments/PERFORMANCE
 
 const ANNOUNCEMENT_DUMMY_LIST = path.join(__dirname, 'attachments/2026_harp_list.csv');
 const LIST_FAILED = path.join(__dirname, 'attachments/emailFailCert.csv');
+const GALA_CONCERT_2026_CONFIRMATION_LIST = path.join(__dirname, 'attachments/DESIGN-WINNER ANNOUNCEMENT - RENALD-MASTER.csv');
 
 // This is the path to the main folder you downloaded from Google Drive
 const LOCAL_FILES_PATH = path.join(__dirname, 'student_files');
@@ -2783,7 +2784,68 @@ async function sendEmailPaymentInfoOptionsJson(registrants) {
     }
 }
 
+const sendEmailGalaConcert2026ConfirmationFromCSV = async (testRegistrants = null) => {
+    logger.info("Starting sendEmailGalaConcert2026ConfirmationFromCSV...");
+    try {
+        let recipients = [];
+        if (testRegistrants && testRegistrants.length > 0) {
+            recipients = testRegistrants;
+            logger.info("Using test registrants payload instead of CSV file.");
+        } else {
+            const workbook = xlsx.readFile(GALA_CONCERT_2026_CONFIRMATION_LIST);
+            const sheetName = workbook.SheetNames[0];
+            recipients = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+        }
+
+        if (recipients.length === 0) {
+            logger.info("No recipients found in the file. Exiting.");
+            return { message: "No recipients found in the file." };
+        }
+
+        for (const recipient of recipients) {
+            // Assuming the CSV has Name and Email columns
+            const recipientName = recipient.Name || recipient.NAME || recipient.name; 
+            const recipientEmail = recipient.Email || recipient.EMAIL || recipient.email;
+
+            if (!recipientName || !recipientEmail) {
+                logger.warn(`Skipping row due to missing name or email: ${JSON.stringify(recipient)}`);
+                continue;
+            }
+
+            try {
+                logger.info(`Processing ${recipientName} <${recipientEmail}>...`);
+
+                const { subject, html } = getTemplate('GALA_CONCERT_2026_CONFIRMATION', {
+                    name: recipientName
+                });
+
+                const mailOptions = {
+                    from: '"APCS Music" <hello@apcsmusic.com>',
+                    to: recipientEmail,
+                    subject: subject,
+                    html: html
+                };
+
+                await transporter.sendMail(mailOptions);
+                logger.info(`Successfully sent email to ${recipientEmail} for ${recipientName}`);
+
+                // Add a short delay to avoid being flagged as spam
+                await new Promise(resolve => setTimeout(resolve, 550));
+
+            } catch (error) {
+                logger.error(`Failed to process ${recipientName}: ${error.message}`);
+            }
+        }
+        logger.info("Campaign sendEmailGalaConcert2026ConfirmationFromCSV finished!");
+        return { message: "Campaign finished successfully" };
+    } catch (error) {
+        logger.error(`An error occurred during the campaign: ${error.message}`);
+        throw error;
+    }
+}
+
 module.exports = {
+    sendEmailGalaConcert2026ConfirmationFromCSV,
     sendEmail,
     sendEmailFunc,
     sendEmailAnnouncement,
