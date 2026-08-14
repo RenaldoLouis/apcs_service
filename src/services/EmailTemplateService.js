@@ -371,7 +371,7 @@ const templates = {
                             <p>Dear <strong>${data.name}</strong>,</p>
                             
                             <p>
-                                We are honored to welcome you as a Jury member for the <strong>${data.competitionCategory}</strong> category at APCS The Sound of Asia 2025.
+                                We are honored to welcome you as a Jury member for the <strong>${data.competitionCategory}</strong> category at APCS The Sound of Asia 2026.
                             </p>
                             
                             <p>
