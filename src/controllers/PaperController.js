@@ -121,8 +121,10 @@ async function handlePaperWebhook(req, res, next) {
                     // Send booking confirmation email
                     try {
                         await emailService.sendPublicBookingConfirmationEmail(bookingData, resolvedVenueLabel);
+                        await publicBookingRef.update({ emailSent: true });
                     } catch (emailErr) {
                         logger.error(`Confirmation email failed for ${bookingData.userEmail}: ${emailErr.message}`);
+                        await publicBookingRef.update({ emailSent: false });
                     }
 
                     return res.status(200).json({ status: 'OK' });

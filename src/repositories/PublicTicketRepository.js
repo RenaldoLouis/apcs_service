@@ -165,10 +165,12 @@ const createPublicTicketBooking = async (body, callback) => {
             }
         }
     }
+    let eventId;
+    let F_expected = 0;
 
     try {
         // --- 2. Fetch authoritative pricing from Firestore ---
-        const eventId = await getCurrentEventId();
+        eventId = await getCurrentEventId();
         const eventRef = db.collection('events').doc(eventId);
         const eventSnap = await eventRef.get();
         if (!eventSnap.exists) {
@@ -206,7 +208,7 @@ const createPublicTicketBooking = async (body, callback) => {
         }
         
         let P_expected = totalSelected;
-        let F_expected = 0;
+        F_expected = 0;
         
         if (isWinner) {
             P_expected = totalSelected;
@@ -343,6 +345,7 @@ const createPublicTicketBooking = async (body, callback) => {
             // Create the booking document
             transaction.set(bookingRef, {
                 eventId: eventId,
+                registrantId: registrantId || '',
                 registrantName: registrantName || '',
                 buyerName,
                 userName: buyerName, // For backwards compatibility
@@ -477,16 +480,54 @@ const createPublicTicketBooking = async (body, callback) => {
     } catch (error) {
         logger.error(`createPublicTicketBooking failed: ${error.message}`);
 
-        // Rollback: release any seats that were locked
-        if (selectedSeatIds && selectedSeatIds.length > 0) {
+        // Rollback: release any seats that were locked and refund quota
+        if (eventId) {
             try {
                 const batch = db.batch();
-                selectedSeatIds.forEach(seatId => {
-                    const seatRef = db.collection(`seats${eventId}`).doc(seatId);
-                    batch.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
-                });
-                await batch.commit();
-                logger.info(`Rollback complete: seats released for failed booking.`);
+                let hasRollback = false;
+                
+                if (selectedSeatIds && selectedSeatIds.length > 0) {
+                    selectedSeatIds.forEach(seatId => {
+                        const seatRef = db.collection(`seats${eventId}`).doc(seatId);
+                        batch.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
+                    });
+                    hasRollback = true;
+                }
+                
+                if (orchestraSelectedSeatIds && orchestraSelectedSeatIds.length > 0) {
+                    orchestraSelectedSeatIds.forEach(seatId => {
+                        const seatRef = db.collection(`seats${eventId}`).doc(seatId);
+                        batch.update(seatRef, { status: 'available', lockedAt: null, lockedByBookingId: null });
+                    });
+                    hasRollback = true;
+                }
+                
+                if (hasRollback) {
+                    await batch.commit();
+                    logger.info(`Rollback complete: seats released for failed booking.`);
+                }
+                
+                if (F_expected > 0 && orchestraSessionId) {
+                    await db.runTransaction(async (transaction) => {
+                        const evtRef = db.collection('events').doc(eventId);
+                        const evtDoc = await transaction.get(evtRef);
+                        if (evtDoc.exists) {
+                            const evtData = evtDoc.data();
+                            const osIdx = (evtData.orchestraSessions || []).findIndex(s => s.id === orchestraSessionId);
+                            if (osIdx !== -1) {
+                                const currentSession = evtData.orchestraSessions[osIdx];
+                                const claimed = currentSession.complimentaryClaimed || 0;
+                                const updatedSessions = [...evtData.orchestraSessions];
+                                updatedSessions[osIdx] = {
+                                    ...currentSession,
+                                    complimentaryClaimed: Math.max(0, claimed - F_expected)
+                                };
+                                transaction.update(evtRef, { orchestraSessions: updatedSessions });
+                            }
+                        }
+                    });
+                    logger.info(`Rollback complete: complimentary quota refunded for failed booking.`);
+                }
             } catch (rollbackErr) {
                 logger.error(`Rollback failed: ${rollbackErr.message}`);
             }

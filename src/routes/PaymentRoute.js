@@ -82,6 +82,7 @@ router.get('/public-ticket/eligible-winners', PublicTicketController.getEligible
 router.get('/public-ticket/booking-status/:bookingId', PublicTicketController.getBookingStatus);
 router.post('/public-ticket/booking',         PublicTicketController.createPublicTicketBooking);
 router.post('/public-ticket/webhook',         PublicTicketController.handlePublicTicketWebhook);
+router.post('/public-ticket/resend-email',    PublicTicketController.resendPublicTicketEmail);
 
 // --- System Settings ---
 router.get('/systemSettings/global', SystemSettingsController.getGlobalSettings);

@@ -148,11 +148,56 @@ async function getEligibleWinners(req, res, next) {
     }
 }
 
+/** POST /api/v1/apcs/public-ticket/resend-email */
+async function resendPublicTicketEmail(req, res, next) {
+    try {
+        const { bookingId } = req.body;
+        if (!bookingId) return res.status(400).json({ message: "bookingId is required" });
+
+        const bookingRef = require('../configs/firebase-init').db.collection('publicBookings').doc(bookingId);
+        const bookingSnap = await bookingRef.get();
+
+        if (!bookingSnap.exists) {
+            return res.status(404).json({ message: `Booking ${bookingId} not found` });
+        }
+
+        const bookingData = { id: bookingSnap.id, ...bookingSnap.data() };
+        if (bookingData.paymentStatus !== 'PAID' && bookingData.paymentStatus !== 'paid') {
+            return res.status(400).json({ message: "Booking is not paid yet." });
+        }
+
+        // Resolve dynamic venue label
+        let resolvedVenueLabel = bookingData.venue;
+        try {
+            const eventData = await PublicTicketService.getPublicTicketEventData();
+            if (eventData && eventData.venues) {
+                const venueObj = eventData.venues.find(v => v.id === bookingData.venue);
+                if (venueObj) resolvedVenueLabel = venueObj.label;
+            }
+        } catch (e) {
+            logger.warn(`Could not fetch dynamic venue label: ${e.message}`);
+        }
+
+        try {
+            await emailService.sendPublicBookingConfirmationEmail(bookingData, resolvedVenueLabel);
+            await bookingRef.update({ emailSent: true });
+            res.status(200).json({ message: "Email sent successfully" });
+        } catch (emailErr) {
+            logger.error(`Resend confirmation email failed for ${bookingData.userEmail}: ${emailErr.message}`);
+            await bookingRef.update({ emailSent: false });
+            return res.status(500).json({ message: "Failed to send email." });
+        }
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     getPublicTicketEventData,
     createPublicTicketBooking,
     handlePublicTicketWebhook,
     getPublicTicketSeats,
     getEligibleWinners,
-    getBookingStatus
+    getBookingStatus,
+    resendPublicTicketEmail
 };
