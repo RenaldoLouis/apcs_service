@@ -6,6 +6,7 @@ const xlsx = require('xlsx');
 const fs = require('fs');
 const { smtpConfig } = require("../configs/emailConfig");
 const { getTemplate } = require("./EmailTemplateService");
+const SystemSettingsService = require("./SystemSettingsService");
 
 // Create a nodemailer transporter with TLS enforced
 const transporter = nodemailer.createTransport(smtpConfig);
@@ -326,6 +327,7 @@ const sendEmailFunc = async (data) => {
     const participant = data.name
     const to = data.email
     try {
+        const globalSettings = await SystemSettingsService.getGlobalSettings();
         const mailOptions = {
             from: "hello@apcsmusic.com",
             to: to,
@@ -613,7 +615,7 @@ const sendEmailFunc = async (data) => {
                                                     <tbody>
                                                         <tr>
                                                             <td colspan="1" width="100%" align="left" style="padding: 0px 0px 10px 10px; text-align: left; color: #ffffff; font-family: Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif; font-size: 12px; line-height: 1.5;">
-                                                                ©️ 2025 APCS Music, All rights reserved.
+                                                                ${globalSettings?.copyrightText || "©️ 2026 APCS Music. All Rights Reserved."}
                                                             </td>
                                                         </tr>
                                                     </tbody>
@@ -1914,6 +1916,7 @@ const sendEmailJuryAccountCreationFunc = async (data) => {
 };
 
 const sendEmailNotifyBulkUpdateRegistrant = async (data) => {
+    const globalSettings = await SystemSettingsService.getGlobalSettings();
     // --- NEW LOGIC TO HANDLE SINGLE OR MULTIPLE NAMES ---
     let greetingName = 'Participant';
     const teacherName = data.teacherName;
@@ -2230,7 +2233,7 @@ const sendEmailNotifyBulkUpdateRegistrant = async (data) => {
                                                     <tbody>
                                                         <tr>
                                                             <td colspan="1" width="100%" align="left" style="padding: 0px 0px 10px 10px; text-align: left; color: #ffffff; font-family: Open Sans, Helvetica Neue, Helvetica, Arial, sans-serif; font-size: 12px; line-height: 1.5;">
-                                                                ©️ 2025 APCS Music, All rights reserved.
+                                                                ${globalSettings?.copyrightText || "©️ 2026 APCS Music. All Rights Reserved."}
                                                             </td>
                                                         </tr>
                                                     </tbody>

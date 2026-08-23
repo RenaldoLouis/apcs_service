@@ -63,9 +63,9 @@ const generateCommonHeader = () => `
         </div>
     </div>`;
 
-const generateCommonFooter = () => `
+const generateCommonFooter = (copyrightText) => `
     <div class="footer">
-        <p>&copy; ${new Date().getFullYear()} APCS Music</p>
+        <p>${copyrightText || `&copy; ${new Date().getFullYear()} APCS Music`}</p>
     </div>`;
 
 const templates = {
@@ -85,7 +85,7 @@ const templates = {
                                 <div><strong>Amount:</strong> ${data.price}</div>
                                 </div>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -143,7 +143,7 @@ const templates = {
                                     <strong>The APCS Team</strong>
                                 </p>
                             </div>
-                            ${generateCommonFooter()}
+                            ${generateCommonFooter(data.copyrightText)}
                         </div>
                     </div>
                 </body>
@@ -198,7 +198,7 @@ const templates = {
                                 <strong>Best regards,</strong> <br><strong>APCS Team</strong> 
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -247,7 +247,7 @@ const templates = {
                                 <strong>Best regards,</strong> <br><strong>APCS Team</strong> 
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -293,7 +293,7 @@ const templates = {
                                 <strong>Best regards,</strong> <br><strong>APCS Team</strong> 
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -347,7 +347,7 @@ const templates = {
                             <p style="margin: 4px 0 0 0;">Jakarta, Indonesia</p>
                             <p style="margin: 4px 0 0 0;"><a href="https://www.apcsmusic.com" style="color: #333; text-decoration: none;">www.apcsmusic.com</a></p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -411,7 +411,7 @@ const templates = {
                                 <strong>The APCS Team</strong>
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -454,7 +454,7 @@ const templates = {
                                 <strong>APCS Music</strong>
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -487,7 +487,7 @@ const templates = {
                                 <strong>APCS Team</strong>
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -524,7 +524,7 @@ const templates = {
                                 <strong>APCS Team</strong>
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -582,7 +582,7 @@ const templates = {
                                 <strong>APCS Team</strong>
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -644,7 +644,7 @@ const templates = {
                                 <strong>APCS Team</strong>
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -721,7 +721,7 @@ const templates = {
                                 <strong>APCS Music Team</strong>
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
@@ -760,7 +760,7 @@ const templates = {
                                 <strong>APCS Team</strong>
                             </p>
                         </div>
-                        ${generateCommonFooter()}
+                        ${generateCommonFooter(data.copyrightText)}
                     </div>
                 </div>
             </body>
