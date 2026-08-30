@@ -10,6 +10,7 @@ const paperRoute = require('./src/routes/PaperRoute.js')
 const PaymentIntegrationRoute = require('./src/routes/PaymentIntegrationRoute.js')
 const wasteRoute = require('./src/routes/WasteRoutes.js')
 const { startPublicTicketSweeper } = require('./src/jobs/PublicTicketSweeper.js')
+const { startJuryDeadlineReminder } = require('./src/jobs/JuryDeadlineReminder.js')
 
 app.use(cors())
 app.set('trust proxy', 1) // Required for express-rate-limit when behind reverse proxies (like cPanel)
@@ -42,6 +43,7 @@ app.use(errorHandler)
 
 // Start background jobs
 startPublicTicketSweeper()
+startJuryDeadlineReminder()
 
 app.listen(port, () => {
     console.log(`App running on port ${port}.`)

@@ -2875,7 +2875,8 @@ module.exports = {
     sendEmailSoundOfAsia2026InviteJson,
     sendEmailPaymentInfoOptionsJson,
     sendPublicSeatHoldEmail,
-    sendPublicBookingConfirmationEmail
+    sendPublicBookingConfirmationEmail,
+    sendJuryDeadlineReminderEmail
 };
 
 async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, date, session, paymentUrl, lockExpiresAt }) {
@@ -2955,4 +2956,28 @@ async function sendPublicBookingConfirmationEmail(bookingData, venueName) {
 
     await transporter.sendMail(mailOptions);
     logger.info(`Booking confirmation email sent to ${userEmail}`);
+}
+
+async function sendJuryDeadlineReminderEmail({ to, name, category, pendingCount, totalCount, deadline, eventId }) {
+    const displayEventName = eventId ? eventId.replace(/APCS(\d+)/i, 'APCS $1') : 'APCS 2026';
+
+    const { subject, html } = getTemplate('JURY_DEADLINE_REMINDER', {
+        name,
+        competitionCategory: category,
+        pendingCount,
+        totalCount,
+        deadline,
+        copyrightText: `${displayEventName} The Sound of Asia`,
+        displayEventName
+    });
+
+    const mailOptions = {
+        from: '"APCS Music" <hello@apcsmusic.com>',
+        to,
+        subject,
+        html
+    };
+
+    await transporter.sendMail(mailOptions);
+    logger.info(`[JURY-REMINDER] Email sent to ${to} (${pendingCount}/${totalCount} pending)`);
 }

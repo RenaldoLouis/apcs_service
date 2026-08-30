@@ -766,6 +766,66 @@ const templates = {
             </body>
             </html>
         `
+    }),
+    JURY_DEADLINE_REMINDER: (data) => ({
+        subject: `[Urgent] ${data.displayEventName || 'APCS 2026'} - Jury Scoring Deadline Approaching`,
+        html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>${juryCss}</style>
+            </head>
+            <body>
+                <div class="email-wrapper">
+                    <div class="email-container">
+                        ${generateCommonHeader()}
+                        <div class="content">
+                            <p>Dear <strong>${data.name}</strong>,</p>
+                            
+                            <p>
+                                This is a friendly reminder that the scoring deadline for the <strong>${data.competitionCategory}</strong> category is approaching in less than 24 hours.
+                            </p>
+                            
+                            <div class="credential-box" style="border-left-color: #e74c3c;">
+                                <div class="credential-row">
+                                    <span class="credential-label" style="width: auto; margin-right: 10px;">Pending Assessments:</span>
+                                    <span class="credential-value" style="color: #e74c3c; font-weight: bold;">${data.pendingCount} of ${data.totalCount}</span>
+                                </div>
+                                <div class="credential-row">
+                                    <span class="credential-label" style="width: auto; margin-right: 10px;">Deadline:</span>
+                                    <span class="credential-value">${data.deadline}</span>
+                                </div>
+                                <p class="warning-text" style="color: #e74c3c; margin-top: 15px;">
+                                    *After this deadline, the scoring portal will be closed and you will no longer be able to submit or edit your assessments.
+                                </p>
+                            </div>
+
+                            <p>
+                                Please ensure all your assessments are completed and submitted before the deadline to avoid any delays in the competition process.
+                            </p>
+
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="https://www.apcsmusic.com/login" target="_blank" class="action-button">
+                                    Continue Scoring
+                                </a>
+                            </div>
+
+                            <p style="margin-top: 20px;">
+                                Thank you for your time and dedication as an adjudicator for ${data.displayEventName || 'APCS 2026'} The Sound of Asia.
+                            </p>
+
+                            <p style="margin-top: 20px;">
+                                Best regards,<br>
+                                <strong>The APCS Team</strong>
+                            </p>
+                        </div>
+                        ${generateCommonFooter(data.copyrightText)}
+                    </div>
+                </div>
+            </body>
+            </html>
+        `
     })
 };
 
