@@ -136,6 +136,7 @@ const createPublicTicketBooking = async (body, callback) => {
         registrantName, buyerName, userEmail, userPhone,
         venue, date, session,
         orchestraSessionId,
+        isOrchestra, isMasterclass,
         tickets,      // [{ id, name, quantity, priceEach }]
         selectedSeatIds, // [seatDocumentId, ...]
         orchestraSelectedSeatIds, // [seatDocumentId, ...]
@@ -178,9 +179,11 @@ const createPublicTicketBooking = async (body, callback) => {
         }
         const eventData = eventSnap.data();
 
-        // Build a quick lookup: tierId → price
+        // Build a quick lookup: tierId → price for the selected venue
         const tierPriceMap = {};
-        (eventData.ticketTiers || []).forEach(t => { tierPriceMap[t.id] = t.price; });
+        (eventData.ticketTiers || []).forEach(t => { 
+            tierPriceMap[t.id] = t.venuePrices?.[venue] ?? null; 
+        });
 
         const addOnPriceMap = {};
         (eventData.addOns || []).forEach(a => { addOnPriceMap[a.id] = { price: a.price, name: a.name }; });
@@ -207,12 +210,20 @@ const createPublicTicketBooking = async (body, callback) => {
             }
         }
         
-        let P_expected = totalSelected;
+        const ticketsQty = tickets.reduce((acc, t) => acc + (t.quantity > 0 ? t.quantity : 0), 0);
+        const seatSelectionPerformerCount = (addOnIds || []).filter(id => id === 'seat_selection_performer').length;
+        
+        if (totalSelected > ticketsQty) {
+            throw new Error(`Ticket quantity mismatch. You cannot select more seats (${totalSelected}) than paid tickets (${ticketsQty}).`);
+        }
+        if (totalSelected > seatSelectionPerformerCount) {
+             throw new Error(`Seat selection mismatch. You selected ${totalSelected} seats, but your seat_selection_performer add-on only covers ${seatSelectionPerformerCount} seats.`);
+        }
+        
         F_expected = 0;
         
         if (isWinner) {
-            P_expected = totalSelected;
-            F_expected = Math.min(P_expected + 1, quotaLeft);
+            F_expected = Math.min(ticketsQty + 1, quotaLeft);
             
             if (hasSeatSelectionAddon && F_expected > 0) {
                 const orchSelectedCount = (orchestraSelectedSeatIds || []).length;
@@ -222,15 +233,11 @@ const createPublicTicketBooking = async (body, callback) => {
             }
         }
 
-        const ticketsQty = tickets.reduce((acc, t) => acc + (t.quantity > 0 ? t.quantity : 0), 0);
-        if (ticketsQty !== P_expected) {
-            throw new Error(`Ticket quantity mismatch. Expected ${P_expected} paid tickets based on seat selection, got ${ticketsQty}.`);
-        }
-
         tickets.forEach(ticket => {
             if (ticket.quantity > 0) {
                 const price = tierPriceMap[ticket.id];
                 if (price === undefined) throw new Error(`Unknown ticket tier: ${ticket.id}`);
+                if (price === null) throw new Error(`Pricing not configured for tier ${ticket.id} at venue ${venueMap[venue] || venue}`);
                 const subtotal = price * ticket.quantity;
                 totalAmount += subtotal;
                 lineItems.push({
@@ -263,6 +270,16 @@ const createPublicTicketBooking = async (body, callback) => {
                 });
             }
         });
+
+        const freeMasterclassCount = tickets.find(t => t.id.toLowerCase() === 'presto')?.quantity || 0;
+        if (freeMasterclassCount > 0) {
+            lineItems.push({
+                name: `Free Master Class (Presto Benefit)`,
+                description: `${freeMasterclassCount}x Free Master Class`,
+                price: 0,
+                currency: 'IDR',
+            });
+        }
 
         // --- 4. Atomic Firestore transaction: lock seats + create booking ---
         const bookingRef = db.collection('publicBookings').doc();
@@ -355,12 +372,15 @@ const createPublicTicketBooking = async (body, callback) => {
                 date,
                 session,
                 orchestraSessionId: orchestraSessionId || '',
+                isOrchestra: !!isOrchestra,
+                isMasterclass: !!isMasterclass,
                 tickets,
                 selectedSeatIds: selectedSeatIds || [],
                 orchestraSelectedSeatIds: orchestraSelectedSeatIds || [],
                 performanceSeatLabels: performanceSeatLabels || [],
                 orchestraSeatLabels: orchestraSeatLabels || [],
                 addOnIds: addOnIds || [],
+                freeMasterclassCount: freeMasterclassCount,
                 totalAmount,
                 complimentaryTickets: F_expected,
                 paymentStatus: 'pending',
