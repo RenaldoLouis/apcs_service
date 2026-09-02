@@ -26,16 +26,35 @@ const startJuryDeadlineReminder = () => {
                 const diffMs = deadline - now;
                 const hoursLeft = diffMs / (1000 * 60 * 60);
 
-                // If deadline is within the next 24 hours and not yet passed
+                let reminderType = null;
+                let flagKey = null;
+                let timeRemainingText = '';
+
+                // Determine the reminder window
                 if (hoursLeft > 0 && hoursLeft <= 24) {
-                    // Check if we already sent the reminder for this exact deadline
-                    // To handle deadline extensions, we key the flag by both category and deadline timestamp
-                    const flagKey = `${category}_${deadline.getTime()}`;
-                    if (newRemindersSent[flagKey]) {
+                    reminderType = '24h';
+                    timeRemainingText = 'less than 24 hours';
+                    flagKey = `${category}_${deadline.getTime()}_24h`;
+                    // Backward compatibility: also check the old flag format
+                    const oldFlagKey = `${category}_${deadline.getTime()}`;
+                    if (newRemindersSent[flagKey] || newRemindersSent[oldFlagKey]) {
                         continue;
                     }
+                } else if (hoursLeft > 24 && hoursLeft <= 72) {
+                    reminderType = '3d';
+                    timeRemainingText = '3 days';
+                    flagKey = `${category}_${deadline.getTime()}_3d`;
+                    if (newRemindersSent[flagKey]) continue;
+                } else if (hoursLeft > 72 && hoursLeft <= 168) {
+                    reminderType = '1w';
+                    timeRemainingText = '1 week';
+                    flagKey = `${category}_${deadline.getTime()}_1w`;
+                    if (newRemindersSent[flagKey]) continue;
+                } else {
+                    continue; // outside of any reminder window
+                }
 
-                    logger.info(`[JURY-REMINDER] 24h deadline approaching for ${category}. Processing reminders...`);
+                logger.info(`[JURY-REMINDER] ${timeRemainingText} deadline approaching for ${category}. Processing reminders...`);
 
                     // 1. Get all jury members for this category
                     const jurySnap = await db.collection('users')
@@ -122,7 +141,8 @@ const startJuryDeadlineReminder = () => {
                                     pendingCount,
                                     totalCount,
                                     deadline: formattedDeadline,
-                                    eventId: currentEventId
+                                    eventId: currentEventId,
+                                    timeRemainingText
                                 });
                                 emailsSent++;
                                 
@@ -134,12 +154,11 @@ const startJuryDeadlineReminder = () => {
                         }
                     }
 
-                    logger.info(`[JURY-REMINDER] Finished ${category}. Sent ${emailsSent} reminder emails.`);
+                    logger.info(`[JURY-REMINDER] Finished ${category} (${timeRemainingText}). Sent ${emailsSent} reminder emails.`);
                     
                     // Mark this category's deadline as processed
                     newRemindersSent[flagKey] = true;
                     updatedRemindersSent = true;
-                }
             }
 
             // Save updated flags back to Firestore if changed

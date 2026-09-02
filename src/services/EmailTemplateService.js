@@ -784,7 +784,7 @@ const templates = {
                             <p>Dear <strong>${data.name}</strong>,</p>
                             
                             <p>
-                                This is a friendly reminder that the scoring deadline for the <strong>${data.competitionCategory}</strong> category is approaching in less than 24 hours.
+                                This is a friendly reminder that the scoring deadline for the <strong>${data.competitionCategory}</strong> category is approaching in ${data.timeRemainingText || 'less than 24 hours'}.
                             </p>
                             
                             <div class="credential-box" style="border-left-color: #e74c3c;">

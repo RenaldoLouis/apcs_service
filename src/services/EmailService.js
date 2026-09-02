@@ -2958,7 +2958,7 @@ async function sendPublicBookingConfirmationEmail(bookingData, venueName) {
     logger.info(`Booking confirmation email sent to ${userEmail}`);
 }
 
-async function sendJuryDeadlineReminderEmail({ to, name, category, pendingCount, totalCount, deadline, eventId }) {
+async function sendJuryDeadlineReminderEmail({ to, name, category, pendingCount, totalCount, deadline, eventId, timeRemainingText }) {
     const displayEventName = eventId ? eventId.replace(/APCS(\d+)/i, 'APCS $1') : 'APCS 2026';
 
     const { subject, html } = getTemplate('JURY_DEADLINE_REMINDER', {
@@ -2968,7 +2968,8 @@ async function sendJuryDeadlineReminderEmail({ to, name, category, pendingCount,
         totalCount,
         deadline,
         copyrightText: `${displayEventName} The Sound of Asia`,
-        displayEventName
+        displayEventName,
+        timeRemainingText
     });
 
     const mailOptions = {
