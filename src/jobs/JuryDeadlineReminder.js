@@ -16,7 +16,6 @@ const startJuryDeadlineReminder = () => {
             const remindersSent = settings.juryDeadlineReminderSent || {};
 
             const now = new Date();
-            let updatedRemindersSent = false;
             const newRemindersSent = { ...remindersSent };
 
             for (const [category, deadlineStr] of Object.entries(juryDeadlines)) {
@@ -66,7 +65,9 @@ const startJuryDeadlineReminder = () => {
                         logger.info(`[JURY-REMINDER] No jury members found for ${category}.`);
                         // Still mark as sent so we don't keep querying
                         newRemindersSent[flagKey] = true;
-                        updatedRemindersSent = true;
+                        await db.collection('systemSettings').doc('global').set({
+                            juryDeadlineReminderSent: { [flagKey]: true }
+                        }, { merge: true });
                         continue;
                     }
 
@@ -156,18 +157,17 @@ const startJuryDeadlineReminder = () => {
 
                     logger.info(`[JURY-REMINDER] Finished ${category} (${timeRemainingText}). Sent ${emailsSent} reminder emails.`);
                     
-                    // Mark this category's deadline as processed
+                    // Mark this category's deadline as processed IMMEDIATELY in Firestore
+                    // This prevents duplicate emails if the server restarts or the job re-runs
                     newRemindersSent[flagKey] = true;
-                    updatedRemindersSent = true;
-            }
-
-            // Save updated flags back to Firestore if changed
-            if (updatedRemindersSent) {
-                // Keep the object size manageable by removing old flags optionally,
-                // but for now just merging is fine.
-                await db.collection('systemSettings').doc('global').set({
-                    juryDeadlineReminderSent: newRemindersSent
-                }, { merge: true });
+                    try {
+                        await db.collection('systemSettings').doc('global').set({
+                            juryDeadlineReminderSent: { [flagKey]: true }
+                        }, { merge: true });
+                        logger.info(`[JURY-REMINDER] Flag saved for ${flagKey}`);
+                    } catch (flagErr) {
+                        logger.error(`[JURY-REMINDER] CRITICAL: Failed to save flag ${flagKey}: ${flagErr.message}. Emails may be re-sent on next run.`);
+                    }
             }
 
         } catch (error) {
