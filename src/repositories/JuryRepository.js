@@ -6,12 +6,12 @@ const { db, admin } = require('../configs/firebase-init');
 const emailService = require('../services/EmailService'); // Adjust path as needed
 
 const createJury = async (body, callback) => {
-    const { email, password, name, category } = body;
+    const { email, password, name, category, eventId } = body;
 
-    if (!email || !password || !name || !category) {
+    if (!email || !password || !name || !category || !eventId) {
         // Assuming AppError is defined in your scope
         return callback(new AppError(
-            `Missing required fields: email, password, name, or category`,
+            `Missing required fields: email, password, name, category, or eventId`,
             400
         ));
     }
@@ -27,7 +27,8 @@ const createJury = async (body, callback) => {
         // 2. Set Custom Claims
         await admin.auth().setCustomUserClaims(userRecord.uid, {
             role: 'jury',
-            competitionCategory: category
+            competitionCategory: category,
+            eventId: eventId
         });
 
         // 3. Create a Document in 'users' collection
@@ -37,6 +38,7 @@ const createJury = async (body, callback) => {
             email: email,
             role: 'jury',
             competitionCategory: category,
+            eventId: eventId,
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
@@ -76,6 +78,84 @@ const createJury = async (body, callback) => {
     }
 }
 
+const updateJury = async (body, callback) => {
+    const { uid, name, category, eventId } = body;
+
+    if (!uid || !name || !category || !eventId) {
+        return callback(new AppError(`Missing required fields: uid, name, category, or eventId`, 400));
+    }
+
+    try {
+        // 1. Update Firebase Auth Profile
+        await admin.auth().updateUser(uid, {
+            displayName: name,
+        });
+
+        // 2. Update Custom Claims
+        await admin.auth().setCustomUserClaims(uid, {
+            role: 'jury',
+            competitionCategory: category,
+            eventId: eventId
+        });
+
+        // 3. Update Firestore Document
+        await db.collection('users').doc(uid).update({
+            name: name,
+            competitionCategory: category,
+            eventId: eventId,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        logger.info(`Successfully updated Jury: ${uid}`);
+        return callback(null, { message: 'Jury updated successfully' });
+
+    } catch (error) {
+        console.error('Error updating jury:', error);
+        logger.error(`Fail update jury: ${error.message}`);
+        return callback(new AppError(`Failed to update jury: ${error.message}`, 500));
+    }
+}
+
+const deleteJury = async (body, callback) => {
+    const { uid } = body;
+
+    if (!uid) {
+        return callback(new AppError(`Missing required field: uid`, 400));
+    }
+
+    try {
+        // 1. Check if they have already scored students
+        const scoresSnapshot = await db.collection('JuryScores2025').where('juryUserId', '==', uid).limit(1).get();
+        if (!scoresSnapshot.empty) {
+            return callback(new AppError('Cannot delete this jury member because they have already submitted scores.', 400));
+        }
+
+        // 2. Delete from Firebase Auth
+        try {
+            await admin.auth().deleteUser(uid);
+        } catch (authErr) {
+            if (authErr.code === 'auth/user-not-found') {
+                logger.warn(`[DELETE-JURY] Auth user not found for ${uid}, proceeding to delete Firestore document.`);
+            } else {
+                throw authErr;
+            }
+        }
+
+        // 3. Delete from Firestore
+        await db.collection('users').doc(uid).delete();
+
+        logger.info(`Successfully deleted Jury: ${uid}`);
+        return callback(null, { message: 'Jury deleted successfully' });
+
+    } catch (error) {
+        console.error('Error deleting jury:', error);
+        logger.error(`Fail delete jury: ${error.message}`);
+        return callback(new AppError(`Failed to delete jury: ${error.message}`, 500));
+    }
+}
+
 module.exports = {
-    createJury
+    createJury,
+    updateJury,
+    deleteJury
 }

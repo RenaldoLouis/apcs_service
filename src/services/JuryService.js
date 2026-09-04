@@ -11,6 +11,28 @@ async function createJury(req) {
     }
 }
 
+async function updateJury(req) {
+    const body = req.body;
+    body.uid = req.params.uid; // Extract uid from params
+    try {
+        return await databaseUtil.executeDatabaseOperation(db.updateJury, body);
+    } catch (error) {
+        throw error;
+    }
+}
+
+async function deleteJury(req) {
+    const body = req.body;
+    body.uid = req.params.uid; // Extract uid from params
+    try {
+        return await databaseUtil.executeDatabaseOperation(db.deleteJury, body);
+    } catch (error) {
+        throw error;
+    }
+}
+
 module.exports = {
-    createJury
+    createJury,
+    updateJury,
+    deleteJury
 };

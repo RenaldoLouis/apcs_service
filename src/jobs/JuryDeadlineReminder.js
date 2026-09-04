@@ -5,7 +5,7 @@ const { sendJuryDeadlineReminderEmail } = require('../services/EmailService');
 const REMINDER_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 const startJuryDeadlineReminder = () => {
-    setInterval(async () => {
+    const runJob = async () => {
         try {
             const settingsDoc = await db.collection('systemSettings').doc('global').get();
             if (!settingsDoc.exists) return;
@@ -55,40 +55,40 @@ const startJuryDeadlineReminder = () => {
 
                 logger.info(`[JURY-REMINDER] ${timeRemainingText} deadline approaching for ${category}. Processing reminders...`);
 
-                    // 1. Get all jury members for this category
-                    const jurySnap = await db.collection('users')
-                        .where('role', '==', 'jury')
-                        .where('competitionCategory', '==', category)
-                        .get();
+                // 1. Get all jury members for this category
+                const jurySnap = await db.collection('users')
+                    .where('role', '==', 'jury')
+                    .where('competitionCategory', '==', category)
+                    .get();
 
-                    if (jurySnap.empty) {
-                        logger.info(`[JURY-REMINDER] No jury members found for ${category}.`);
-                        // Still mark as sent so we don't keep querying
-                        newRemindersSent[flagKey] = true;
-                        await db.collection('systemSettings').doc('global').set({
-                            juryDeadlineReminderSent: { [flagKey]: true }
-                        }, { merge: true });
-                        continue;
-                    }
+                if (jurySnap.empty) {
+                    logger.info(`[JURY-REMINDER] No jury members found for ${category}.`);
+                    newRemindersSent[flagKey] = true;
+                    await db.collection('systemSettings').doc('global').set({
+                        juryDeadlineReminderSent: { [flagKey]: true }
+                    }, { merge: true });
+                    continue;
+                }
 
-                    // 2. Get all registrants for this category
-                    const registrantsSnap = await db.collection('Registrants2025')
-                        .where('eventId', '==', currentEventId)
-                        .where('competitionCategory', '==', category)
-                        .get();
+                // 2. Get all registrants for this category
+                const registrantsSnap = await db.collection('Registrants2025')
+                    .where('eventId', '==', currentEventId)
+                    .where('competitionCategory', '==', category)
+                    .get();
 
-                    const allRegistrants = registrantsSnap.docs.map(doc => ({
-                        id: doc.id,
-                        ...doc.data()
-                    }));
+                const allRegistrants = registrantsSnap.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
 
-                    let emailsSent = 0;
+                let emailsSent = 0;
 
-                    // 3. Process each jury member
-                    for (const juryDoc of jurySnap.docs) {
-                        const jury = juryDoc.data();
-                        if (!jury.email || !jury.name) continue;
+                // 3. Process each jury member
+                for (const juryDoc of jurySnap.docs) {
+                    const jury = juryDoc.data();
+                    if (!jury.email || !jury.name || !jury.uid) continue;
 
+                    try {
                         const juryName = jury.name.trim().toLowerCase();
 
                         // Calculate total eligible registrants for THIS jury
@@ -128,52 +128,57 @@ const startJuryDeadlineReminder = () => {
                         const pendingCount = totalCount - assessedCount;
 
                         if (pendingCount > 0) {
-                            try {
-                                const formattedDeadline = deadline.toLocaleString('id-ID', {
-                                    timeZone: 'Asia/Jakarta',
-                                    day: 'numeric', month: 'long', year: 'numeric',
-                                    hour: '2-digit', minute: '2-digit'
-                                }) + ' WIB';
+                            const formattedDeadline = deadline.toLocaleString('en-GB', {
+                                timeZone: 'Asia/Jakarta',
+                                day: 'numeric', month: 'long', year: 'numeric',
+                                hour: '2-digit', minute: '2-digit'
+                            }) + ' WIB';
 
-                                await sendJuryDeadlineReminderEmail({
-                                    to: jury.email,
-                                    name: jury.name,
-                                    category: jury.competitionCategory,
-                                    pendingCount,
-                                    totalCount,
-                                    deadline: formattedDeadline,
-                                    eventId: currentEventId,
-                                    timeRemainingText
-                                });
-                                emailsSent++;
-                                
-                                // Small delay to avoid rate limits
-                                await new Promise(resolve => setTimeout(resolve, 500));
-                            } catch (err) {
-                                logger.error(`[JURY-REMINDER] Failed to send email to ${jury.email}: ${err.message}`);
-                            }
+                            await sendJuryDeadlineReminderEmail({
+                                to: jury.email,
+                                name: jury.name,
+                                category: jury.competitionCategory,
+                                pendingCount,
+                                totalCount,
+                                deadline: formattedDeadline,
+                                eventId: currentEventId,
+                                timeRemainingText
+                            });
+                            emailsSent++;
+                            
+                            // Small delay to avoid rate limits
+                            await new Promise(resolve => setTimeout(resolve, 500));
                         }
+                    } catch (juryErr) {
+                        logger.error(`[JURY-REMINDER] Error processing jury ${jury.email}: ${juryErr.message}`);
                     }
+                }
 
-                    logger.info(`[JURY-REMINDER] Finished ${category} (${timeRemainingText}). Sent ${emailsSent} reminder emails.`);
-                    
-                    // Mark this category's deadline as processed IMMEDIATELY in Firestore
-                    // This prevents duplicate emails if the server restarts or the job re-runs
-                    newRemindersSent[flagKey] = true;
-                    try {
-                        await db.collection('systemSettings').doc('global').set({
-                            juryDeadlineReminderSent: { [flagKey]: true }
-                        }, { merge: true });
-                        logger.info(`[JURY-REMINDER] Flag saved for ${flagKey}`);
-                    } catch (flagErr) {
-                        logger.error(`[JURY-REMINDER] CRITICAL: Failed to save flag ${flagKey}: ${flagErr.message}. Emails may be re-sent on next run.`);
-                    }
+                logger.info(`[JURY-REMINDER] Finished ${category} (${timeRemainingText}). Sent ${emailsSent} reminder emails.`);
+                
+                // Mark this category's deadline as processed IMMEDIATELY in Firestore
+                // This prevents duplicate emails if the server restarts or the job re-runs
+                newRemindersSent[flagKey] = true;
+                try {
+                    await db.collection('systemSettings').doc('global').set({
+                        juryDeadlineReminderSent: { [flagKey]: true }
+                    }, { merge: true });
+                    logger.info(`[JURY-REMINDER] Flag saved for ${flagKey}`);
+                } catch (flagErr) {
+                    logger.error(`[JURY-REMINDER] CRITICAL: Failed to save flag ${flagKey}: ${flagErr.message}. Emails may be re-sent on next run.`);
+                }
             }
 
         } catch (error) {
             logger.error(`[JURY-REMINDER] Error in deadline reminder job: ${error.message}`);
         }
-    }, REMINDER_INTERVAL_MS);
+    };
+
+    // Run once immediately
+    runJob();
+
+    // Then run every interval
+    setInterval(runJob, REMINDER_INTERVAL_MS);
 
     logger.info(`[JURY-REMINDER] Jury deadline reminder job started (runs every ${REMINDER_INTERVAL_MS / 1000}s)`);
 };

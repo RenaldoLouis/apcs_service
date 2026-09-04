@@ -66,6 +66,8 @@ router.post('/download-all-files-aws', RegisterController.downloadAllFiles)
 router.post('/getPublicVideoLinkAws', RegisterController.getPublicVideoLinkAws)
 
 router.post('/createJury', JuryController.createJury)
+router.put('/updateJury/:uid', JuryController.updateJury)
+router.delete('/deleteJury/:uid', JuryController.deleteJury)
 router.post('/sendEmailJuryAccountCreation', EmailController.sendEmailJuryAccountCreation)
 
 router.get('/verifyTicker', TicketController.verifyTicket)

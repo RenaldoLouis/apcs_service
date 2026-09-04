@@ -12,6 +12,26 @@ async function createJury(req, res, next) {
     }
 }
 
+async function updateJury(req, res, next) {
+    try {
+        const data = await JuryService.updateJury(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
+async function deleteJury(req, res, next) {
+    try {
+        const data = await JuryService.deleteJury(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
-    createJury
+    createJury,
+    updateJury,
+    deleteJury
 };
