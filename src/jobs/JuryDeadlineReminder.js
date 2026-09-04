@@ -132,7 +132,7 @@ const startJuryDeadlineReminder = () => {
                                 timeZone: 'Asia/Jakarta',
                                 day: 'numeric', month: 'long', year: 'numeric',
                                 hour: '2-digit', minute: '2-digit'
-                            }) + ' WIB';
+                            }) + ' WIB (UTC+7)';
 
                             await sendJuryDeadlineReminderEmail({
                                 to: jury.email,
