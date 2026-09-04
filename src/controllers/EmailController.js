@@ -191,8 +191,19 @@ async function sendEmailGalaConcert2026ConfirmationFromCSV(req, res, next) {
     }
 }
 
+
+async function sendEmailJuryReminderDummy(req, res, next) {
+    try {
+        const data = await email.sendEmailJuryReminderDummy(req, next)
+        res.status(200).send(data)
+    } catch (err) {
+        next(err);
+    }
+}
+
 module.exports = {
     sendEmail,
+    sendEmailJuryReminderDummy,
     sendEmailAnnouncement,
     sendEmailAnnouncementJson,
     sendEmailSessionWinner,

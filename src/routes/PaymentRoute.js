@@ -23,6 +23,7 @@ const { multipartUploadValidation, partUploadValidation, completeUploadValidatio
 router.post('/createPayment', paymentValidation, paymentController.createPayment)
 
 router.post('/sendEmail', EmailController.sendEmail)
+router.post('/sendEmailJuryReminderDummy', EmailController.sendEmailJuryReminderDummy)
 router.post('/sendEmailFail', EmailController.sendEmailFail)
 router.post('/sendEmailAnnouncement', EmailController.sendEmailAnnouncement)
 router.post('/sendEmailAnnouncementJson', EmailController.sendEmailAnnouncementJson)

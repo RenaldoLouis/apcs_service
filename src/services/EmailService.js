@@ -2759,7 +2759,7 @@ async function sendEmailPaymentInfoOptionsJson(registrants) {
             if (data && data.email && data.name) {
                 const to = data.email;
 
-                const { subject, html } = getTemplate('PAYMENT_INFO_OPTIONS', { 
+                const { subject, html } = getTemplate('PAYMENT_INFO_OPTIONS', {
                     name: data.name,
                     price: data.price,
                     competitionCategory: data.competitionCategory,
@@ -2807,7 +2807,7 @@ const sendEmailGalaConcert2026ConfirmationFromCSV = async (testRegistrants = nul
 
         for (const recipient of recipients) {
             // Assuming the CSV has Name and Email columns
-            const recipientName = recipient.Name || recipient.NAME || recipient.name; 
+            const recipientName = recipient.Name || recipient.NAME || recipient.name;
             const recipientEmail = recipient.Email || recipient.EMAIL || recipient.email;
 
             if (!recipientName || !recipientEmail) {
@@ -2847,9 +2847,41 @@ const sendEmailGalaConcert2026ConfirmationFromCSV = async (testRegistrants = nul
     }
 }
 
+
+const sendEmailJuryReminderDummyFunc = async (data) => {
+    logger.info(`Processing dummy jury reminder email to: ${data.email}`);
+    try {
+        await sendJuryDeadlineReminderEmail({
+            to: data.email,
+            name: "Renaldo Louis",
+            category: "Electone",
+            pendingCount: 22,
+            totalCount: 22,
+            deadline: "5 September 2026 at 23:59 WIB (UTC+7)",
+            eventId: "APCS2026",
+            timeRemainingText: "in less than 24 hours"
+        });
+        logger.info(`Successfully sent dummy jury reminder email to ${data.email}`);
+    } catch (error) {
+        logger.error(`Failed to send dummy email to ${data.email}: ${error.message}`);
+        throw error;
+    }
+};
+
+async function sendEmailJuryReminderDummy(req) {
+    try {
+        const emailData = req.body;
+        sendEmailJuryReminderDummyFunc(emailData);
+        return { message: "Email enqueued successfully" };
+    } catch (error) {
+        throw error;
+    }
+}
+
 module.exports = {
     sendEmailGalaConcert2026ConfirmationFromCSV,
     sendEmail,
+    sendEmailJuryReminderDummy,
     sendEmailFunc,
     sendEmailAnnouncement,
     sendEmailAnnouncementJson,
