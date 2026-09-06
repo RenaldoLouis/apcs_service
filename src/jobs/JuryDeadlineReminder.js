@@ -4,6 +4,10 @@ const { sendJuryDeadlineReminderEmail } = require('../services/EmailService');
 
 const REMINDER_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
+const getUniqueJuryIds = (juryDoc, jury) => {
+    return [...new Set([juryDoc.id, jury.uid].filter(Boolean))];
+};
+
 const startJuryDeadlineReminder = () => {
     const runJob = async () => {
         try {
@@ -86,7 +90,8 @@ const startJuryDeadlineReminder = () => {
                 // 3. Process each jury member
                 for (const juryDoc of jurySnap.docs) {
                     const jury = juryDoc.data();
-                    if (!jury.email || !jury.name || !jury.uid) continue;
+                    const juryUserIds = getUniqueJuryIds(juryDoc, jury);
+                    if (!jury.email || !jury.name || juryUserIds.length === 0) continue;
 
                     try {
                         const juryName = jury.name.trim().toLowerCase();
@@ -111,17 +116,21 @@ const startJuryDeadlineReminder = () => {
                         if (totalCount === 0) continue;
 
                         // Calculate scored registrants
-                        const scoresSnap = await db.collection('JuryScores2025')
-                            .where('juryUserId', '==', jury.uid)
-                            .get();
+                        const scoresSnaps = await Promise.all(
+                            juryUserIds.map(juryUserId => db.collection('JuryScores2025')
+                                .where('juryUserId', '==', juryUserId)
+                                .get())
+                        );
                         
                         // Count valid scores for eligible registrants
                         const scoredRegistrantIds = new Set();
-                        scoresSnap.docs.forEach(doc => {
-                            const data = doc.data();
-                            if (data.score !== undefined) {
-                                scoredRegistrantIds.add(data.registrantId);
-                            }
+                        scoresSnaps.forEach(scoresSnap => {
+                            scoresSnap.docs.forEach(doc => {
+                                const data = doc.data();
+                                if (data.score !== undefined && data.registrantId) {
+                                    scoredRegistrantIds.add(data.registrantId);
+                                }
+                            });
                         });
 
                         const assessedCount = eligibleRegistrants.filter(r => scoredRegistrantIds.has(r.id)).length;
