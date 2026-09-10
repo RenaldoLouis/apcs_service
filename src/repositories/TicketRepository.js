@@ -5,6 +5,16 @@ const jwt = require('jsonwebtoken');
 const email = require('../services/EmailService.js');
 
 const JWT_SECRET = process.env.JWT_SECRET;
+const SEAT_OWNERSHIP_COLLECTION = 'ticketSeatOwnership';
+const normalizeSeatPart = value => String(value ?? '').trim().toUpperCase();
+const safeDocumentId = value => encodeURIComponent(String(value ?? '')).replace(/%/g, '_');
+const physicalSeatKey = (eventId, seat) => [
+    eventId,
+    normalizeSeatPart(seat.venueId),
+    normalizeSeatPart(seat.sessionId),
+    normalizeSeatPart(seat.row),
+    String(seat.number ?? '').trim(),
+].join('|');
 
 const verifyTicket = async (req, res) => {
     const { token } = req;
@@ -184,10 +194,39 @@ const confirmSeatSelection = async (req, callback) => {
 
             const seatRefs = selectedSeatIds.map(seatId => db.collection(`seats${eventId}`).doc(seatId));
             const seatDocs = await transaction.getAll(...seatRefs);
+            const physicalSeatKeys = seatDocs.map(seatDoc => seatDoc.exists
+                ? physicalSeatKey(eventId, seatDoc.data()) : null);
+            if (physicalSeatKeys.some(key => !key) || new Set(physicalSeatKeys).size !== physicalSeatKeys.length) {
+                throw new Error('A physical seat can only be selected once.');
+            }
+            const ownershipRefs = physicalSeatKeys.map(key =>
+                db.collection(SEAT_OWNERSHIP_COLLECTION).doc(safeDocumentId(key)));
+            const ownershipDocs = ownershipRefs.length ? await transaction.getAll(...ownershipRefs) : [];
+            const aliasSnapshots = await Promise.all(seatDocs.map(seatDoc => {
+                if (!seatDoc.exists) return Promise.resolve({ docs: [] });
+                const seat = seatDoc.data();
+                return transaction.get(db.collection(`seats${eventId}`)
+                    .where('venueId', '==', seat.venueId)
+                    .where('sessionId', '==', seat.sessionId)
+                    .where('row', '==', seat.row)
+                    .where('number', '==', seat.number));
+            }));
 
-            for (const seatDoc of seatDocs) {
+            for (let index = 0; index < seatDocs.length; index++) {
+                const seatDoc = seatDocs[index];
                 if (!seatDoc.exists || seatDoc.data().status !== 'available') {
                     throw new Error(`Sorry, seat ${seatDoc.data()?.seatLabel || 'one of your selections'} is no longer available.`);
+                }
+                const ownership = ownershipDocs[index];
+                if (ownership?.exists && ownership.data().active !== false
+                    && ownership.data().bookingId !== bookingId) {
+                    throw new Error(`Sorry, physical seat ${seatDoc.data().seatLabel} is already held.`);
+                }
+                const occupiedAlias = (aliasSnapshots[index].docs || []).find(alias => alias.id !== seatDoc.id
+                    && ['locked', 'booked', 'reserved'].includes(String(alias.data().status || '').toLowerCase())
+                    && alias.data().lockedByBookingId !== bookingId && alias.data().bookingId !== bookingId);
+                if (occupiedAlias) {
+                    throw new Error(`Sorry, physical seat ${seatDoc.data().seatLabel} is already occupied.`);
                 }
 
                 // --- THIS IS THE NEW SEAT UPDATE LOGIC ---
@@ -200,6 +239,15 @@ const confirmSeatSelection = async (req, callback) => {
                         registrantName: bookingData.userName,
                         registrantEmail: bookingData.userEmail
                     }
+                });
+                transaction.set(ownershipRefs[index], {
+                    eventId,
+                    physicalSeatKey: physicalSeatKeys[index],
+                    bookingId,
+                    seatId: seatDoc.id,
+                    status: 'reserved',
+                    active: true,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 });
             }
 

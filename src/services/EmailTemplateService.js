@@ -561,7 +561,7 @@ const templates = {
 
                             <div class="alert-box">
                                 <p>Complete your payment before <strong>${data.deadline}</strong>.<br>
-                                After this time, your seat reservation will be automatically released.</p>
+                                After this time, APCS will request invoice cancellation. Your seats remain held until Paper.id confirms payment or cancellation.</p>
                             </div>
 
                             <p><strong>Booking Details:</strong></p>
@@ -576,7 +576,7 @@ const templates = {
                             <p style="color:#888; font-size:13px;">If the button doesn't work, copy and paste this link into your browser:<br>
                             <a href="${data.paymentUrl}" style="color:#1a73e8; word-break:break-all;">${data.paymentUrl}</a></p>
 
-                            <p>If you did not initiate this booking, please ignore this email — your seats will be released automatically.</p>
+                            <p>If you did not initiate this booking, please contact APCS so we can investigate and request cancellation.</p>
                             <p style="margin-top: 24px;">
                                 Warm regards,<br>
                                 <strong>APCS Team</strong>

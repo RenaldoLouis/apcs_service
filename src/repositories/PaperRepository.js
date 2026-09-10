@@ -8,6 +8,7 @@ const { db } = require('../configs/firebase-init');
 const PAPER_BASE_URL = process.env.PAPER_BASE_URL;
 
 const createInvoice = async (body, callback) => {
+    let createdInvoiceId;
     try {
         // user: { name, email, phone }
         // items: [{ name, price, description }]
@@ -90,6 +91,7 @@ const createInvoice = async (body, callback) => {
         // Paper.id structure: { status_code: 201, data: { ... } }
         const paperResponse = response.data;
         const invoiceData = paperResponse.data;
+        createdInvoiceId = invoiceData?.id;
 
         // Paper.id usually returns 'payper_url' (the short link) or 'url'
         const paymentUrl = invoiceData.payper_url || invoiceData.url;
@@ -135,17 +137,19 @@ const createInvoice = async (body, callback) => {
     } catch (error) {
         console.error("Paper.id Error:", error?.response?.data || error.message);
         logger.info(`fail create payment: ${error.message}}`);
-        return callback(new AppError(
+        const invoiceError = new AppError(
             `Failed to initiate upload: ${error.message}`,
             error.$metadata?.httpStatusCode || 500
-        ));
+        );
+        if (createdInvoiceId) invoiceError.invoiceId = createdInvoiceId;
+        return callback(invoiceError);
     }
 }
 
 const deleteInvoice = async (invoiceId) => {
     try {
         const response = await axios.delete(
-            `${PAPER_BASE_URL}/sales-invoices/${invoiceId}`,
+            `${PAPER_BASE_URL}/sales-invoice/${invoiceId}`,
             {
                 headers: {
                     'client_id': process.env.PAPER_CLIENT_ID,
@@ -155,7 +159,7 @@ const deleteInvoice = async (invoiceId) => {
             }
         );
         logger.info(`Successfully deleted Paper.id invoice ${invoiceId}`);
-        return response.data;
+        return response.status === 200;
     } catch (error) {
         logger.error(`Failed to delete Paper.id invoice ${invoiceId}: ${error?.response?.data || error.message}`);
         // Do not throw here to avoid crashing the caller (e.g. timeout sweepers). 

@@ -98,17 +98,17 @@ const startJuryDeadlineReminder = () => {
 
                         // Calculate total eligible registrants for THIS jury
                         const eligibleRegistrants = allRegistrants.filter(reg => {
-                            const isPaid = reg.paymentStatus === 'PAID' || 
+                            const isPaid = reg.paymentStatus === 'PAID' ||
                                 (reg.invoiceStatus && reg.invoiceStatus.toLowerCase() === 'paid');
-                                
+
                             const regTeacherName = (reg.teacherName || '').trim().toLowerCase();
                             const regTeacher = (reg.teacher || '').trim().toLowerCase();
-                            
+
                             const isOwnStudent = juryName && (
-                                (regTeacherName && regTeacherName === juryName) || 
+                                (regTeacherName && regTeacherName === juryName) ||
                                 (regTeacher && regTeacher === juryName)
                             );
-                            
+
                             return isPaid && !isOwnStudent;
                         });
 
@@ -121,7 +121,7 @@ const startJuryDeadlineReminder = () => {
                                 .where('juryUserId', '==', juryUserId)
                                 .get())
                         );
-                        
+
                         // Count valid scores for eligible registrants
                         const scoredRegistrantIds = new Set();
                         scoresSnaps.forEach(scoresSnap => {
@@ -154,7 +154,7 @@ const startJuryDeadlineReminder = () => {
                                 timeRemainingText
                             });
                             emailsSent++;
-                            
+
                             // Small delay to avoid rate limits
                             await new Promise(resolve => setTimeout(resolve, 500));
                         }
@@ -164,7 +164,7 @@ const startJuryDeadlineReminder = () => {
                 }
 
                 logger.info(`[JURY-REMINDER] Finished ${category} (${timeRemainingText}). Sent ${emailsSent} reminder emails.`);
-                
+
                 // Mark this category's deadline as processed IMMEDIATELY in Firestore
                 // This prevents duplicate emails if the server restarts or the job re-runs
                 newRemindersSent[flagKey] = true;

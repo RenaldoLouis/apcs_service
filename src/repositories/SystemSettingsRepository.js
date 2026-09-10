@@ -7,7 +7,7 @@ const getGlobalSettings = async (_body, callback) => {
         const docSnap = await docRef.get();
 
         if (!docSnap.exists) {
-            return callback(null, { currentEventId: 'APCS2026' });
+            return callback(new Error('Global system settings are not configured.'));
         }
 
         callback(null, docSnap.data());
