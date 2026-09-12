@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "jest --forceExit --detectOpenHandles"
+    "test": "jest --forceExit --detectOpenHandles",
+    "reset-test-occupancy": "node reset_test_occupancy.js"
   },
   "keywords": [],
   "author": "",

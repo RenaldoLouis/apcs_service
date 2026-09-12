@@ -1,11 +1,4 @@
-const admin = require('firebase-admin');
-const serviceAccount = require('./serviceAccountKey.json');
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-  });
-}
-const db = admin.firestore();
+const { db } = require('./src/configs/firebase-init.js');
 
 async function run() {
   const snapshot = await db.collection('publicBookings').orderBy('createdAt', 'desc').limit(5).get();
