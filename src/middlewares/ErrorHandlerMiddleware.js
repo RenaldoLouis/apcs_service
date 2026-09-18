@@ -16,6 +16,7 @@ const errorHandler = (err, req, res, next) => {
             success: false,
             error: err,
             message: err.message,
+            ...(err.code ? { code: err.code } : {}),
             stack: err.stack
         });
     } else {
@@ -23,7 +24,8 @@ const errorHandler = (err, req, res, next) => {
         if (err.isOperational) {
             res.status(err.statusCode).json({
                 success: false,
-                message: err.message
+                message: err.message,
+                ...(err.code ? { code: err.code } : {}),
             });
         } else {
             console.error('ERROR 💥', err);

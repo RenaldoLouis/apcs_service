@@ -875,17 +875,33 @@ const getEligibleWinners = async (_query, callback) => {
                 }
 
                 const performer = data.performers?.[0];
-                const name = performer
+                const defaultName = performer
                     ? (performer.fullName || `${performer.firstName || ''} ${performer.lastName || ''}`.trim())
                     : (data.name || 'Unknown');
                 const email = performer?.email || data.email || '';
 
+                const isEnsemble = (data.PerformanceCategory || '').trim().toLowerCase() === 'ensemble'
+                    || (data.competitionCategory || '').toLowerCase().includes('ensemble')
+                    || (data.performers || []).length > 1
+                    || (data.totalPerformer || 0) > 1;
+
+                const performerNames = (data.performers || [])
+                    .map(p => {
+                        if (!p) return '';
+                        if (typeof p === 'string') return p.trim();
+                        return (p.fullName || `${p.firstName || ''} ${p.lastName || ''}`.trim() || p.name || '').trim();
+                    })
+                    .filter(Boolean);
+
                 winners.push({
                     registrantId: doc.id,
-                    name,
+                    name: defaultName,
                     email,
                     finalAward: award,
                     competitionCategory: data.competitionCategory || '',
+                    performanceCategory: data.PerformanceCategory || '',
+                    isEnsemble: !!isEnsemble,
+                    performerNames: performerNames.length > 0 ? performerNames : (defaultName ? [defaultName] : []),
                     teacherName: data.teacherName || '',
                     repertoireTitle: data.repertoireTitle || '',
                     session: registrantSessionMap[doc.id],

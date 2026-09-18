@@ -7,6 +7,11 @@ const SEAT_OWNERSHIP_COLLECTION = 'ticketSeatOwnership';
 const CAPACITY_COLLECTION = 'ticketCapacity';
 const WINNER_CLAIM_COLLECTION = 'winnerOrchestraClaims';
 const safeDocumentId = value => encodeURIComponent(String(value ?? '')).replace(/%/g, '_');
+const reconciliationError = (message, code = 'INVENTORY_RECONCILIATION_REQUIRED') => Object.assign(new Error(message), {
+    statusCode: 409,
+    isOperational: true,
+    code,
+});
 
 const getBookingInventory = async (transaction, booking) => {
     const seatIds = [...new Set([...(booking.selectedSeatIds || []), ...(booking.orchestraSelectedSeatIds || [])])];
@@ -30,7 +35,7 @@ const getBookingInventory = async (transaction, booking) => {
     };
 };
 
-const releaseBookingInventory = async (bookingId, terminalStatus, updateBooking) => {
+const releaseBookingInventory = async (bookingId, terminalStatus, updateBooking, options = {}) => {
     const bookingRef = db.collection('publicBookings').doc(bookingId);
     return db.runTransaction(async transaction => {
         const bookingDoc = await transaction.get(bookingRef);
@@ -42,6 +47,24 @@ const releaseBookingInventory = async (bookingId, terminalStatus, updateBooking)
         // for a repeated cancellation acknowledgement or retry worker.
         if (booking.paymentStatus === 'failed' && booking.checkoutFailure?.cleanupStatus === 'complete'
             && booking.checkoutFailure?.invoiceCancellationStatus !== 'not_requested') return null;
+
+        if (options.requireCompleteReconciliation) {
+            const currentPaymentStatus = String(booking.paymentStatus || '').toLowerCase();
+            if (currentPaymentStatus !== options.expectedPaymentStatus) {
+                throw reconciliationError('Booking status changed before inventory release.', 'BOOKING_STATE_CHANGED');
+            }
+            if ((booking.invoiceId || null) !== options.expectedInvoiceId) {
+                throw reconciliationError('Booking invoice changed before inventory release.', 'BOOKING_INVOICE_CHANGED');
+            }
+            if (options.expectedInvoiceCancellationStatus
+                && booking[options.lifecycleField]?.invoiceCancellationStatus
+                    !== options.expectedInvoiceCancellationStatus) {
+                throw reconciliationError(
+                    'Invoice cancellation is not confirmed for inventory release.',
+                    'INVOICE_CANCELLATION_UNCONFIRMED',
+                );
+            }
+        }
 
         // Firestore requires every dependent read before the first write.
         const {
@@ -56,6 +79,58 @@ const releaseBookingInventory = async (bookingId, terminalStatus, updateBooking)
         const reconciliationReasons = [];
         if (!booking.eventId) reconciliationReasons.push('missing_event_id');
         if (quota > 0 && !canRefund) reconciliationReasons.push('quota_configuration_unavailable_or_inconsistent');
+
+        if (options.requireCompleteReconciliation) {
+            seats.forEach((seat, index) => {
+                const expectedSeatId = [...new Set([
+                    ...(booking.selectedSeatIds || []),
+                    ...(booking.orchestraSelectedSeatIds || []),
+                ])][index];
+                const seatData = seat.exists ? seat.data() : null;
+                if (!seat.exists) reconciliationReasons.push(`missing_seat:${expectedSeatId}`);
+                else if (seatData.status !== 'locked' || seatData.lockedByBookingId !== bookingId) {
+                    reconciliationReasons.push(`seat_not_owned:${expectedSeatId}`);
+                }
+            });
+            ownershipDocs.forEach((ownership, index) => {
+                const expectedKey = (booking.physicalSeatKeys || [])[index];
+                const ownershipData = ownership.exists ? ownership.data() : null;
+                if (!ownership.exists) reconciliationReasons.push(`missing_seat_ownership:${expectedKey}`);
+                else if (ownershipData.bookingId !== bookingId || ownershipData.active === false) {
+                    reconciliationReasons.push(`seat_ownership_not_active:${expectedKey}`);
+                }
+            });
+
+            const capacityByTier = booking.capacityReservation?.byTier || {};
+            const capacityEntries = Object.entries(capacityByTier)
+                .filter(([, quantity]) => Number(quantity || 0) > 0);
+            if (capacityEntries.length && !capacityRef) {
+                reconciliationReasons.push('missing_capacity_id');
+            } else if (capacityEntries.length && !capacityDoc?.exists) {
+                reconciliationReasons.push('missing_capacity_reservation');
+            } else if (capacityEntries.length) {
+                const reservedByTier = capacityDoc.data().reservedByTier || {};
+                capacityEntries.forEach(([tierId, quantity]) => {
+                    if (Number(reservedByTier[tierId] || 0) < Number(quantity)) {
+                        reconciliationReasons.push(`capacity_below_booking:${tierId}`);
+                    }
+                });
+            }
+
+            if (booking.winnerClaimId) {
+                const winnerClaim = winnerClaimDoc?.exists ? winnerClaimDoc.data() : null;
+                if (!winnerClaimDoc?.exists) reconciliationReasons.push('missing_winner_claim');
+                else if (winnerClaim.bookingId !== bookingId || winnerClaim.active === false) {
+                    reconciliationReasons.push('winner_claim_not_active');
+                }
+            }
+
+            if (reconciliationReasons.length) {
+                throw reconciliationError(
+                    `Booking inventory needs reconciliation before release: ${reconciliationReasons.join(', ')}`,
+                );
+            }
+        }
 
         for (const seat of seats) {
             if (!seat.exists) continue;
@@ -107,7 +182,13 @@ const releaseBookingInventory = async (bookingId, terminalStatus, updateBooking)
                 ? (canRefund ? 'refunded' : 'reconciliation_required')
                 : 'not_applicable',
         }));
-        return booking;
+        return {
+            booking,
+            reconciliationReasons,
+            quotaRefundStatus: quota > 0
+                ? (canRefund ? 'refunded' : 'reconciliation_required')
+                : 'not_applicable',
+        };
     });
 };
 
@@ -121,6 +202,44 @@ const recordCancellationResult = async (bookingId, field, status) => {
         transaction.update(bookingRef, { [field]: { ...(booking[field] || {}), invoiceCancellationStatus: status } });
     });
 };
+
+const getPublicTicketBooking = async bookingId => {
+    const snapshot = await db.collection('publicBookings').doc(bookingId).get();
+    return snapshot.exists ? { id: snapshot.id, ...snapshot.data() } : null;
+};
+
+const releaseAdminBookingInventory = async (bookingId, options) => releaseBookingInventory(
+    bookingId,
+    options.terminalStatus,
+    (booking, result) => ({
+        paymentStatus: result.paymentStatus,
+        ...(result.paymentStatus === 'expired'
+            ? { expiredAt: admin.firestore.FieldValue.serverTimestamp() }
+            : {}),
+        [options.lifecycleField]: {
+            ...(booking[options.lifecycleField] || {}),
+            cleanupStatus: 'complete',
+            invoiceCancellationStatus: options.invoiceCancellationStatus,
+            quotaRefundStatus: result.quotaRefundStatus,
+            reconciliationReasons: result.reconciliationReasons,
+        },
+        adminRelease: {
+            reason: options.reason,
+            note: options.note,
+            providerConfirmation: options.invoiceCancellationStatus,
+            releasedByUid: options.actor.uid || '',
+            releasedByEmail: options.actor.email || '',
+            releasedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+    }),
+    {
+        requireCompleteReconciliation: true,
+        expectedPaymentStatus: options.expectedPaymentStatus,
+        expectedInvoiceId: options.expectedInvoiceId,
+        expectedInvoiceCancellationStatus: options.expectedInvoiceCancellationStatus,
+        lifecycleField: options.lifecycleField,
+    },
+);
 
 const cancelKnownInvoice = async (bookingId, invoiceId, field) => {
     if (!invoiceId) return false;
@@ -221,4 +340,10 @@ const expirePublicTicketBooking = async bookingId => {
     return Boolean(released);
 };
 
-module.exports = { failPublicTicketBooking, expirePublicTicketBooking };
+module.exports = {
+    failPublicTicketBooking,
+    expirePublicTicketBooking,
+    getPublicTicketBooking,
+    recordCancellationResult,
+    releaseAdminBookingInventory,
+};

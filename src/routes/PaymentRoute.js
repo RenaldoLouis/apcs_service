@@ -19,6 +19,7 @@ const PublicTicketController = require("../controllers/PublicTicketController");
 const SystemSettingsController = require("../controllers/SystemSettingsController");
 const { paymentValidation } = require('../utils/ValidationUtil');
 const { multipartUploadValidation, partUploadValidation, completeUploadValidation, abortUploadValidation } = require('../middlewares/ValidationMiddleware');
+const { requireTicketingAdmin } = require('../middlewares/TicketingAdminMiddleware');
 
 router.post('/createPayment', paymentValidation, paymentController.createPayment)
 
@@ -86,6 +87,7 @@ router.get('/public-ticket/booking-status/:bookingId', PublicTicketController.ge
 router.post('/public-ticket/booking',         PublicTicketController.createPublicTicketBooking);
 router.post('/public-ticket/webhook',         PublicTicketController.handlePublicTicketWebhook);
 router.post('/public-ticket/resend-email',    PublicTicketController.resendPublicTicketEmail);
+router.post('/public-ticket/admin/release-booking', requireTicketingAdmin, PublicTicketController.releasePublicTicketBooking);
 
 // --- System Settings ---
 router.get('/systemSettings/global', SystemSettingsController.getGlobalSettings);

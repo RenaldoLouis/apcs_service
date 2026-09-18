@@ -166,6 +166,35 @@ test('CONTROL: assigned winner lookup returns the existing performance session',
     assert.equal(result.winners[0].registrantId, 'winner');
     assert.equal(result.winners[0].session.venue, 'V1');
     assert.equal(result.winners[0].session.time, '09:00-10:00');
+    assert.equal(result.winners[0].isEnsemble, false);
+    assert.deepEqual(result.winners[0].performerNames, ['Audit Winner']);
+});
+
+test('CONTROL: assigned winner lookup returns all performer names and isEnsemble for ensemble registrants', async () => {
+    const f = fixture();
+    f.seed('Registrants2025/ensemble-winner', {
+        eventId: 'APCS2026',
+        finalAward: 'Gold',
+        PerformanceCategory: 'Ensemble',
+        performers: [
+            { fullName: 'Member One', email: 'm1@example.invalid' },
+            { fullName: 'Member Two', email: 'm2@example.invalid' },
+        ],
+    });
+    f.seed('sessionAssignments/APCS2026', {
+        assignments: {
+            'V1_2026-11-01_09:00-10:00': [
+                { registrantId: 'winner' },
+                { registrantId: 'ensemble-winner' },
+            ],
+        },
+    });
+    let result;
+    await f.repo.getEligibleWinners({}, (error, data) => { assert.ifError(error); result = data; });
+    const ensembleWinner = result.winners.find(w => w.registrantId === 'ensemble-winner');
+    assert.ok(ensembleWinner);
+    assert.equal(ensembleWinner.isEnsemble, true);
+    assert.deepEqual(ensembleWinner.performerNames, ['Member One', 'Member Two']);
 });
 
 test('CONTROL: ordinary public expiry releases a seat when no complimentary quota exists', async () => {
@@ -526,4 +555,239 @@ test('REGRESSION: the same checkout idempotency key returns one booking and invo
     assert.ifError(retry.error);
     assert.equal(retry.result.bookingId, first.result.bookingId);
     assert.equal(f.invoices.length, 1);
+});
+
+test('ADMIN RELEASE: a known invoice is canceled before its booking inventory is released', async () => {
+    let canceledInvoiceId = null;
+    const f = fixture({ onCancel: id => { canceledInvoiceId = id; } });
+    f.seat('seat-1', { status: 'locked', lockedByBookingId: 'booking-admin-release' });
+    const event = f.records.get('events/APCS2026');
+    event.orchestraSessions[0].complimentaryClaimed = 1;
+    f.seed('publicBookings/booking-admin-release', {
+        eventId: 'APCS2026', paymentStatus: 'pending', invoiceId: 'invoice-admin-release',
+        selectedSeatIds: ['seat-1'], orchestraSelectedSeatIds: [],
+        physicalSeatKeys: ['APCS2026|V1|2026-11-01_09:00-10:00|A|1'],
+        capacityReservation: { capacityId: 'capacity-1', byTier: { presto: 1 } },
+        complimentaryTickets: 1, orchestraSessionId: 'orch', winnerClaimId: 'claim-1',
+        createdAt: f.timestamp(Date.parse('2026-09-06T03:00:00Z')),
+    });
+    f.seed('ticketSeatOwnership/APCS2026_7CV1_7C2026-11-01_09_3A00-10_3A00_7CA_7C1', {
+        bookingId: 'booking-admin-release', active: true, status: 'locked',
+    });
+    f.seed('ticketCapacity/capacity-1', { reservedByTier: { presto: 1 } });
+    f.seed('winnerOrchestraClaims/claim-1', { bookingId: 'booking-admin-release', active: true });
+
+    const result = await f.load('src/services/PublicTicketAdminReleaseService.js')
+        .releasePublicTicketBooking('booking-admin-release', {
+            reason: 'customer_declined',
+        }, { uid: 'admin-1', email: 'admin@example.invalid' });
+
+    assert.equal(canceledInvoiceId, 'invoice-admin-release');
+    assert.equal(result.released, true);
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'available');
+    assert.equal(f.records.get('ticketCapacity/capacity-1').reservedByTier.presto, 0);
+    assert.equal(f.records.get('winnerOrchestraClaims/claim-1').active, false);
+    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 0);
+    const booking = f.records.get('publicBookings/booking-admin-release');
+    assert.equal(booking.paymentStatus, 'expired');
+    assert.equal(booking.expiry.invoiceCancellationStatus, 'canceled');
+    assert.equal(booking.adminRelease.reason, 'customer_declined');
+    assert.equal(booking.adminRelease.releasedByEmail, 'admin@example.invalid');
+});
+
+test('ADMIN RELEASE: an unknown invoice outcome requires explicit Paper verification', async () => {
+    const f = fixture();
+    f.seat('seat-1', { status: 'locked', lockedByBookingId: 'booking-unknown-release' });
+    f.seed('publicBookings/booking-unknown-release', {
+        eventId: 'APCS2026', paymentStatus: 'failed',
+        selectedSeatIds: ['seat-1'], orchestraSelectedSeatIds: [], physicalSeatKeys: [],
+        capacityReservation: null, complimentaryTickets: 0,
+        createdAt: f.timestamp(Date.parse('2026-09-06T03:00:00Z')),
+        checkoutFailure: {
+            reason: 'Invoice response was lost', cleanupStatus: 'awaiting_cancellation',
+            quotaRefundStatus: 'held', reconciliationReasons: ['provider_cancellation_required'],
+            invoiceCancellationStatus: 'unknown',
+        },
+    });
+    const service = f.load('src/services/PublicTicketAdminReleaseService.js');
+
+    await assert.rejects(
+        service.releasePublicTicketBooking('booking-unknown-release', {
+            reason: 'no_response_after_one_hour', manualProviderConfirmation: false,
+        }, { uid: 'admin-1', email: 'admin@example.invalid' }),
+        /confirm.*Paper\.id/i,
+    );
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
+
+    const result = await service.releasePublicTicketBooking('booking-unknown-release', {
+        reason: 'no_response_after_one_hour', manualProviderConfirmation: true,
+    }, { uid: 'admin-1', email: 'admin@example.invalid' });
+    assert.equal(result.released, true);
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'available');
+    const booking = f.records.get('publicBookings/booking-unknown-release');
+    assert.equal(booking.paymentStatus, 'failed');
+    assert.equal(booking.checkoutFailure.cleanupStatus, 'complete');
+    assert.equal(booking.checkoutFailure.invoiceCancellationStatus, 'manually_verified_no_active_invoice');
+});
+
+test('ADMIN RELEASE: no-response reason is blocked until the booking is one hour old', async () => {
+    const f = fixture();
+    f.seat('seat-1', { status: 'locked', lockedByBookingId: 'booking-too-new' });
+    f.seed('publicBookings/booking-too-new', {
+        eventId: 'APCS2026', paymentStatus: 'failed',
+        selectedSeatIds: ['seat-1'], orchestraSelectedSeatIds: [], physicalSeatKeys: [],
+        capacityReservation: null, complimentaryTickets: 0,
+        createdAt: f.timestamp(Date.parse('2026-09-06T04:30:00Z')),
+        checkoutFailure: { cleanupStatus: 'awaiting_cancellation', invoiceCancellationStatus: 'unknown' },
+    });
+
+    await assert.rejects(
+        f.load('src/services/PublicTicketAdminReleaseService.js')
+            .releasePublicTicketBooking('booking-too-new', {
+                reason: 'no_response_after_one_hour', manualProviderConfirmation: true,
+            }, { uid: 'admin-1', email: 'admin@example.invalid' }),
+        /wait one hour/i,
+    );
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
+});
+
+test('ADMIN RELEASE: failed Paper cancellation keeps inventory locked', async () => {
+    const f = fixture({ cancelFails: true });
+    f.seat('seat-1', { status: 'locked', lockedByBookingId: 'booking-cancel-fails' });
+    f.seed('publicBookings/booking-cancel-fails', {
+        eventId: 'APCS2026', paymentStatus: 'failed', invoiceId: 'invoice-cancel-fails',
+        selectedSeatIds: ['seat-1'], orchestraSelectedSeatIds: [], physicalSeatKeys: [],
+        capacityReservation: null, complimentaryTickets: 0,
+        createdAt: f.timestamp(Date.parse('2026-09-06T03:00:00Z')),
+        checkoutFailure: { cleanupStatus: 'awaiting_cancellation', invoiceCancellationStatus: 'failed' },
+    });
+
+    await assert.rejects(
+        f.load('src/services/PublicTicketAdminReleaseService.js')
+            .releasePublicTicketBooking('booking-cancel-fails', {
+                reason: 'customer_declined',
+            }, { uid: 'admin-1', email: 'admin@example.invalid' }),
+        /could not confirm.*cancellation/i,
+    );
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
+    assert.notEqual(f.records.get('publicBookings/booking-cancel-fails').checkoutFailure.cleanupStatus, 'complete');
+});
+
+test('ADMIN RELEASE: a paid booking can never be released', async () => {
+    const f = fixture();
+    f.seat('seat-1', { status: 'booked', bookingId: 'booking-paid' });
+    f.seed('publicBookings/booking-paid', {
+        eventId: 'APCS2026', paymentStatus: 'PAID', invoiceId: 'invoice-paid',
+        selectedSeatIds: ['seat-1'], orchestraSelectedSeatIds: [], physicalSeatKeys: [],
+        capacityReservation: null, complimentaryTickets: 0,
+    });
+
+    await assert.rejects(
+        f.load('src/services/PublicTicketAdminReleaseService.js')
+            .releasePublicTicketBooking('booking-paid', {
+                reason: 'customer_declined',
+            }, { uid: 'admin-1', email: 'admin@example.invalid' }),
+        /paid booking/i,
+    );
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'booked');
+});
+
+test('ADMIN RELEASE: a pending checkout without an invoice cannot be manually released', async () => {
+    const f = fixture();
+    f.seat('seat-1', { status: 'locked', lockedByBookingId: 'booking-pending-no-invoice' });
+    f.seed('publicBookings/booking-pending-no-invoice', {
+        eventId: 'APCS2026', paymentStatus: 'pending',
+        selectedSeatIds: ['seat-1'], orchestraSelectedSeatIds: [], physicalSeatKeys: [],
+        capacityReservation: null, complimentaryTickets: 0,
+        createdAt: f.timestamp(Date.parse('2026-09-06T03:00:00Z')),
+    });
+
+    await assert.rejects(
+        f.load('src/services/PublicTicketAdminReleaseService.js')
+            .releasePublicTicketBooking('booking-pending-no-invoice', {
+                reason: 'customer_declined', manualProviderConfirmation: true,
+            }, { uid: 'admin-1', email: 'admin@example.invalid' }),
+        /still pending invoice creation/i,
+    );
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
+});
+
+test('ADMIN RELEASE: local inventory release is atomic and retries without canceling Paper twice', async () => {
+    let cancellationCount = 0;
+    const f = fixture({ onCancel: () => { cancellationCount += 1; } });
+    f.seat('seat-1', { status: 'locked', lockedByBookingId: 'booking-missing-capacity' });
+    f.seed('publicBookings/booking-missing-capacity', {
+        eventId: 'APCS2026', paymentStatus: 'pending', invoiceId: 'invoice-missing-capacity',
+        selectedSeatIds: ['seat-1'], orchestraSelectedSeatIds: [], physicalSeatKeys: [],
+        capacityReservation: { capacityId: 'missing-capacity', byTier: { presto: 1 } },
+        complimentaryTickets: 0,
+        createdAt: f.timestamp(Date.parse('2026-09-06T03:00:00Z')),
+    });
+    const service = f.load('src/services/PublicTicketAdminReleaseService.js');
+
+    await assert.rejects(
+        service.releasePublicTicketBooking('booking-missing-capacity', {
+            reason: 'customer_declined',
+        }, { uid: 'admin-1', email: 'admin@example.invalid' }),
+        /missing_capacity_reservation/i,
+    );
+    assert.equal(cancellationCount, 1);
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
+    assert.equal(
+        f.records.get('publicBookings/booking-missing-capacity').expiry.invoiceCancellationStatus,
+        'canceled',
+    );
+
+    f.seed('ticketCapacity/missing-capacity', { reservedByTier: { presto: 1 } });
+    const result = await service.releasePublicTicketBooking('booking-missing-capacity', {
+        reason: 'customer_declined',
+    }, { uid: 'admin-1', email: 'admin@example.invalid' });
+    assert.equal(result.released, true);
+    assert.equal(cancellationCount, 1);
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'available');
+});
+
+test('ADMIN RELEASE: only customer-declined and one-hour no-response reasons are accepted', async () => {
+    const f = fixture();
+    f.seed('publicBookings/booking-invalid-reason', {
+        eventId: 'APCS2026', paymentStatus: 'failed', selectedSeatIds: [],
+        orchestraSelectedSeatIds: [], physicalSeatKeys: [], capacityReservation: null,
+        complimentaryTickets: 0,
+    });
+
+    await assert.rejects(
+        f.load('src/services/PublicTicketAdminReleaseService.js')
+            .releasePublicTicketBooking('booking-invalid-reason', {
+                reason: 'paper_invoice_not_found', manualProviderConfirmation: true,
+            }, { uid: 'admin-1', email: 'admin@example.invalid' }),
+        error => {
+            assert.match(error.message, /valid reason/i);
+            assert.equal(error.code, 'INVALID_RELEASE_REASON');
+            return true;
+        },
+    );
+});
+
+test('ADMIN RELEASE: a late invoice ID prevents a manually confirmed release', async () => {
+    const f = fixture();
+    f.seat('seat-1', { status: 'locked', lockedByBookingId: 'booking-late-invoice' });
+    f.seed('publicBookings/booking-late-invoice', {
+        eventId: 'APCS2026', paymentStatus: 'failed', invoiceId: 'invoice-arrived-late',
+        selectedSeatIds: ['seat-1'], orchestraSelectedSeatIds: [], physicalSeatKeys: [],
+        capacityReservation: null, complimentaryTickets: 0,
+        checkoutFailure: { cleanupStatus: 'awaiting_cancellation', invoiceCancellationStatus: 'unknown' },
+    });
+
+    await assert.rejects(
+        f.load('src/repositories/PublicTicketFailureRepository.js')
+            .releaseAdminBookingInventory('booking-late-invoice', {
+                terminalStatus: 'failed', lifecycleField: 'checkoutFailure',
+                invoiceCancellationStatus: 'manually_verified_no_active_invoice',
+                reason: 'customer_declined', note: '', actor: { uid: 'admin-1' },
+                expectedPaymentStatus: 'failed', expectedInvoiceId: null,
+                expectedInvoiceCancellationStatus: null,
+            }),
+        /invoice changed/i,
+    );
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
 });

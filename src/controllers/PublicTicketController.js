@@ -1,4 +1,5 @@
 const PublicTicketService = require('../services/PublicTicketService');
+const PublicTicketAdminReleaseService = require('../services/PublicTicketAdminReleaseService');
 const emailService = require('../services/EmailService');
 const { logger } = require('../utils/Logger');
 
@@ -192,6 +193,23 @@ async function resendPublicTicketEmail(req, res, next) {
     }
 }
 
+/** POST /api/v1/apcs/public-ticket/admin/release-booking */
+async function releasePublicTicketBooking(req, res, next) {
+    try {
+        const { bookingId, reason, note, manualProviderConfirmation } = req.body || {};
+        if (!bookingId) return res.status(400).json({ message: 'bookingId is required' });
+
+        const result = await PublicTicketAdminReleaseService.releasePublicTicketBooking(
+            bookingId,
+            { reason, note, manualProviderConfirmation },
+            req.ticketingAdmin,
+        );
+        return res.status(200).json(result);
+    } catch (err) {
+        return next(err);
+    }
+}
+
 module.exports = {
     getPublicTicketEventData,
     createPublicTicketBooking,
@@ -199,5 +217,6 @@ module.exports = {
     getPublicTicketSeats,
     getEligibleWinners,
     getBookingStatus,
-    resendPublicTicketEmail
+    resendPublicTicketEmail,
+    releasePublicTicketBooking,
 };
