@@ -1,3 +1,4 @@
+const { escapeHtml: escapeTicketHtml, attendanceHtml, assignmentEmail } = require('./OrchestraEmailDetails');
 const nodemailer = require("nodemailer");
 const { logger } = require('../utils/Logger');
 const jwt = require('jsonwebtoken');
@@ -2908,6 +2909,7 @@ module.exports = {
     sendEmailPaymentInfoOptionsJson,
     sendPublicSeatHoldEmail,
     sendPublicBookingConfirmationEmail,
+    sendOrchestraAssignmentEmail,
     sendJuryDeadlineReminderEmail
 };
 
@@ -2939,7 +2941,19 @@ async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, da
     logger.info(`Seat-hold email sent to ${to}`);
 }
 
-async function sendPublicBookingConfirmationEmail(bookingData, venueName) {
+async function sendPublicBookingConfirmationEmail(bookingData) {
+    const { db } = require('../configs/firebase-init');
+    // Always use the booking event, never the currently active sale event.
+    let venueName = bookingData.venueName || bookingData.venue;
+    if (!bookingData.venueName && bookingData.eventId) {
+        const eventSnap = await db.collection('events').doc(bookingData.eventId).get();
+        venueName = (eventSnap.data()?.venues || []).find(venue => venue.id === bookingData.venue)?.label || venueName;
+    }
+    let assignment = null;
+    if (bookingData.ticketingVersion === 2 && bookingData.registrantId) {
+        const snapshot = await db.collection('orchestraAssignments').doc(encodeURIComponent(`${bookingData.eventId}|${bookingData.registrantId}`)).get();
+        assignment = snapshot.exists ? snapshot.data() : null;
+    }
     const { userEmail, userName, buyerName, registrantName, date, session, selectedSeatIds, tickets, totalAmount, id: bookingId } = bookingData;
 
     const formatSeatIds = (seatIds) => {
@@ -2967,16 +2981,15 @@ async function sendPublicBookingConfirmationEmail(bookingData, venueName) {
     const totalAmountFormatted = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalAmount);
 
     const html = getTemplate('publicBookingConfirmation', {
-        userName: buyerName || userName,
-        registrantName,
-        venueName,
-        date,
-        session,
-        bookingId,
-        performanceSeatLabels,
-        orchestraSeatLabels,
-        ticketSummary,
-        totalAmountFormatted
+        userName: escapeTicketHtml(buyerName || userName),
+        registrantName: escapeTicketHtml(registrantName),
+        venueName: escapeTicketHtml(venueName),
+        date: escapeTicketHtml(date), session: escapeTicketHtml(session),
+        bookingId: escapeTicketHtml(bookingId),
+        performanceSeatLabels: escapeTicketHtml(performanceSeatLabels),
+        orchestraSeatLabels: escapeTicketHtml(orchestraSeatLabels),
+        ticketSummary: escapeTicketHtml(ticketSummary), totalAmountFormatted,
+        attendanceDetails: attendanceHtml(bookingData, assignment),
     });
 
     const mailOptions = {
@@ -3013,4 +3026,12 @@ async function sendJuryDeadlineReminderEmail({ to, name, category, pendingCount,
 
     await transporter.sendMail(mailOptions);
     logger.info(`[JURY-REMINDER] Email sent to ${to} (${pendingCount}/${totalCount} pending)`);
+}
+
+async function sendOrchestraAssignmentEmail(booking, assignment) {
+    await transporter.sendMail({
+        from: '"APCS Music" <hello@apcsmusic.com>', to: booking.userEmail,
+        subject: 'APCS — Your orchestra session / Sesi orkestra Anda',
+        html: assignmentEmail(booking, assignment),
+    });
 }

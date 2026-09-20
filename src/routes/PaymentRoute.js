@@ -93,4 +93,13 @@ router.post('/public-ticket/admin/release-booking', requireTicketingAdmin, Publi
 router.get('/systemSettings/global', SystemSettingsController.getGlobalSettings);
 router.post('/systemSettings/global', SystemSettingsController.updateGlobalSettings);
 
+
+const OrchestraAssignmentController = require('../controllers/OrchestraAssignmentController');
+router.post('/public-ticket/admin/orchestra/list', requireTicketingAdmin, OrchestraAssignmentController.list);
+router.post('/public-ticket/admin/orchestra/assign', requireTicketingAdmin, OrchestraAssignmentController.assign);
+router.post('/public-ticket/admin/orchestra/notify', requireTicketingAdmin, OrchestraAssignmentController.notify);
+router.post('/public-ticket/admin/orchestra/session', requireTicketingAdmin, OrchestraAssignmentController.saveSession);
+
+router.post('/public-ticket/admin/orchestra/sessions', requireTicketingAdmin, OrchestraAssignmentController.sessions);
+
 module.exports = router;

@@ -24,7 +24,7 @@ const context = { require, __dirname, module: { exports: {} } };
 vm.runInNewContext(fixtureSource + '\nmodule.exports = fixture;', context, { filename: fixtureFile });
 const fixture = context.module.exports;
 const getBooking = (f, result) => f.records.get(`publicBookings/${result.bookingId}`);
-const winnerOrder = { registrantId: 'winner', orchestraSessionId: 'orch' };
+const winnerOrder = { registrantId: 'winner' };
 
 function addOrchestraSeats(f, count) {
     for (let number = 1; number <= count; number++) {
@@ -36,26 +36,24 @@ function enableOrchestraSelection(f) {
     f.records.get('events/APCS2026').addOns.push({ id: 'seat_selection', name: 'Choose complimentary seats', price: 10000 });
 }
 
-test('FOLLOWUP: a repeat winner can select the one remaining per-ticket complimentary seat', async () => {
+test('FOLLOWUP: a repeat winner cannot buy the retired orchestra seat-selection add-on', async () => {
     const f = fixture();
     enableOrchestraSelection(f);
     addOrchestraSeats(f, 1);
     const first = await f.book(winnerOrder);
     assert.ifError(first.error);
-    await f.repo.handlePublicTicketWebhookPaid(first.result.bookingId, {
-        invoice: { id: `invoice-${first.result.bookingId}`, total_amount: 150000 },
-    });
+    await f.repo.handlePublicTicketWebhookPaid(first.result.bookingId, { invoice: { id: `invoice-${first.result.bookingId}`, total_amount: 150000 } });
     const second = await f.book({ ...winnerOrder, addOnIds: ['seat_selection'], orchestraSelectedSeatIds: ['orch-1'] });
-    assert.ifError(second.error);
-    assert.equal(getBooking(f, second.result).complimentaryTickets, 1);
+    assert.ok(second.error);
+    assert.equal(f.records.get('seatsAPCS2026/orch-1').status, 'available');
 });
 
-test('FOLLOWUP: a winner paid purchase succeeds with a quota-capped complimentary allowance', async () => {
+test('FOLLOWUP: winner purchase records full attendance even before orchestra quota is configured', async () => {
     const f = fixture();
-    f.records.get('events/APCS2026').orchestraSessions[0].complimentaryQuota = 1;
+    f.records.get('events/APCS2026').orchestraSessions = [];
     const booking = await f.book(winnerOrder);
     assert.ifError(booking.error);
-    assert.equal(getBooking(f, booking.result).complimentaryTickets, 1);
+    assert.equal(getBooking(f, booking.result).orchestraAttendanceTickets, 1);
 });
 
 test('FOLLOWUP: complimentary seat IDs cannot exceed entitlement or bypass the selection add-on', async () => {
@@ -173,7 +171,7 @@ test('FOLLOWUP: overlapping failure cleanup cannot decrement another active book
     assert.deepEqual({
         paidCapacity: f.records.get(`ticketCapacity/${capacityId}`).reservedByTier.presto,
         complimentaryClaimed: f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed,
-    }, { paidCapacity: 1, complimentaryClaimed: 2 },
+    }, { paidCapacity: 1, complimentaryClaimed: 0 },
     'Second cleanup released paid capacity and complimentary quota belonging to a different pending booking');
 });
 

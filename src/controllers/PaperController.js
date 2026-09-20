@@ -106,21 +106,10 @@ async function handlePaperWebhook(req, res, next) {
                     const PublicTicketService = require('../services/PublicTicketService');
                     const bookingData = await PublicTicketService.handlePublicTicketWebhookPaid(firebaseId, payloadData);
 
-                    // Resolve dynamic venue label
-                    let resolvedVenueLabel = bookingData.venue;
-                    try {
-                        const eventData = await PublicTicketService.getPublicTicketEventData();
-                        if (eventData && eventData.venues) {
-                            const venueObj = eventData.venues.find(v => v.id === bookingData.venue);
-                            if (venueObj) resolvedVenueLabel = venueObj.label;
-                        }
-                    } catch (e) {
-                        logger.warn(`Could not fetch dynamic venue label: ${e.message}`);
-                    }
 
                     // Send booking confirmation email
                     try {
-                        await emailService.sendPublicBookingConfirmationEmail(bookingData, resolvedVenueLabel);
+                        await emailService.sendPublicBookingConfirmationEmail(bookingData);
                         await publicBookingRef.update({ emailSent: true });
                     } catch (emailErr) {
                         logger.error(`Confirmation email failed for ${bookingData.userEmail}: ${emailErr.message}`);

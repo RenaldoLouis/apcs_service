@@ -8,7 +8,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const LOCK_DURATION_MS = 30 * 60 * 1000; // 30 minutes in milliseconds
 const SEAT_OWNERSHIP_COLLECTION = 'ticketSeatOwnership';
 const CAPACITY_COLLECTION = 'ticketCapacity';
-const WINNER_CLAIM_COLLECTION = 'winnerOrchestraClaims';
 
 const normalizeSeatPart = value => String(value ?? '').trim().toUpperCase();
 const safeDocumentId = value => encodeURIComponent(String(value ?? '')).replace(/%/g, '_');
@@ -20,9 +19,7 @@ const physicalSeatKey = (eventId, seat) => [
     String(seat.number ?? '').trim(),
 ].join('|');
 const capacityDocumentId = (eventId, venue, date, session) => safeDocumentId(`${eventId}|${venue}|${date}|${session}|paid`);
-const winnerClaimDocumentId = (eventId, registrantId, orchestraSessionId) =>
-    safeDocumentId(`${eventId}|${registrantId}|${orchestraSessionId}`);
-const isMasterclassTicketId = ticketId => ['masterclass', 'master_class'].includes(String(ticketId || '').toLowerCase());
+const isMasterclassTicketId = ticketId => /master[ _-]?class/i.test(String(ticketId || ''));
 const normalizedCheckoutFingerprint = ({
     eventId, registrantId, buyerName, userEmail, userPhone, venue, date, session,
     orchestraSessionId, tickets, selectedSeatIds, orchestraSelectedSeatIds, addOnIds,
@@ -52,11 +49,10 @@ const getAuthoritativeSessionType = (eventData, venue, date, session) => {
     return { type: 'competition', session: null };
 };
 
-const getPaidCapacityByTier = (venue, orchestraSession) => {
-    const reservedRows = new Set((orchestraSession?.reservedRows || []).map(normalizeSeatPart));
+const getPaidCapacityByTier = venue => {
     return (venue?.seatConfig || []).reduce((counts, config) => {
         const tierId = String(config.areaType || '').toLowerCase();
-        if (!tierId || reservedRows.has(normalizeSeatPart(config.row))) return counts;
+        if (!tierId) return counts;
         counts[tierId] = (counts[tierId] || 0) + Number(config.seatCount || 0);
         return counts;
     }, {});
@@ -184,7 +180,6 @@ const createPublicTicketBooking = async (body, callback) => {
         tickets,      // [{ id, name, quantity, priceEach }]
         selectedSeatIds, // [seatDocumentId, ...]
         orchestraSelectedSeatIds, // [seatDocumentId, ...]
-        performanceSeatLabels, // ['L9', 'G9', ...]
         orchestraSeatLabels, // ['A1', 'A2', ...]
         addOnIds,     // ['merchandise', ...]
         registrantId, // ID of the winner who initiated this booking
@@ -202,7 +197,7 @@ const createPublicTicketBooking = async (body, callback) => {
     let response;
 
     try {
-        let F_expected = 0;
+        let performerCount = 0;
         // --- 2. Fetch authoritative pricing from Firestore ---
         const eventId = await getCurrentEventId();
         const eventRef = db.collection('events').doc(eventId);
@@ -221,7 +216,10 @@ const createPublicTicketBooking = async (body, callback) => {
             if (!regDoc.exists || regDoc.data().eventId !== eventId) {
                 throw new Error('Registrant not found for this event.');
             }
-            const award = regDoc.data().finalAward || '';
+            const registration = regDoc.data();
+            // Count registered performers, never the client-provided name/count.
+            performerCount = Math.max(1, (registration.performers || []).length);
+            const award = registration.finalAward || '';
             if (!award || award === 'Fail' || award === 'N/A') {
                 throw new Error('Registrant is not eligible for winner ticket benefits.');
             }
@@ -253,6 +251,18 @@ const createPublicTicketBooking = async (body, callback) => {
         const authoritativeSession = getAuthoritativeSessionType(eventData, venue, date, session);
         const isAuthoritativeMasterclass = authoritativeSession.type === 'masterclass';
         const isAuthoritativeOrchestra = authoritativeSession.type === 'orchestra';
+        if (isAuthoritativeMasterclass) throw new Error('Masterclass ticketing is managed outside this system.');
+        if (registrantId && isAuthoritativeOrchestra) throw new Error('Winner purchases must use their assigned competition session.');
+        if (orchestraSessionId || (orchestraSelectedSeatIds || []).length || (orchestraSeatLabels || []).length) {
+            throw new Error('Orchestra sessions are assigned by staff after payment; orchestra seats cannot be selected.');
+        }
+        if ((addOnIds || []).some(id => id === 'seat_selection' || /master[ _-]?class/i.test(id)
+            || /master[ _-]?class/i.test(addOnPriceMap[id]?.name || ''))) {
+            throw new Error('Masterclass and orchestra seat-selection add-ons are no longer available.');
+        }
+        if (isAuthoritativeOrchestra && ((selectedSeatIds || []).length || (addOnIds || []).length)) {
+            throw new Error('Orchestra tickets use free seating without seat selections or add-ons.');
+        }
         if (isMasterclass !== undefined && Boolean(isMasterclass) !== isAuthoritativeMasterclass) {
             throw new Error('Ticket product does not match the selected session.');
         }
@@ -266,19 +276,10 @@ const createPublicTicketBooking = async (body, callback) => {
 
         // Verify expected seat count vs paid tickets
         const isWinner = !!registrantId;
-        const hasSeatSelectionAddon = (addOnIds || []).includes('seat_selection');
         const totalSelected = (selectedSeatIds || []).length;
         const allSelectedIds = [...(selectedSeatIds || []), ...(orchestraSelectedSeatIds || [])];
         if (new Set(allSelectedIds).size !== allSelectedIds.length) {
             throw new Error('A physical seat can only be selected once per booking.');
-        }
-        
-        let osIndex = -1;
-        if (isWinner) {
-            osIndex = (eventData.orchestraSessions || []).findIndex(s => s.id === orchestraSessionId);
-            if (osIndex === -1) throw new Error('Selected orchestra session is unavailable.');
-        } else if ((orchestraSelectedSeatIds || []).length > 0 || orchestraSessionId) {
-            throw new Error('Complimentary orchestra seats require an eligible winner.');
         }
         
         const ticketsQty = tickets.reduce((acc, t) => acc + (t.quantity > 0 ? t.quantity : 0), 0);
@@ -291,16 +292,13 @@ const createPublicTicketBooking = async (body, callback) => {
             return acc;
         }, {});
         if (!ticketsQty) throw new Error('At least one ticket is required.');
-        const containsMasterclassTicket = Object.keys(ticketQuantities).some(isMasterclassTicketId);
-        if (isAuthoritativeMasterclass !== containsMasterclassTicket
-            || (isAuthoritativeMasterclass && Object.keys(ticketQuantities).some(id => !isMasterclassTicketId(id)))) {
-            throw new Error('Ticket tier does not match the selected session type.');
+        if (isAuthoritativeOrchestra && Object.keys(ticketQuantities).some(id => !['presto', 'allegro'].includes(id))) {
+            throw new Error('Public orchestra tickets must be Presto or Allegro.');
         }
+        const containsMasterclassTicket = Object.keys(ticketQuantities).some(id => isMasterclassTicketId(id) || /master[ _-]?class/i.test((eventData.ticketTiers || []).find(tier => tier.id === id)?.name || ''));
+        if (containsMasterclassTicket) throw new Error('Ticket tier does not match the selected session type.');
         const unknownAddOn = (addOnIds || []).find(addOnId => !addOnPriceMap[addOnId]);
         if (unknownAddOn) throw new Error(`Unknown add-on: ${unknownAddOn}`);
-        if (isAuthoritativeMasterclass && ((selectedSeatIds || []).length || (orchestraSelectedSeatIds || []).length || (addOnIds || []).length)) {
-            throw new Error('Masterclass tickets cannot include seat selections or add-ons.');
-        }
         const seatSelectionPerformerCount = (addOnIds || []).filter(id => id === 'seat_selection_performer').length;
         
         if (totalSelected > ticketsQty) {
@@ -310,11 +308,6 @@ const createPublicTicketBooking = async (body, callback) => {
              throw new Error(`Seat selection mismatch. You selected ${totalSelected} seats, but your seat_selection_performer add-on only covers ${seatSelectionPerformerCount} seats.`);
         }
         
-        F_expected = 0;
-        if (!hasSeatSelectionAddon && (orchestraSelectedSeatIds || []).length > 0) {
-            throw new Error('Complimentary orchestra seat selection requires the seat_selection add-on.');
-        }
-
         tickets.forEach(ticket => {
             if (ticket.quantity > 0) {
                 const price = tierPriceMap[ticket.id];
@@ -323,7 +316,7 @@ const createPublicTicketBooking = async (body, callback) => {
                 const subtotal = price * ticket.quantity;
                 totalAmount += subtotal;
                 lineItems.push({
-                    name: `${ticket.name} Ticket`,
+                    name: `${(eventData.ticketTiers || []).find(tier => tier.id === ticket.id)?.name || ticket.id} Ticket`,
                     description: `${ticket.quantity}x ${ticket.name} – ${venueMap[venue] || venue} | ${date} ${session}`,
                     price: subtotal,
                     currency: 'IDR',
@@ -331,15 +324,6 @@ const createPublicTicketBooking = async (body, callback) => {
             }
         });
         
-        if (hasSeatSelectionAddon && F_expected > 0) {
-            lineItems.push({
-                name: `Complimentary Tickets Discount`,
-                description: `${F_expected}x Free Tickets`,
-                price: 0,
-                currency: 'IDR',
-            });
-        }
-
         (addOnIds || []).forEach(addOnId => {
             const addOn = addOnPriceMap[addOnId];
             if (addOn) {
@@ -353,16 +337,6 @@ const createPublicTicketBooking = async (body, callback) => {
             }
         });
 
-        const freeMasterclassCount = ticketQuantities.presto || 0;
-        if (freeMasterclassCount > 0) {
-            lineItems.push({
-                name: `Free Master Class (Presto Benefit)`,
-                description: `${freeMasterclassCount}x Free Master Class`,
-                price: 0,
-                currency: 'IDR',
-            });
-        }
-
         // --- 4. Atomic Firestore transaction: lock seats + create booking ---
         bookingRef = db.collection('publicBookings').doc();
         const bookingId = bookingRef.id;
@@ -375,9 +349,6 @@ const createPublicTicketBooking = async (body, callback) => {
             : null;
         const capacityRef = !isAuthoritativeMasterclass
             ? db.collection(CAPACITY_COLLECTION).doc(capacityDocumentId(eventId, venue, date, session))
-            : null;
-        const winnerClaimRef = isWinner
-            ? db.collection(WINNER_CLAIM_COLLECTION).doc(winnerClaimDocumentId(eventId, registrantId, orchestraSessionId))
             : null;
         const checkoutFingerprint = normalizedCheckoutFingerprint({
             eventId, registrantId, buyerName, userEmail, userPhone, venue, date, session,
@@ -416,7 +387,6 @@ const createPublicTicketBooking = async (body, callback) => {
             }
             const currentEventDoc = await transaction.get(eventRef);
             const capacitySnap = capacityRef ? await transaction.get(capacityRef) : null;
-            const winnerClaimSnap = winnerClaimRef ? await transaction.get(winnerClaimRef) : null;
             // Existing events may predate the transactional capacity record. Read historical bookings
             // only during that one-time migration; all later checkout requests use the counter record.
             const sessionBookingsSnap = capacityRef && !capacitySnap.exists
@@ -431,12 +401,7 @@ const createPublicTicketBooking = async (body, callback) => {
                 ? selectedSeatIds.map(id => db.collection(`seats${eventId}`).doc(id))
                 : [];
             
-            const orchRefs = (orchestraSelectedSeatIds && orchestraSelectedSeatIds.length > 0)
-                ? orchestraSelectedSeatIds.map(id => db.collection(`seats${eventId}`).doc(id))
-                : [];
-
-            // Perform all remaining reads
-            const allSeatRefs = [...seatRefs, ...orchRefs];
+            const allSeatRefs = seatRefs;
             let allSeatDocs = [];
             if (allSeatRefs.length > 0) {
                 allSeatDocs = await transaction.getAll(...allSeatRefs);
@@ -459,14 +424,19 @@ const createPublicTicketBooking = async (body, callback) => {
 
             // --- VALIDATION & WRITE PREP PHASE ---
             
+            if (!currentEventDoc.exists) throw new Error('Event no longer exists.');
             const currentEventData = currentEventDoc.data();
+            const currentSessionType = getAuthoritativeSessionType(currentEventData, venue, date, session);
+            if (currentSessionType.type !== authoritativeSession.type || currentSessionType.session?.id !== authoritativeSession.session?.id) {
+                throw new Error('Session configuration changed. Please review your purchase.');
+            }
             const currentVenue = (currentEventData.venues || []).find(item => item.id === venue);
             if (!currentVenue || !(currentVenue.sessions?.[date] || []).includes(session)) {
                 throw new Error('Selected venue session is unavailable.');
             }
             const paidOrchestraSession = !isWinner && authoritativeSession.type === 'orchestra'
-                ? authoritativeSession.session : null;
-            const capacityCounts = getPaidCapacityByTier(currentVenue, paidOrchestraSession);
+                ? (currentEventData.orchestraSessions || []).find(item => item.id === authoritativeSession.session.id) : null;
+            const capacityCounts = getPaidCapacityByTier(currentVenue);
             const retainsCapacity = booking => booking.paymentStatus === 'pending'
                 || booking.paymentStatus === 'PAID'
                 || booking.paymentStatus === 'paid'
@@ -492,56 +462,18 @@ const createPublicTicketBooking = async (body, callback) => {
                 });
             }
 
-            // 1. Validate complimentary quota and reserved-row capacity.
-            if (isWinner && osIndex !== -1) {
-                const currentOsIndex = (currentEventData.orchestraSessions || []).findIndex(item => item.id === orchestraSessionId);
-                if (currentOsIndex === -1) throw new Error('Selected orchestra session is unavailable.');
-                const currentSession = currentEventData.orchestraSessions[currentOsIndex];
-                const claimed = Number(currentSession.complimentaryClaimed || 0);
-                const personalWinnerBonus = winnerClaimSnap?.exists && winnerClaimSnap.data().active ? 0 : 1;
-                const reservedRows = new Set((currentSession.reservedRows || []).map(row => String(row).toUpperCase()));
-                const orchestraVenue = (currentEventData.venues || []).find(item => item.id === currentSession.venue);
-                const reservedCapacity = (orchestraVenue?.seatConfig || []).reduce((total, config) =>
-                    reservedRows.has(String(config.row).toUpperCase()) ? total + Number(config.seatCount || 0) : total, 0);
-                if (!reservedRows.size) {
-                    throw new Error('Complimentary orchestra seats require configured reserved rows.');
-                }
-                const remainingAllowance = Math.max(0, Math.min(
-                    Number(currentSession.complimentaryQuota || 0) - claimed,
-                    reservedCapacity - claimed,
-                ));
-                const perTicketAllowance = Math.min(ticketsQty, remainingAllowance);
-                const awardedPersonalBonus = personalWinnerBonus && remainingAllowance > perTicketAllowance ? 1 : 0;
-                const actualComplimentaryTickets = perTicketAllowance + awardedPersonalBonus;
-                if (hasSeatSelectionAddon && actualComplimentaryTickets === 0) {
-                    throw new Error('No complimentary orchestra seats remain; remove the seat-selection add-on and review the cart.');
-                }
-                if (hasSeatSelectionAddon && (orchestraSelectedSeatIds || []).length !== actualComplimentaryTickets) {
-                    throw new Error(`Expected ${actualComplimentaryTickets} free orchestra seats to be selected for this purchase.`);
-                }
-                if (!hasSeatSelectionAddon && (orchestraSelectedSeatIds || []).length) {
-                    throw new Error('Complimentary orchestra seat selection requires the seat_selection add-on.');
-                }
-
-                const updatedSessions = [...currentEventData.orchestraSessions];
-                updatedSessions[currentOsIndex] = {
-                    ...currentSession,
-                    complimentaryClaimed: claimed + actualComplimentaryTickets,
-                };
-                transaction.update(eventRef, { orchestraSessions: updatedSessions });
-                F_expected = actualComplimentaryTickets;
-                if (awardedPersonalBonus) {
-                    transaction.set(winnerClaimRef, {
-                        eventId, registrantId, orchestraSessionId, bookingId,
-                        active: true, createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    });
+            if (paidOrchestraSession) {
+                const totalCapacity = Object.values(capacityCounts).reduce((sum, count) => sum + count, 0);
+                const reservedPaid = Object.values(reservedByTier).reduce((sum, count) => sum + Number(count), 0);
+                const winnerQuota = Number(paidOrchestraSession.complimentaryQuota || 0);
+                if (!Number.isSafeInteger(winnerQuota) || winnerQuota < Number(paidOrchestraSession.complimentaryClaimed || 0) + Number(paidOrchestraSession.freeSeatingAssigned || 0)) throw new Error('Orchestra quota needs reconciliation.');
+                if (reservedPaid + ticketsQty + winnerQuota > totalCapacity) {
+                    throw new Error('Not enough public orchestra capacity remains after the winner attendance allocation.');
                 }
             }
 
             // 2. Validate and Lock Seats
             const selectedByTier = {};
-            const paidReservedRows = new Set((paidOrchestraSession?.reservedRows || [])
-                .map(row => String(row).toUpperCase()));
             for (let i = 0; i < allSeatDocs.length; i++) {
                 const seatDoc = allSeatDocs[i];
                 if (!seatDoc.exists) {
@@ -571,20 +503,8 @@ const createPublicTicketBooking = async (body, callback) => {
                         || selectedByTier[tierId] > ticketQuantities[tierId]) {
                         throw new Error('Selected seat does not match the purchased competition session and tier.');
                     }
-                    if (paidReservedRows.has(String(seatData.row).toUpperCase())) {
-                        throw new Error('Reserved orchestra rows are only available for complimentary winner seats.');
-                    }
-                } else {
-                    const orchestraSession = currentEventData.orchestraSessions.find(item => item.id === orchestraSessionId);
-                    const reservedRows = new Set((orchestraSession.reservedRows || []).map(row => String(row).toUpperCase()));
-                    if (!isWinner || F_expected <= 0 || seatData.eventId !== eventId
-                        || seatData.venueId !== orchestraSession.venue
-                        || seatData.sessionId !== `${orchestraSession.date}_${orchestraSession.time}`
-                        || !reservedRows.has(String(seatData.row).toUpperCase())) {
-                        throw new Error('Selected orchestra seat is not an eligible complimentary reserved-row seat.');
-                    }
                 }
-                
+
                 transaction.update(seatDoc.ref, {
                     status: 'locked',
                     lockedAt: lockedAt,
@@ -613,6 +533,11 @@ const createPublicTicketBooking = async (body, callback) => {
             // Create the booking document
             transaction.set(bookingRef, {
                 eventId: eventId,
+                ticketingVersion: 2,
+                venueName: venueMap[venue],
+                performerCount,
+                orchestraAttendanceTickets: isWinner ? ticketsQty : 0,
+                seatingMode: isAuthoritativeOrchestra ? 'free' : 'numbered',
                 registrantId: registrantId || '',
                 registrantName: registrantName || '',
                 buyerName,
@@ -623,21 +548,21 @@ const createPublicTicketBooking = async (body, callback) => {
                 date,
                 session,
                 orchestraSessionId: orchestraSessionId || '',
-                isOrchestra: !!isOrchestra,
+                isOrchestra: isAuthoritativeOrchestra,
                 isMasterclass: isAuthoritativeMasterclass,
-                tickets,
+                tickets: Object.entries(ticketQuantities).map(([id, quantity]) => ({ id, quantity, name: (eventData.ticketTiers || []).find(tier => tier.id === id)?.name || id, priceEach: tierPriceMap[id] })),
                 selectedSeatIds: selectedSeatIds || [],
                 orchestraSelectedSeatIds: orchestraSelectedSeatIds || [],
                 physicalSeatKeys: physicalKeys,
-                performanceSeatLabels: performanceSeatLabels || [],
+                performanceSeatLabels: allSeatDocs.map(doc => doc.data().seatLabel || `${doc.data().row}${doc.data().number}`),
                 orchestraSeatLabels: orchestraSeatLabels || [],
                 addOnIds: addOnIds || [],
-                freeMasterclassCount: freeMasterclassCount,
+                freeMasterclassCount: 0,
                 totalAmount,
                 paymentCurrency: 'IDR',
-                complimentaryTickets: F_expected,
-                personalWinnerBonus: isWinner ? Math.max(0, F_expected - ticketsQty) : 0,
-                winnerClaimId: isWinner && F_expected > ticketsQty ? winnerClaimRef.id : '',
+                complimentaryTickets: 0,
+                personalWinnerBonus: 0,
+                winnerClaimId: '',
                 capacityReservation: capacityRef ? { capacityId: capacityRef.id, byTier: ticketQuantities } : null,
                 idempotencyKey: normalizedIdempotencyKey || null,
                 paymentStatus: 'pending',
@@ -911,21 +836,6 @@ const getEligibleWinners = async (_query, callback) => {
 
         // Sort by name
         winners.sort((a, b) => a.name.localeCompare(b.name));
-        const activeClaimsSnapshot = await db.collection(WINNER_CLAIM_COLLECTION)
-            .where('eventId', '==', eventId)
-            .where('active', '==', true)
-            .get();
-        const claimedSessionsByRegistrant = activeClaimsSnapshot.docs.reduce((claims, claimDoc) => {
-            const claim = claimDoc.data();
-            if (!claim.registrantId || !claim.orchestraSessionId) return claims;
-            if (!claims[claim.registrantId]) claims[claim.registrantId] = [];
-            claims[claim.registrantId].push(claim.orchestraSessionId);
-            return claims;
-        }, {});
-        winners.forEach(winner => {
-            winner.claimedOrchestraSessionIds = claimedSessionsByRegistrant[winner.registrantId] || [];
-        });
-
         callback(null, {
             winners,
             allowedTiers: allowedTiers || [],

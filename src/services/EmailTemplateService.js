@@ -619,7 +619,7 @@ const templates = {
 
                             <p>Dear <strong>${data.userName}</strong>,</p>
                             ${data.registrantName ? `<p style="margin-top: -10px; color: #555; font-size: 14px;">Paying for Registrant: <strong>${data.registrantName}</strong></p>` : ''}
-                            <p>Thank you! Your payment has been received and your seat(s) for the <strong>APCS 2026 Gala Concert</strong> are now <strong>permanently reserved</strong>.</p>
+                            <p>Thank you! Your payment has been received and your tickets for the <strong>APCS 2026 Gala Concert</strong> are now <strong>confirmed</strong>.</p>
 
                             <div class="ticket-card">
                                 <div class="info-row"><span class="info-label">Booking ID</span><span class="info-value">${data.bookingId}</span></div>
@@ -637,6 +637,7 @@ const templates = {
                                 </div>
                             </div>
 
+                            ${data.attendanceDetails || ''}
                             <p>Please present this email or your Booking ID at the venue entrance. Our team will verify your booking.</p>
                             <p>We look forward to seeing you at the concert!</p>
                             <p style="margin-top: 24px;">

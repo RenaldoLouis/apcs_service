@@ -97,21 +97,10 @@ async function handlePublicTicketWebhook(req, res, next) {
 
             const bookingData = await PublicTicketService.handlePublicTicketWebhookPaid(bookingId, payloadData);
 
-            // Resolve dynamic venue label
-            let resolvedVenueLabel = bookingData.venue;
-            try {
-                const eventData = await PublicTicketService.getPublicTicketEventData();
-                if (eventData && eventData.venues) {
-                    const venueObj = eventData.venues.find(v => v.id === bookingData.venue);
-                    if (venueObj) resolvedVenueLabel = venueObj.label;
-                }
-            } catch (e) {
-                logger.warn(`Could not fetch dynamic venue label: ${e.message}`);
-            }
 
             // Send booking confirmation email
             try {
-                await emailService.sendPublicBookingConfirmationEmail(bookingData, resolvedVenueLabel);
+                await emailService.sendPublicBookingConfirmationEmail(bookingData);
             } catch (emailErr) {
                 logger.error(`Confirmation email failed for ${bookingData.userEmail}: ${emailErr.message}`);
             }
@@ -167,20 +156,9 @@ async function resendPublicTicketEmail(req, res, next) {
             return res.status(400).json({ message: "Booking is not paid yet." });
         }
 
-        // Resolve dynamic venue label
-        let resolvedVenueLabel = bookingData.venue;
-        try {
-            const eventData = await PublicTicketService.getPublicTicketEventData();
-            if (eventData && eventData.venues) {
-                const venueObj = eventData.venues.find(v => v.id === bookingData.venue);
-                if (venueObj) resolvedVenueLabel = venueObj.label;
-            }
-        } catch (e) {
-            logger.warn(`Could not fetch dynamic venue label: ${e.message}`);
-        }
 
         try {
-            await emailService.sendPublicBookingConfirmationEmail(bookingData, resolvedVenueLabel);
+            await emailService.sendPublicBookingConfirmationEmail(bookingData);
             await bookingRef.update({ emailSent: true });
             res.status(200).json({ message: "Email sent successfully" });
         } catch (emailErr) {

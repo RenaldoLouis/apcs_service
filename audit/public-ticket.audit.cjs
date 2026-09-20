@@ -69,13 +69,19 @@ function fixture(options = {}) {
             commit: async () => commit(operations),
         };
     };
-    const collection = (name, filters = []) => ({
+    const collection = (name, filters = [], queryOptions = {}) => ({
         __query: true,
         doc: id => ref(`${name}/${id || `booking-${++sequence}`}`),
-        where: (field, operator, value) => collection(name, [...filters, [field, operator, value]]),
+        where: (field, operator, value) => collection(name, [...filters, [field, operator, value]], queryOptions),
+        orderBy: field => collection(name, filters, { ...queryOptions, order: field }),
+        limit: count => collection(name, filters, { ...queryOptions, limit: count }),
+        startAfter: cursor => collection(name, filters, { ...queryOptions, cursor: typeof cursor === 'string' ? cursor : cursor.id }),
         get: async () => {
-            const docs = [...records.keys()].filter(key => key.startsWith(`${name}/`)).map(snapshot).filter(doc =>
+            let docs = [...records.keys()].filter(key => key.startsWith(`${name}/`)).map(snapshot).filter(doc =>
                 filters.every(([field, operator, value]) => operator === '==' ? doc.data()[field] === value : value.includes(field === '__name__' ? doc.id : doc.data()[field])));
+            if (queryOptions.order === '__name__') docs.sort((a, b) => a.id.localeCompare(b.id));
+            if (queryOptions.cursor) docs = docs.filter(doc => doc.id.localeCompare(queryOptions.cursor) > 0);
+            if (queryOptions.limit) docs = docs.slice(0, queryOptions.limit);
             return { docs, empty: docs.length === 0 };
         },
     });
@@ -218,7 +224,7 @@ test('FAILURE: rejected checkout preserves a different buyer’s hold and existi
     f.seat('seat-1', { status: 'locked', lockedAt: f.timestamp(Date.parse('2026-09-06T05:00:00Z')), lockedByBookingId: 'other' });
     const event = f.records.get('events/APCS2026');
     event.orchestraSessions[0].complimentaryClaimed = 3;
-    const { error } = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch', selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
+    const { error } = await f.book({ registrantId: 'winner', selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
     assert.ok(error);
     assert.equal(f.records.get('seatsAPCS2026/seat-1').lockedByBookingId, 'other');
     assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
@@ -227,16 +233,16 @@ test('FAILURE: rejected checkout preserves a different buyer’s hold and existi
 
 test('FAILURE: unknown invoice outcome retains committed inventory for reconciliation', async () => {
     const f = fixture({ invoiceFails: true }); f.seat();
-    const { error } = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch', selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
+    const { error } = await f.book({ registrantId: 'winner', selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
     assert.match(error.message, /invoice failure/);
     const booking = f.records.get('publicBookings/booking-1');
     assert.equal(booking.paymentStatus, 'failed');
     assert.equal(booking.checkoutFailure.quotaRefundStatus, 'held');
     assert.equal(booking.checkoutFailure.invoiceCancellationStatus, 'unknown');
     assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
-    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 2);
+    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 0);
     await f.load('src/repositories/PublicTicketFailureRepository.js').failPublicTicketBooking('booking-1');
-    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 2);
+    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 0);
     await assert.rejects(f.repo.handlePublicTicketWebhookPaid('booking-1', {}), /failed/i);
 });
 
@@ -281,7 +287,7 @@ test('FAILURE: price validation failure cannot release seats or refund existing 
     const f = fixture(); f.seat('seat-1', { status: 'booked', bookingId: 'other' });
     f.records.get('events/APCS2026').ticketTiers[0].venuePrices = {};
     f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed = 4;
-    const { error } = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch' });
+    const { error } = await f.book({ registrantId: 'winner' });
     assert.match(error.message, /Pricing not configured/);
     assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 4);
     assert.equal(f.records.get('seatsAPCS2026/seat-1').bookingId, 'other');
@@ -314,7 +320,7 @@ test('FAILURE: invoice ID returned with an error remains available for cancellat
 
 test('FAILURE: cancellation retry does not refund quota again', async () => {
     const f = fixture({ failInvoiceSave: true, cancelFails: true });
-    await f.book({ registrantId: 'winner', orchestraSessionId: 'orch' });
+    await f.book({ registrantId: 'winner' });
     f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed = 5;
     await f.load('src/repositories/PublicTicketFailureRepository.js').failPublicTicketBooking('booking-1');
     assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 5);
@@ -331,7 +337,7 @@ test('FAILURE: cleanup uses stored event after active-event switch', async () =>
 
 test('FAILURE: unknown invoice outcome records reconciliation without releasing owned seats', async () => {
     const f = fixture({ invoiceFails: true, beforeInvoiceResponse: ({ records }) => records.delete('events/APCS2026') }); f.seat();
-    await f.book({ registrantId: 'winner', orchestraSessionId: 'orch', selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
+    await f.book({ registrantId: 'winner', selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
     assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
     assert.equal(f.records.get('publicBookings/booking-1').checkoutFailure.quotaRefundStatus, 'held');
 });
@@ -365,7 +371,7 @@ test('SAFETY: disabling date restrictions must not authorize a nonexistent winne
 test('SAFETY: a winner cannot replace their assigned competition session at checkout', async () => {
     const f = fixture();
     f.records.get('events/APCS2026').venues[0].sessions['2026-11-01'].push('10:00-11:00');
-    const { error } = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch', session: '10:00-11:00' });
+    const { error } = await f.book({ registrantId: 'winner', session: '10:00-11:00' });
     assert.ok(error, 'Winner bypassed the saved competition assignment');
 });
 
@@ -383,7 +389,9 @@ test('SAFETY: duplicate seat IDs must not count as two physical seats', async ()
 
 test('SAFETY: complimentary expiry timer must expire booking and refund quota', async () => {
     const f = fixture();
-    const { result } = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch' });
+    const { result } = await f.book({ registrantId: 'winner' });
+    Object.assign(f.records.get(`publicBookings/${result.bookingId}`), { ticketingVersion: 1, complimentaryTickets: 2, orchestraSessionId: 'orch' });
+    f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed = 2;
     f.advance(31 * 60 * 1000);
     await f.timers[0]();
     assert.equal(f.records.get(`publicBookings/${result.bookingId}`).paymentStatus, 'expired', f.logs.join('\n'));
@@ -392,7 +400,9 @@ test('SAFETY: complimentary expiry timer must expire booking and refund quota', 
 
 test('SAFETY: restart sweeper must expire complimentary booking and refund quota', async () => {
     const f = fixture();
-    const { result } = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch' });
+    const { result } = await f.book({ registrantId: 'winner' });
+    Object.assign(f.records.get(`publicBookings/${result.bookingId}`), { ticketingVersion: 1, complimentaryTickets: 2, orchestraSessionId: 'orch' });
+    f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed = 2;
     f.advance(31 * 60 * 1000);
     f.load('src/jobs/PublicTicketSweeper.js').startPublicTicketSweeper();
     await f.intervals[0]();
@@ -467,7 +477,7 @@ test('SAFETY: winner-selected complimentary orchestra seats must stay in reserve
     f.seat('orchestra-b1', { sessionId: '2026-11-01_19:00-20:00', row: 'B', seatLabel: 'B1' });
     f.seat('orchestra-b2', { sessionId: '2026-11-01_19:00-20:00', row: 'B', number: 2, seatLabel: 'B2' });
     const { error } = await f.book({
-        registrantId: 'winner', orchestraSessionId: 'orch', addOnIds: ['seat_selection'],
+        registrantId: 'winner', addOnIds: ['seat_selection'],
         orchestraSelectedSeatIds: ['orchestra-b1', 'orchestra-b2'],
     });
     assert.ok(error, 'Winner selected complimentary orchestra seats outside reserved rows');
@@ -475,12 +485,12 @@ test('SAFETY: winner-selected complimentary orchestra seats must stay in reserve
 
 test('SAFETY: a local timeout cannot take over inventory before cancellation confirmation', async () => {
     const f = fixture(); f.seat();
-    const first = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch', selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
+    const first = await f.book({ registrantId: 'winner', selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
     assert.ifError(first.error);
     f.advance(31 * 60 * 1000);
     const second = await f.book({ selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
     assert.ok(second.error, 'A locally expired hold was taken over before provider cancellation');
-    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 2);
+    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 0);
     f.load('src/jobs/PublicTicketSweeper.js').startPublicTicketSweeper();
     await f.intervals[0]();
     assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].complimentaryClaimed, 0);
@@ -514,37 +524,35 @@ test('REGRESSION: client masterclass flags cannot bypass competition-seat capaci
     assert.match(error.message, /product does not match|session type/i);
 });
 
-test('REGRESSION: paid orchestra demand excludes rows reserved for complimentary winners', async () => {
+test('REGRESSION: free-seating public orchestra demand preserves the winner headcount pool', async () => {
     const f = fixture();
     f.records.get('events/APCS2026').venues[0].sessions['2026-11-01'].push('19:00-20:00');
-    const { error } = await f.book({
-        session: '19:00-20:00',
-        tickets: [{ id: 'presto', name: 'Presto', quantity: 1 }],
-        isOrchestra: true,
-    });
-    assert.match(error.message, /not enough presto capacity/i);
-});
-
-test('REGRESSION: a winner personal orchestra benefit is claimed once per session', async () => {
-    const f = fixture();
-    const first = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch' });
+    const first = await f.book({ session: '19:00-20:00', tickets: [{ id: 'presto', name: 'Presto', quantity: 10 }], isOrchestra: true });
     assert.ifError(first.error);
-    await f.repo.handlePublicTicketWebhookPaid(first.result.bookingId, paidInvoice(first.result.bookingId, 150000));
-    const second = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch' });
-    assert.ifError(second.error);
-    assert.equal(f.records.get(`publicBookings/${first.result.bookingId}`).complimentaryTickets, 2);
-    assert.equal(f.records.get(`publicBookings/${second.result.bookingId}`).complimentaryTickets, 1);
+    assert.equal(f.records.get(`publicBookings/${first.result.bookingId}`).seatingMode, 'free');
+    assert.ok((await f.book({ session: '19:00-20:00', isOrchestra: true })).error);
 });
 
-test('REGRESSION: confirmed unpaid cancellation restores a personal winner claim once', async () => {
+test('REGRESSION: winner attendance is recorded without a customer session or pending personal claim', async () => {
     const f = fixture();
-    const first = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch' });
+    const first = await f.book({ registrantId: 'winner' });
+    assert.ifError(first.error);
+    const booking = f.records.get(`publicBookings/${first.result.bookingId}`);
+    assert.equal(booking.orchestraAttendanceTickets, 1);
+    assert.equal(booking.performerCount, 1);
+    assert.equal(booking.complimentaryTickets, 0);
+    assert.equal(booking.winnerClaimId, '');
+});
+
+test('REGRESSION: confirmed unpaid cancellation preserves winner attendance eligibility on retry', async () => {
+    const f = fixture();
+    const first = await f.book({ registrantId: 'winner' });
     assert.ifError(first.error);
     f.advance(31 * 60 * 1000);
     await f.timers[0]();
-    const retry = await f.book({ registrantId: 'winner', orchestraSessionId: 'orch' });
+    const retry = await f.book({ registrantId: 'winner' });
     assert.ifError(retry.error);
-    assert.equal(f.records.get(`publicBookings/${retry.result.bookingId}`).complimentaryTickets, 2);
+    assert.equal(f.records.get(`publicBookings/${retry.result.bookingId}`).orchestraAttendanceTickets, 1);
 });
 
 test('REGRESSION: the same checkout idempotency key returns one booking and invoice', async () => {
