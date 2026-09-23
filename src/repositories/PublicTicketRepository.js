@@ -682,8 +682,12 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
         if (booking.paymentStatus === 'PAID' || booking.paymentStatus === 'paid') return booking;
         if (booking.paymentStatus === 'expired') throw new Error(`Booking ${bookingId} was canceled before payment confirmation.`);
 
-        const amountPaid = Number(payloadData?.invoice?.total_amount);
-        if (!Number.isFinite(amountPaid) || amountPaid !== Number(booking.totalAmount)) {
+        const invoice = payloadData?.invoice || {};
+        const reportedAmounts = [invoice.total_amount, invoice.amount]
+            .filter(value => value !== undefined && value !== null && value !== '');
+        const amountPaid = Number(reportedAmounts[0]);
+        if (!reportedAmounts.length || reportedAmounts.some(value =>
+            !Number.isFinite(Number(value)) || Number(value) !== Number(booking.totalAmount))) {
             throw new Error(`Payment amount does not match booking ${bookingId}.`);
         }
 

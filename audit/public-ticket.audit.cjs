@@ -154,6 +154,48 @@ const paidInvoice = (bookingId, totalAmount) => ({
     invoice: { id: `invoice-${bookingId}`, total_amount: totalAmount },
 });
 
+test('PUBLIC: checkout sends only the supplied test contact to Paper.id and accepts a staging paid callback', async () => {
+    const f = fixture();
+    const { error, result } = await f.book({
+        userEmail: 'payment-test@example.invalid', userPhone: '080000000000',
+    });
+    assert.ifError(error);
+    assert.equal(f.invoices[0].user.email, 'payment-test@example.invalid');
+    assert.equal(f.invoices[0].user.phone, '080000000000');
+    const booking = f.records.get(`publicBookings/${result.bookingId}`);
+    await f.repo.handlePublicTicketWebhookPaid(result.bookingId, {
+        invoice: { id: booking.invoiceId, number: result.bookingId, status: 'paid', amount_due: 0, total_amount: booking.totalAmount },
+    });
+    assert.equal(f.records.get(`publicBookings/${result.bookingId}`).paymentStatus, 'PAID');
+});
+
+test('WINNER: checkout uses the buyer test contact and accepts a production paid callback amount', async () => {
+    const f = fixture();
+    const { error, result } = await f.book({
+        registrantId: 'winner', registrantName: 'Audit Winner',
+        userEmail: 'payment-test@example.invalid', userPhone: '080000000000',
+    });
+    assert.ifError(error);
+    assert.equal(f.invoices[0].user.email, 'payment-test@example.invalid');
+    assert.equal(f.invoices[0].user.phone, '080000000000');
+    const booking = f.records.get(`publicBookings/${result.bookingId}`);
+    await f.repo.handlePublicTicketWebhookPaid(result.bookingId, {
+        invoice: { id: booking.invoiceId, number: result.bookingId, status: 'paid', amount: booking.totalAmount, amount_due: 0 },
+        payment_info: { method: 'bank_transfer', channel: 'bni' },
+    });
+    assert.equal(f.records.get(`publicBookings/${result.bookingId}`).paymentStatus, 'PAID');
+});
+
+test('SAFETY: conflicting callback amount fields cannot mark a booking paid', async () => {
+    const f = fixture();
+    const { error, result } = await f.book();
+    assert.ifError(error);
+    await assert.rejects(f.repo.handlePublicTicketWebhookPaid(result.bookingId, {
+        invoice: { id: `invoice-${result.bookingId}`, status: 'paid', total_amount: 150000, amount: 1 },
+    }), /amount/i);
+    assert.equal(f.records.get(`publicBookings/${result.bookingId}`).paymentStatus, 'pending');
+});
+
 test('CONTROL: selected-seat checkout recalculates price and payment books its seat', async () => {
     const f = fixture(); f.seat();
     const { error, result } = await f.book({ selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
