@@ -590,6 +590,26 @@ const templates = {
         `;
     },
 
+    orchestraAssignment: (data) => `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>APCS Orchestra Session Confirmed</title>
+            <style>${commonCss}</style>
+        </head>
+        <body>
+            <div class="email-wrapper">
+                <div class="email-container">
+                    ${generateCommonHeader()}
+                    <div class="content">${data.assignmentDetails}</div>
+                    ${generateCommonFooter(data.copyrightText)}
+                </div>
+            </div>
+        </body>
+        </html>
+    `,
     publicBookingConfirmation: (data) => {
         return `
             <!DOCTYPE html>
@@ -653,7 +673,7 @@ const templates = {
         `;
     },
     PAYMENT_INFO_OPTIONS: (data) => ({
-        subject: `Payment Information – APCS Music Competition`,
+        subject: data.ticketBooking ? `APCS ticket booking ${data.paymentReferenceOverride} — payment instructions` : `Payment Information – APCS Music Competition`,
         html: `
             <!DOCTYPE html>
             <html>
@@ -677,15 +697,15 @@ const templates = {
                         ${generateCommonHeader()}
                         <div class="content">
                             <p>Dear <strong>${data.name}</strong>,</p>
-                            <p>We would like to share the payment information for your APCS Music Competition registration. You may choose one of the following payment methods:</p>
+                            <p>We would like to share the payment information for your APCS Music Competition ${data.ticketBooking ? 'ticket booking' : 'registration'}. You may choose one of the following payment methods:</p>
 
                             <div class="ref-box" style="margin-bottom: 20px; margin-top: 0;">
-                                <h3 style="margin-top: 0; margin-bottom: 15px; color: #333; border-bottom: 1px solid #adc6ff; padding-bottom: 5px;">Registration Details</h3>
+                                <h3 style="margin-top: 0; margin-bottom: 15px; color: #333; border-bottom: 1px solid #adc6ff; padding-bottom: 5px;">${data.ticketBooking ? 'Ticket Booking Details' : 'Registration Details'}</h3>
                                 <div><strong>Name:</strong> ${data.name}</div>
-                                <div><strong>Category:</strong> ${data.competitionCategory}</div>
+                                <div><strong>${data.ticketBooking ? 'Tickets' : 'Category'}:</strong> ${data.competitionCategory}</div>
                                 <div><strong>Amount:</strong> ${data.price}</div>
                                 <div style="margin-top: 15px;"><strong>Payment Reference:</strong> ${data.paymentReferenceOverride}</div>
-                                <div class="ref-example">Example: Jason Smith – Violin</div>
+                                <div class="ref-example">${data.ticketBooking ? 'Use this exact booking ID when contacting APCS about your payment.' : 'Example: Jason Smith – Violin'}</div>
                             </div>
 
                             <div class="payment-option">
@@ -694,7 +714,7 @@ const templates = {
                                 <div><strong>Account Name:</strong> Winarta Prawira</div>
                                 <div class="note-box">
                                     <strong>Please note:</strong><br>
-                                    As PayNow does not support payments in USD, the registration fee will be converted to SGD. Please contact our admin via whatsapp (<a href="https://wa.me/6282213002686" style="color: #1890ff; text-decoration: none;">+62822 - 1300 - 2686</a>) to confirm the applicable amount based on the daily exchange rate before making your payment.
+                                    ${data.ticketBooking ? 'Your ticket total is shown in IDR. Ask our admin for the SGD PayNow amount before paying.' : 'As PayNow does not support payments in USD, the registration fee will be converted to SGD.'} Please contact our admin via whatsapp (<a href="https://wa.me/6282213002686" style="color: #1890ff; text-decoration: none;">+62822 - 1300 - 2686</a>) to confirm the applicable amount based on the daily exchange rate before making your payment.
                                 </div>
                             </div>
 
@@ -714,7 +734,7 @@ const templates = {
 
 
                             <h3 style="color: #333; margin-top: 25px;">What's Next?</h3>
-                            <p>Once you have completed your payment, please reply to this email with your payment proof (transfer receipt) so we can verify your registration.</p>
+                            <p>Once you have completed your payment, please reply to this email with your payment proof (transfer receipt) so we can verify your ${data.ticketBooking ? 'ticket booking' : 'registration'}. ${data.ticketBooking ? 'Your booking remains pending until APCS confirms payment; its inventory stays reserved until staff confirms or cancels it.' : ''}</p>
                             <p>If you have any questions, please don't hesitate to contact us. We look forward to welcoming you to the APCS Music Competition!</p>
 
                             <p style="margin-top: 24px;">

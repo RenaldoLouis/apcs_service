@@ -5,6 +5,7 @@ const { logger } = require('../utils/Logger');
 const ADMIN_RELEASE_REASONS = new Set([
     'customer_declined',
     'no_response_after_one_hour',
+    'manual_payment_unpaid',
 ]);
 const ADMIN_NO_RESPONSE_WAIT_MS = 60 * 60 * 1000;
 
@@ -50,6 +51,16 @@ const releasePublicTicketBooking = async (bookingId, options = {}, actor = {}) =
             'BOOKING_ALREADY_RECONCILED',
         );
     }
+    const isManualBooking = booking.paymentMode === 'manual';
+    if (reason === 'manual_payment_unpaid' && !isManualBooking) {
+        throw adminReleaseError('This reason is only for manual-payment bookings.', 400, 'INVALID_RELEASE_REASON');
+    }
+    if (isManualBooking && reason !== 'manual_payment_unpaid') {
+        throw adminReleaseError('Select the manual-payment cancellation reason.', 400, 'INVALID_RELEASE_REASON');
+    }
+    if (isManualBooking && options.paymentNotReceivedConfirmed !== true) {
+        throw adminReleaseError('Confirm that staff checked payment and no payment was received.', 409, 'MANUAL_PAYMENT_NOT_VERIFIED');
+    }
 
     if (reason === 'no_response_after_one_hour') {
         const createdAt = booking.createdAt?.toDate ? booking.createdAt.toDate() : new Date(booking.createdAt);
@@ -65,7 +76,12 @@ const releasePublicTicketBooking = async (bookingId, options = {}, actor = {}) =
 
     const lifecycleField = paymentStatus === 'failed' ? 'checkoutFailure' : 'expiry';
     let invoiceCancellationStatus;
-    if (booking.invoiceId) {
+    if (isManualBooking) {
+        if (booking.invoiceId || booking.paymentUrl) {
+            throw adminReleaseError('Manual booking has an invoice reference. Reconcile before release.', 409, 'BOOKING_INVOICE_CHANGED');
+        }
+        invoiceCancellationStatus = 'manual_payment_not_received';
+    } else if (booking.invoiceId) {
         if (booking[lifecycleField]?.invoiceCancellationStatus !== 'canceled') {
             await PublicTicketFailureRepository.recordCancellationResult(bookingId, lifecycleField, 'pending');
             let canceled = false;
@@ -113,6 +129,7 @@ const releasePublicTicketBooking = async (bookingId, options = {}, actor = {}) =
         actor,
         expectedPaymentStatus: paymentStatus,
         expectedInvoiceId: booking.invoiceId || null,
+        expectedPaymentMode: isManualBooking ? 'manual' : null,
         expectedInvoiceCancellationStatus: booking.invoiceId ? 'canceled' : null,
     });
     if (!released) {

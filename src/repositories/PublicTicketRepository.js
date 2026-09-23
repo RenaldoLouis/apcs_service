@@ -23,9 +23,11 @@ const isMasterclassTicketId = ticketId => /master[ _-]?class/i.test(String(ticke
 const normalizedCheckoutFingerprint = ({
     eventId, registrantId, buyerName, userEmail, userPhone, venue, date, session,
     orchestraSessionId, tickets, selectedSeatIds, orchestraSelectedSeatIds, addOnIds,
+    bookingType, paymentMode, legacyRequest,
 }) => JSON.stringify({
     eventId,
     registrantId: registrantId || '',
+    ...(legacyRequest ? {} : { bookingType, paymentMode }),
     buyerName: String(buyerName || '').trim(),
     userEmail: String(userEmail || '').trim().toLowerCase(),
     userPhone: String(userPhone || '').trim(),
@@ -173,7 +175,7 @@ const getPublicTicketSeats = async (query, callback) => {
  */
 const createPublicTicketBooking = async (body, callback) => {
     const {
-        registrantName, buyerName, userEmail, userPhone,
+        buyerName, userEmail, userPhone,
         venue, date, session,
         orchestraSessionId,
         isOrchestra, isMasterclass,
@@ -183,6 +185,8 @@ const createPublicTicketBooking = async (body, callback) => {
         orchestraSeatLabels, // ['A1', 'A2', ...]
         addOnIds,     // ['merchandise', ...]
         registrantId, // ID of the winner who initiated this booking
+        bookingType: requestedBookingType,
+        manualPayment,
         idempotencyKey,
     } = body;
 
@@ -198,6 +202,16 @@ const createPublicTicketBooking = async (body, callback) => {
 
     try {
         let performerCount = 0;
+        let verifiedRegistrantName = '';
+        let bookingType = requestedBookingType || (registrantId ? 'winner' : 'public_legacy');
+        const paymentMode = manualPayment === true ? 'manual' : 'paper_id';
+        if (!['winner', 'public_competition', 'public_orchestra', 'public_legacy'].includes(bookingType)
+            || requestedBookingType === 'public_legacy') {
+            throw new Error('Invalid booking type.');
+        }
+        if (bookingType === 'public_competition' && !registrantId) throw new Error('Select a performance.');
+        if (bookingType === 'winner' && !registrantId) throw new Error('Select a winner.');
+        if (bookingType === 'public_orchestra' && registrantId) throw new Error('Direct orchestra booking cannot select a performance.');
         // --- 2. Fetch authoritative pricing from Firestore ---
         const eventId = await getCurrentEventId();
         const eventRef = db.collection('events').doc(eventId);
@@ -208,25 +222,31 @@ const createPublicTicketBooking = async (body, callback) => {
         const eventData = eventSnap.data();
         const allowedTiers = await getTodayAllowedTiers();
 
-        if (!registrantId && allowedTiers && !allowedTiers.includes('Public')) {
+        if (bookingType !== 'winner' && allowedTiers && !allowedTiers.includes('Public')) {
             throw new Error('Public ticket sales are closed today.');
         }
+        const registrantRef = registrantId ? db.collection('Registrants2025').doc(registrantId) : null;
+        const assignmentRef = registrantId ? db.collection('sessionAssignments').doc(eventId) : null;
         if (registrantId) {
-            const regDoc = await db.collection('Registrants2025').doc(registrantId).get();
+            const regDoc = await registrantRef.get();
             if (!regDoc.exists || regDoc.data().eventId !== eventId) {
                 throw new Error('Registrant not found for this event.');
             }
             const registration = regDoc.data();
+            verifiedRegistrantName = (registration.performers || []).map(performer =>
+                typeof performer === 'string' ? performer.trim()
+                    : (performer?.fullName || `${performer?.firstName || ''} ${performer?.lastName || ''}`.trim() || performer?.name || '').trim()
+            ).filter(Boolean).join(', ') || String(registration.name || '').trim();
             // Count registered performers, never the client-provided name/count.
-            performerCount = Math.max(1, (registration.performers || []).length);
+            performerCount = bookingType === 'winner' ? Math.max(1, (registration.performers || []).length) : 0;
             const award = registration.finalAward || '';
             if (!award || award === 'Fail' || award === 'N/A') {
                 throw new Error('Registrant is not eligible for winner ticket benefits.');
             }
-            if (allowedTiers && !allowedTiers.includes(award)) {
+            if (bookingType === 'winner' && allowedTiers && !allowedTiers.includes(award)) {
                 throw new Error(`Registrants with ${award} award are not eligible to purchase tickets today.`);
             }
-            const assignmentDoc = await db.collection('sessionAssignments').doc(eventId).get();
+            const assignmentDoc = await assignmentRef.get();
             const assignmentKey = `${venue}_${date}_${session}`;
             const assigned = assignmentDoc.exists
                 && (assignmentDoc.data().assignments?.[assignmentKey] || []).some(entry => entry.registrantId === registrantId);
@@ -251,8 +271,12 @@ const createPublicTicketBooking = async (body, callback) => {
         const authoritativeSession = getAuthoritativeSessionType(eventData, venue, date, session);
         const isAuthoritativeMasterclass = authoritativeSession.type === 'masterclass';
         const isAuthoritativeOrchestra = authoritativeSession.type === 'orchestra';
+        if (bookingType === 'public_legacy') {
+            bookingType = isAuthoritativeOrchestra ? 'public_orchestra' : 'public_competition_legacy';
+        }
         if (isAuthoritativeMasterclass) throw new Error('Masterclass ticketing is managed outside this system.');
-        if (registrantId && isAuthoritativeOrchestra) throw new Error('Winner purchases must use their assigned competition session.');
+        if (bookingType === 'public_orchestra' && !isAuthoritativeOrchestra) throw new Error('Choose an orchestra session.');
+        if (bookingType !== 'public_orchestra' && isAuthoritativeOrchestra) throw new Error('Performance purchases must use the assigned competition session.');
         if (orchestraSessionId || (orchestraSelectedSeatIds || []).length || (orchestraSeatLabels || []).length) {
             throw new Error('Orchestra sessions are assigned by staff after payment; orchestra seats cannot be selected.');
         }
@@ -275,7 +299,6 @@ const createPublicTicketBooking = async (body, callback) => {
         const lineItems = [];
 
         // Verify expected seat count vs paid tickets
-        const isWinner = !!registrantId;
         const totalSelected = (selectedSeatIds || []).length;
         const allSelectedIds = [...(selectedSeatIds || []), ...(orchestraSelectedSeatIds || [])];
         if (new Set(allSelectedIds).size !== allSelectedIds.length) {
@@ -292,8 +315,11 @@ const createPublicTicketBooking = async (body, callback) => {
             return acc;
         }, {});
         if (!ticketsQty) throw new Error('At least one ticket is required.');
-        if (isAuthoritativeOrchestra && Object.keys(ticketQuantities).some(id => !['presto', 'allegro'].includes(id))) {
-            throw new Error('Public orchestra tickets must be Presto or Allegro.');
+        if (bookingType !== 'winner' && Object.keys(ticketQuantities).some(id => !['presto', 'allegro'].includes(id))) {
+            throw new Error('Public tickets must be Presto or Allegro.');
+        }
+        if (bookingType === 'public_competition' && (addOnIds || []).length) {
+            throw new Error('Public performance tickets cannot include add-ons.');
         }
         const containsMasterclassTicket = Object.keys(ticketQuantities).some(id => isMasterclassTicketId(id) || /master[ _-]?class/i.test((eventData.ticketTiers || []).find(tier => tier.id === id)?.name || ''));
         if (containsMasterclassTicket) throw new Error('Ticket tier does not match the selected session type.');
@@ -341,7 +367,7 @@ const createPublicTicketBooking = async (body, callback) => {
         bookingRef = db.collection('publicBookings').doc();
         const bookingId = bookingRef.id;
         const lockedAt = admin.firestore.FieldValue.serverTimestamp();
-        const lockExpiresAt = new Date(Date.now() + LOCK_DURATION_MS);
+        const lockExpiresAt = paymentMode === 'paper_id' ? new Date(Date.now() + LOCK_DURATION_MS) : null;
         const normalizedIdempotencyKey = String(idempotencyKey || '').trim();
         if (normalizedIdempotencyKey.length > 200) throw new Error('Invalid checkout idempotency key.');
         const idempotencyRef = normalizedIdempotencyKey
@@ -353,7 +379,8 @@ const createPublicTicketBooking = async (body, callback) => {
         const checkoutFingerprint = normalizedCheckoutFingerprint({
             eventId, registrantId, buyerName, userEmail, userPhone, venue, date, session,
             orchestraSessionId, tickets: ticketQuantities, selectedSeatIds,
-            orchestraSelectedSeatIds, addOnIds,
+            orchestraSelectedSeatIds, addOnIds, bookingType, paymentMode,
+            legacyRequest: !requestedBookingType && manualPayment !== true,
         });
 
         const transactionResult = await db.runTransaction(async (transaction) => {
@@ -378,6 +405,8 @@ const createPublicTicketBooking = async (body, callback) => {
                         paymentUrl: existingBooking.paymentStatus === 'pending'
                             ? existingBooking.paymentUrl || null : null,
                         paymentStatus: existingBooking.paymentStatus,
+                        paymentMode: existingBooking.paymentMode || 'paper_id',
+                        totalAmount: existingBooking.totalAmount,
                         lockExpiresAt: existingBooking.lockExpiresAt?.toDate
                             ? existingBooking.lockExpiresAt.toDate().toISOString()
                             : existingBooking.lockExpiresAt || null,
@@ -386,6 +415,8 @@ const createPublicTicketBooking = async (body, callback) => {
                 throw new Error('Checkout idempotency record is incomplete and requires reconciliation.');
             }
             const currentEventDoc = await transaction.get(eventRef);
+            const currentRegistrantDoc = registrantRef ? await transaction.get(registrantRef) : null;
+            const currentAssignmentDoc = assignmentRef ? await transaction.get(assignmentRef) : null;
             const capacitySnap = capacityRef ? await transaction.get(capacityRef) : null;
             // Existing events may predate the transactional capacity record. Read historical bookings
             // only during that one-time migration; all later checkout requests use the counter record.
@@ -425,6 +456,20 @@ const createPublicTicketBooking = async (body, callback) => {
             // --- VALIDATION & WRITE PREP PHASE ---
             
             if (!currentEventDoc.exists) throw new Error('Event no longer exists.');
+            if (registrantId) {
+                const currentRegistration = currentRegistrantDoc?.exists ? currentRegistrantDoc.data() : null;
+                const currentAward = currentRegistration?.finalAward || '';
+                const assignmentKey = `${venue}_${date}_${session}`;
+                const stillAssigned = currentAssignmentDoc?.exists
+                    && (currentAssignmentDoc.data().assignments?.[assignmentKey] || [])
+                        .some(entry => entry.registrantId === registrantId);
+                if (!currentRegistration || currentRegistration.eventId !== eventId || !stillAssigned
+                    || !currentAward || ['Fail', 'N/A'].includes(currentAward)
+                    || (bookingType === 'winner' && allowedTiers && !allowedTiers.includes(currentAward))
+                    || (bookingType === 'winner' && Math.max(1, (currentRegistration.performers || []).length) !== performerCount)) {
+                    throw new Error('Performance assignment or eligibility changed. Please refresh checkout.');
+                }
+            }
             const currentEventData = currentEventDoc.data();
             const currentSessionType = getAuthoritativeSessionType(currentEventData, venue, date, session);
             if (currentSessionType.type !== authoritativeSession.type || currentSessionType.session?.id !== authoritativeSession.session?.id) {
@@ -434,7 +479,7 @@ const createPublicTicketBooking = async (body, callback) => {
             if (!currentVenue || !(currentVenue.sessions?.[date] || []).includes(session)) {
                 throw new Error('Selected venue session is unavailable.');
             }
-            const paidOrchestraSession = !isWinner && authoritativeSession.type === 'orchestra'
+            const paidOrchestraSession = bookingType === 'public_orchestra' && authoritativeSession.type === 'orchestra'
                 ? (currentEventData.orchestraSessions || []).find(item => item.id === authoritativeSession.session.id) : null;
             const capacityCounts = getPaidCapacityByTier(currentVenue);
             const retainsCapacity = booking => booking.paymentStatus === 'pending'
@@ -536,10 +581,12 @@ const createPublicTicketBooking = async (body, callback) => {
                 ticketingVersion: 2,
                 venueName: venueMap[venue],
                 performerCount,
-                orchestraAttendanceTickets: isWinner ? ticketsQty : 0,
+                orchestraAttendanceTickets: ['public_orchestra', 'public_competition_legacy'].includes(bookingType) ? 0 : ticketsQty,
+                bookingType,
+                paymentMode,
                 seatingMode: isAuthoritativeOrchestra ? 'free' : 'numbered',
                 registrantId: registrantId || '',
-                registrantName: registrantName || '',
+                registrantName: verifiedRegistrantName,
                 buyerName,
                 userName: buyerName, // For backwards compatibility
                 userEmail,
@@ -578,63 +625,69 @@ const createPublicTicketBooking = async (body, callback) => {
 
         if (transactionResult.existingBooking) {
             response = transactionResult;
-            return callback(null, response);
-        }
+        } else {
+            logger.info(`Public booking ${bookingId} created. Seats locked: ${(selectedSeatIds || []).join(', ')}`);
 
-        logger.info(`Public booking ${bookingId} created. Seats locked: ${(selectedSeatIds || []).join(', ')}`);
+            if (paymentMode === 'manual') {
+                response = { bookingId, paymentMode, paymentStatus: 'pending', totalAmount, lockExpiresAt: null };
+            } else {
 
-        // --- 5. Create Paper.id invoice ---
-        // Format deadline string for display in invoice notes
-        const deadlineStr = lockExpiresAt.toLocaleString('id-ID', {
-            timeZone: 'Asia/Jakarta',
-            day: '2-digit', month: 'long', year: 'numeric',
-            hour: '2-digit', minute: '2-digit',
-        }) + ' WIB (UTC+7)';
+                // --- 5. Create Paper.id invoice ---
+                // Format deadline string for display in invoice notes
+                const deadlineStr = lockExpiresAt.toLocaleString('id-ID', {
+                    timeZone: 'Asia/Jakarta',
+                    day: '2-digit', month: 'long', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit',
+                }) + ' WIB (UTC+7)';
 
-        const invoiceBody = {
-            externalId: bookingId,
-            user: {
-                name: buyerName,
-                email: userEmail,
-                phone: userPhone.replace('+', ''),
-            },
-            items: lineItems,
-            notes: `Buyer: ${buyerName}${registrantName ? ` | Paying for: ${registrantName}` : ''}\n\nPlease complete payment before ${deadlineStr}. After this local deadline, APCS will request invoice cancellation; seats remain held until Paper.id confirms payment or cancellation.`,
-        };
+                const invoiceBody = {
+                    externalId: bookingId,
+                    user: {
+                        name: buyerName,
+                        email: userEmail,
+                        phone: userPhone.replace('+', ''),
+                    },
+                    items: lineItems,
+                    notes: `Buyer: ${buyerName}${verifiedRegistrantName ? ` | Performance: ${verifiedRegistrantName}` : ''}\n\nPlease complete payment before ${deadlineStr}. After this local deadline, APCS will request invoice cancellation; seats remain held until Paper.id confirms payment or cancellation.`,
+                };
 
-        // Use PaperRepository directly (same pattern it already uses)
-        invoiceCreationAttempted = true;
-        const paperResult = await new Promise((resolve, reject) => {
-            Promise.resolve(PaperRepository.createInvoice(invoiceBody, (err, result) => {
-                invoiceId = result?.invoiceId || err?.invoiceId || invoiceId;
-                if (err) reject(err);
-                else resolve(result);
-            })).catch(error => {
-                invoiceId = error?.invoiceId || invoiceId;
-                reject(error);
-            });
-        });
-        // Store the invoiceId on the booking
-        await bookingRef.update({
-            invoiceId: paperResult.invoiceId,
-            paymentUrl: paperResult.paymentUrl,
-            invoiceCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+                // Use PaperRepository directly (same pattern it already uses)
+                invoiceCreationAttempted = true;
+                const paperResult = await new Promise((resolve, reject) => {
+                    Promise.resolve(PaperRepository.createInvoice(invoiceBody, (err, result) => {
+                        invoiceId = result?.invoiceId || err?.invoiceId || invoiceId;
+                        if (err) reject(err);
+                        else resolve(result);
+                    })).catch(error => {
+                        invoiceId = error?.invoiceId || invoiceId;
+                        reject(error);
+                    });
+                });
+                // Store the invoiceId on the booking
+                await bookingRef.update({
+                    invoiceId: paperResult.invoiceId,
+                    paymentUrl: paperResult.paymentUrl,
+                    invoiceCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
 
-        // A local deadline requests cancellation; inventory remains locked until Paper confirms it.
-        setTimeout(async () => {
-            try {
-                await expirePublicTicketBooking(bookingId);
-            } catch (timeoutErr) {
-                logger.error(`Error in expiry timeout for booking ${bookingId}: ${timeoutErr.message}`);
+                // A local deadline requests cancellation; inventory remains locked until Paper confirms it.
+                setTimeout(async () => {
+                    try {
+                        await expirePublicTicketBooking(bookingId);
+                    } catch (timeoutErr) {
+                        logger.error(`Error in expiry timeout for booking ${bookingId}: ${timeoutErr.message}`);
+                    }
+                }, LOCK_DURATION_MS + 2000); // add 2s buffer to ensure it is fully expired
+
+                response = {
+                    bookingId,
+                    paymentUrl: paperResult.paymentUrl,
+                    paymentMode,
+                    totalAmount,
+                    lockExpiresAt: lockExpiresAt.toISOString(),
+                };
             }
-        }, LOCK_DURATION_MS + 2000); // add 2s buffer to ensure it is fully expired
-
-        response = {
-            bookingId,
-            paymentUrl: paperResult.paymentUrl,
-            lockExpiresAt: lockExpiresAt.toISOString(),
-        };
+        }
 
     } catch (error) {
         logger.error(`createPublicTicketBooking failed: ${error.message}`);
@@ -734,6 +787,77 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
     return { id: bookingId, ...bookingData };
 };
 
+const markManualBookingPaid = async (bookingId, actor) => {
+    const bookingRef = db.collection('publicBookings').doc(bookingId);
+    return db.runTransaction(async transaction => {
+        const snapshot = await transaction.get(bookingRef);
+        if (!snapshot.exists) throw new Error('Booking not found.');
+        const booking = snapshot.data();
+        if (booking.paymentMode !== 'manual' || booking.invoiceId || booking.paymentUrl) {
+            throw new Error('This booking does not use manual payment.');
+        }
+        if (booking.paymentStatus === 'PAID' || booking.paymentStatus === 'paid') {
+            return { id: bookingId, ...booking, alreadyPaid: true };
+        }
+        if (booking.paymentStatus !== 'pending') throw new Error('Only a pending booking can be marked paid.');
+        if (!booking.eventId || !Number.isFinite(Number(booking.totalAmount))) {
+            throw new Error('Booking payment details need reconciliation.');
+        }
+
+        const capacityId = booking.capacityReservation?.capacityId;
+        if (!capacityId) throw new Error('Booking capacity reservation is missing.');
+        const capacityRef = db.collection(CAPACITY_COLLECTION).doc(capacityId);
+        const capacitySnap = await transaction.get(capacityRef);
+        if (!capacitySnap.exists) throw new Error('Booking capacity reservation needs reconciliation.');
+        for (const [tier, quantity] of Object.entries(booking.capacityReservation.byTier || {})) {
+            if (Number(capacitySnap.data().reservedByTier?.[tier] || 0) < Number(quantity)) {
+                throw new Error(`Booking ${tier} capacity needs reconciliation.`);
+            }
+        }
+
+        const seatIds = [...new Set([...(booking.selectedSeatIds || []), ...(booking.orchestraSelectedSeatIds || [])])];
+        if (seatIds.length !== (booking.physicalSeatKeys || []).length) {
+            throw new Error('Booking seat ownership needs reconciliation.');
+        }
+        const seatRefs = seatIds.map(id => db.collection(`seats${booking.eventId}`).doc(id));
+        const seats = seatRefs.length ? await transaction.getAll(...seatRefs) : [];
+        const ownershipRefs = (booking.physicalSeatKeys || []).map(key =>
+            db.collection(SEAT_OWNERSHIP_COLLECTION).doc(safeDocumentId(key)));
+        const ownership = ownershipRefs.length ? await transaction.getAll(...ownershipRefs) : [];
+        for (let index = 0; index < seats.length; index++) {
+            const seat = seats[index];
+            const owner = ownership[index];
+            if (!seat.exists || seat.data().status !== 'locked' || seat.data().lockedByBookingId !== bookingId
+                || physicalSeatKey(booking.eventId, seat.data()) !== booking.physicalSeatKeys[index]
+                || !owner?.exists || owner.data().bookingId !== bookingId || owner.data().active === false) {
+                throw new Error('Booking seat ownership needs reconciliation.');
+            }
+        }
+
+        for (let index = 0; index < seats.length; index++) {
+            transaction.update(seats[index].ref, {
+                status: 'booked', bookingId,
+                lockedAt: admin.firestore.FieldValue.delete(),
+                lockedByBookingId: admin.firestore.FieldValue.delete(),
+                assignedTo: {
+                    userName: booking.userName || '', userEmail: booking.userEmail || '',
+                    registrantName: booking.registrantName || '',
+                },
+            });
+            transaction.update(ownership[index].ref, {
+                status: 'booked', active: true, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        }
+        transaction.update(bookingRef, {
+            paymentStatus: 'PAID', paidAt: admin.firestore.FieldValue.serverTimestamp(),
+            amountPaid: Number(booking.totalAmount),
+            manualPaymentConfirmedBy: { uid: actor.uid || '', email: actor.email || '' },
+            manualPaymentConfirmedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { id: bookingId, ...booking, paymentStatus: 'PAID', alreadyPaid: false };
+    });
+};
+
 /**
  * Returns the list of eligible winners who can purchase tickets today.
  * Joins sessionAssignments + Registrants2025 + systemSettings (date-based schedule).
@@ -741,7 +865,7 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
  *   (a) are assigned to a session in SessionAssignmentManager
  *   (b) have a finalAward matching today's allowed tiers (or all if no schedule)
  */
-const getEligibleWinners = async (_query, callback) => {
+const getEligibleWinners = async (query, callback) => {
     try {
         const eventId = await getCurrentEventId();
         const allowedTiers = await getTodayAllowedTiers();
@@ -791,10 +915,11 @@ const getEligibleWinners = async (_query, callback) => {
 
             snap.docs.forEach(doc => {
                 const data = doc.data();
+                if (data.eventId !== eventId) return;
                 const award = data.finalAward || '';
 
                 // Filter by allowed tiers if eligibility is enabled
-                if (allowedTiers && !allowedTiers.includes(award)) {
+                if (query?.buyerType !== 'public' && allowedTiers && !allowedTiers.includes(award)) {
                     return; // skip
                 }
 
@@ -825,7 +950,7 @@ const getEligibleWinners = async (_query, callback) => {
                 winners.push({
                     registrantId: doc.id,
                     name: defaultName,
-                    email,
+                    email: query?.buyerType === 'public' ? '' : email,
                     finalAward: award,
                     competitionCategory: data.competitionCategory || '',
                     performanceCategory: data.PerformanceCategory || '',
@@ -857,4 +982,5 @@ module.exports = {
     handlePublicTicketWebhookPaid,
     getPublicTicketSeats,
     getEligibleWinners,
+    markManualBookingPaid,
 };

@@ -56,6 +56,12 @@ const releaseBookingInventory = async (bookingId, terminalStatus, updateBooking,
             if ((booking.invoiceId || null) !== options.expectedInvoiceId) {
                 throw reconciliationError('Booking invoice changed before inventory release.', 'BOOKING_INVOICE_CHANGED');
             }
+            if (options.expectedPaymentMode && booking.paymentMode !== options.expectedPaymentMode) {
+                throw reconciliationError('Booking payment mode changed before inventory release.', 'BOOKING_PAYMENT_MODE_CHANGED');
+            }
+            if (options.expectedPaymentMode === 'manual' && booking.paymentUrl) {
+                throw reconciliationError('Manual booking has an invoice link.', 'BOOKING_INVOICE_CHANGED');
+            }
             if (options.expectedInvoiceCancellationStatus
                 && booking[options.lifecycleField]?.invoiceCancellationStatus
                     !== options.expectedInvoiceCancellationStatus) {
@@ -236,6 +242,7 @@ const releaseAdminBookingInventory = async (bookingId, options) => releaseBookin
         requireCompleteReconciliation: true,
         expectedPaymentStatus: options.expectedPaymentStatus,
         expectedInvoiceId: options.expectedInvoiceId,
+        expectedPaymentMode: options.expectedPaymentMode,
         expectedInvoiceCancellationStatus: options.expectedInvoiceCancellationStatus,
         lifecycleField: options.lifecycleField,
     },

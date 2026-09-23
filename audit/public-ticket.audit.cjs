@@ -841,3 +841,70 @@ test('ADMIN RELEASE: a late invoice ID prevents a manually confirmed release', a
     );
     assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
 });
+
+test('MANUAL PAYMENT: checkout reserves seats without an invoice or expiry and staff confirms owned inventory once', async () => {
+    const f = fixture(); f.seat();
+    const request = {
+        bookingType: 'winner', registrantId: 'winner', manualPayment: true,
+        idempotencyKey: 'manual-winner-1', selectedSeatIds: ['seat-1'],
+        addOnIds: ['seat_selection_performer'],
+    };
+    const first = await f.book(request);
+    assert.ifError(first.error);
+    assert.equal(f.invoices.length, 0);
+    assert.equal(f.timers.length, 0);
+    const booking = f.records.get(`publicBookings/${first.result.bookingId}`);
+    assert.equal(booking.paymentMode, 'manual');
+    assert.equal(booking.lockExpiresAt, null);
+    assert.equal(booking.invoiceId, undefined);
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
+    const retry = await f.book(request);
+    assert.ifError(retry.error);
+    assert.equal(retry.result.bookingId, first.result.bookingId);
+    const paid = await f.repo.markManualBookingPaid(first.result.bookingId, { uid: 'admin-1', email: 'admin@example.invalid' });
+    assert.equal(paid.paymentStatus, 'PAID');
+    assert.equal(f.records.get(`publicBookings/${first.result.bookingId}`).paymentStatus, 'PAID');
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'booked');
+    assert.equal((await f.repo.markManualBookingPaid(first.result.bookingId, { uid: 'admin-1' })).alreadyPaid, true);
+});
+
+test('MANUAL PAYMENT: staff cancellation releases only an explicitly unpaid manual booking', async () => {
+    const f = fixture();
+    const order = await f.book({
+        bookingType: 'public_competition', registrantId: 'winner', manualPayment: true,
+        tickets: [{ id: 'presto', name: 'Presto', quantity: 5 }],
+    });
+    assert.ifError(order.error);
+    const id = order.result.bookingId;
+    const service = f.load('src/services/PublicTicketAdminReleaseService.js');
+    await assert.rejects(service.releasePublicTicketBooking(id, {
+        reason: 'manual_payment_unpaid', paymentNotReceivedConfirmed: false,
+    }, { uid: 'admin-1' }), /Confirm that staff checked payment/);
+    const result = await service.releasePublicTicketBooking(id, {
+        reason: 'manual_payment_unpaid', paymentNotReceivedConfirmed: true,
+    }, { uid: 'admin-1', email: 'admin@example.invalid' });
+    assert.equal(result.released, true);
+    assert.equal(f.records.get(`publicBookings/${id}`).paymentStatus, 'expired');
+    assert.equal(f.records.get(`publicBookings/${id}`).adminRelease.reason, 'manual_payment_unpaid');
+    const capacity = [...f.records.entries()].find(([key]) => key.startsWith('ticketCapacity/'))[1];
+    assert.equal(capacity.reservedByTier.presto, 0);
+    assert.equal(f.invoices.length, 0);
+});
+
+test('PUBLIC PERFORMANCE: public sale remains available when the winner purchase tier is closed', async () => {
+    const f = fixture();
+    f.records.get('systemSettings/global').ticketEligibility = {
+        enabled: true,
+        schedule: [{ date: '2026-09-06', allowedTiers: ['Public'] }],
+    };
+    const publicOrder = await f.book({ bookingType: 'public_competition', registrantId: 'winner' });
+    assert.ifError(publicOrder.error);
+    assert.equal(f.records.get(`publicBookings/${publicOrder.result.bookingId}`).orchestraAttendanceTickets, 1);
+    const winnerOrder = await f.book({ bookingType: 'winner', registrantId: 'winner' });
+    assert.match(winnerOrder.error.message, /not eligible to purchase tickets today/);
+    const publicList = await new Promise((resolve, reject) => {
+        f.repo.getEligibleWinners({ buyerType: 'public' }, (error, result) => error ? reject(error) : resolve(result));
+    });
+    assert.equal(publicList.winners.length, 1);
+    assert.equal(publicList.winners[0].email, '');
+});

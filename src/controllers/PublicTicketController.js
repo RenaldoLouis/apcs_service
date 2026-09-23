@@ -1,5 +1,7 @@
 const PublicTicketService = require('../services/PublicTicketService');
 const PublicTicketAdminReleaseService = require('../services/PublicTicketAdminReleaseService');
+const PublicTicketRepository = require('../repositories/PublicTicketRepository');
+const { db } = require('../configs/firebase-init');
 const emailService = require('../services/EmailService');
 const { logger } = require('../utils/Logger');
 
@@ -31,6 +33,7 @@ async function getBookingStatus(req, res, next) {
         // Return only safe polling data
         return res.status(200).json({
             paymentStatus: data.paymentStatus,
+            paymentMode: data.paymentMode || 'paper_id',
             paymentUrl: data.paymentUrl,
             lockExpiresAt: data.lockExpiresAt ? data.lockExpiresAt.toDate().toISOString() : null
         });
@@ -45,39 +48,93 @@ async function createPublicTicketBooking(req, res, next) {
         const data = await PublicTicketService.createPublicTicketBooking(req);
         // data = { bookingId, paymentUrl, lockExpiresAt }
 
-        // Resolve dynamic venue label
-        let resolvedVenueLabel = req.body.venue;
-        try {
-            const eventData = await PublicTicketService.getPublicTicketEventData();
-            if (eventData && eventData.venues) {
-                const venueObj = eventData.venues.find(v => v.id === req.body.venue);
-                if (venueObj) resolvedVenueLabel = venueObj.label;
+        if (data.paymentMode === 'manual') {
+            const bookingRef = db.collection('publicBookings').doc(data.bookingId);
+            const snapshot = await bookingRef.get();
+            if (!snapshot.exists) throw new Error('Manual booking could not be loaded after checkout.');
+            try {
+                await emailService.sendManualTicketPaymentInstructions({ id: snapshot.id, ...snapshot.data() });
+                await bookingRef.update({ manualInstructionsEmailSent: true });
+            } catch (emailErr) {
+                logger.error(`Manual payment email failed for ${data.bookingId}: ${emailErr.message}`);
+                await bookingRef.update({ manualInstructionsEmailSent: false });
+                return res.status(503).json({
+                    bookingId: data.bookingId,
+                    message: `Booking ${data.bookingId} is reserved, but payment instructions could not be emailed. Retry or contact APCS with this booking ID.`,
+                });
             }
-        } catch (e) {
-            logger.warn(`Could not fetch dynamic venue label: ${e.message}`);
+            return res.status(201).json(data);
         }
+
+        const bookingSnap = await db.collection('publicBookings').doc(data.bookingId).get();
+        if (!bookingSnap.exists) throw new Error('Booking could not be loaded after checkout.');
+        const booking = bookingSnap.data();
 
         // Send "seats locked" holding email
         try {
             await emailService.sendPublicSeatHoldEmail({
-                to: req.body.userEmail,
-                name: req.body.buyerName,
-                registrantName: req.body.registrantName,
-                venueName: resolvedVenueLabel,
-                date: req.body.date,
-                session: req.body.session,
+                to: booking.userEmail,
+                name: booking.buyerName,
+                registrantName: booking.registrantName,
+                venueName: booking.venueName || booking.venue,
+                date: booking.date,
+                session: booking.session,
                 paymentUrl: data.paymentUrl,
                 lockExpiresAt: data.lockExpiresAt,
-                totalAmount: req.body.totalAmount, // display only; server re-calculated
+                totalAmount: booking.totalAmount,
             });
         } catch (emailErr) {
             // Non-fatal: don't fail the booking if email fails
-            logger.error(`Seat-hold email failed for ${req.body.userEmail}: ${emailErr.message}`);
+            logger.error(`Seat-hold email failed for ${booking.userEmail}: ${emailErr.message}`);
         }
 
         res.status(201).json(data);
     } catch (err) {
         next(err);
+    }
+}
+
+/** POST /api/v1/apcs/public-ticket/admin/mark-manual-paid */
+async function markManualBookingPaid(req, res, next) {
+    try {
+        const bookingId = String(req.body?.bookingId || '').trim();
+        if (!bookingId) return res.status(400).json({ message: 'bookingId is required' });
+        const booking = await PublicTicketRepository.markManualBookingPaid(bookingId, req.ticketingAdmin);
+        let emailSent = Boolean(booking.emailSent);
+        if (!booking.alreadyPaid) {
+            try {
+                await emailService.sendPublicBookingConfirmationEmail(booking);
+                await db.collection('publicBookings').doc(bookingId).update({ emailSent: true });
+                emailSent = true;
+            } catch (emailErr) {
+                logger.error(`Manual payment confirmation email failed for ${bookingId}: ${emailErr.message}`);
+                await db.collection('publicBookings').doc(bookingId).update({ emailSent: false });
+                emailSent = false;
+            }
+        }
+        return res.status(200).json({ bookingId, paymentStatus: 'PAID', emailSent });
+    } catch (err) {
+        return next(err);
+    }
+}
+
+async function resendManualPaymentInstructions(req, res, next) {
+    try {
+        const bookingId = String(req.body?.bookingId || '').trim();
+        if (!bookingId) return res.status(400).json({ message: 'bookingId is required' });
+        const bookingRef = db.collection('publicBookings').doc(bookingId);
+        const snapshot = await bookingRef.get();
+        if (!snapshot.exists) return res.status(404).json({ message: 'Booking not found' });
+        const booking = snapshot.data();
+        if (booking.paymentMode !== 'manual' || booking.paymentStatus !== 'pending'
+            || booking.invoiceId || booking.paymentUrl) {
+            return res.status(409).json({ message: 'Only pending manual bookings can receive these instructions.' });
+        }
+        await emailService.sendManualTicketPaymentInstructions({ id: bookingId, ...booking });
+        await bookingRef.update({ manualInstructionsEmailSent: true });
+        return res.status(200).json({ bookingId, sent: true });
+    } catch (err) {
+        return next(err);
     }
 }
 
@@ -174,12 +231,12 @@ async function resendPublicTicketEmail(req, res, next) {
 /** POST /api/v1/apcs/public-ticket/admin/release-booking */
 async function releasePublicTicketBooking(req, res, next) {
     try {
-        const { bookingId, reason, note, manualProviderConfirmation } = req.body || {};
+        const { bookingId, reason, note, manualProviderConfirmation, paymentNotReceivedConfirmed } = req.body || {};
         if (!bookingId) return res.status(400).json({ message: 'bookingId is required' });
 
         const result = await PublicTicketAdminReleaseService.releasePublicTicketBooking(
             bookingId,
-            { reason, note, manualProviderConfirmation },
+            { reason, note, manualProviderConfirmation, paymentNotReceivedConfirmed },
             req.ticketingAdmin,
         );
         return res.status(200).json(result);
@@ -197,4 +254,6 @@ module.exports = {
     getBookingStatus,
     resendPublicTicketEmail,
     releasePublicTicketBooking,
+    markManualBookingPaid,
+    resendManualPaymentInstructions,
 };

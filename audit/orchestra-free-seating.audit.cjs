@@ -35,6 +35,37 @@ test('ORCHESTRA: ensemble purchases 3 + 2 count all four members once = 9', asyn
     assert.equal([...f.records.keys()].filter(key => key.startsWith('winnerOrchestraClaims/')).length, 0);
 });
 
+test('ORCHESTRA: five public competition tickets add five places; winner purchase adds performer roster once', async () => {
+    const f = fixture();
+    f.records.get('Registrants2025/winner').performers = [1, 2, 3].map(index => ({ fullName: `Member ${index}` }));
+    const publicOrder = await f.book({
+        bookingType: 'public_competition', registrantId: 'winner',
+        tickets: [{ id: 'presto', name: 'Presto', quantity: 5 }],
+    });
+    assert.ifError(publicOrder.error);
+    const publicBooking = f.records.get(`publicBookings/${publicOrder.result.bookingId}`);
+    assert.equal(publicBooking.performerCount, 0);
+    assert.equal(publicBooking.orchestraAttendanceTickets, 5);
+    await f.repo.handlePublicTicketWebhookPaid(publicOrder.result.bookingId, {
+        invoice: { id: publicBooking.invoiceId, total_amount: publicBooking.totalAmount },
+    });
+    const repository = repo(f);
+    const publicOnly = await repository.readGroup('APCS2026', 'winner');
+    assert.equal(publicOnly.publicTicketCount, 5);
+    assert.equal(publicOnly.performerCount, 0);
+    assert.equal(publicOnly.quantity, 5);
+    await repository.assignGroup(request, actor);
+    await purchase(f, 2);
+    const mixed = await repository.readGroup('APCS2026', 'winner');
+    assert.equal(mixed.publicTicketCount, 5);
+    assert.equal(mixed.winnerTicketCount, 2);
+    assert.equal(mixed.performerCount, 3);
+    assert.equal(mixed.quantity, 10);
+    const updated = await repository.assignGroup(request, actor);
+    assert.equal(updated.assignment.quantity, 10);
+    assert.equal(updated.assignment.bookingIds.length, 2);
+});
+
 test('ORCHESTRA: pending and failed purchases never consume performer places', async () => {
     const f = fixture(); ensemble(f);
     const pendingId = await purchase(f, 3, false);
@@ -169,6 +200,13 @@ test('ORCHESTRA: email shows pending or named venue/session, group count and esc
     const assignment = { bookingIds: ['b1'], venueName: 'Titan Theatre', date: '2026-11-15', time: '15:30-17:30', paidTicketCount: 5, performerCount: 4, quantity: 9 };
     const html = assignmentEmail(booking, assignment);
     assert.match(html, /Titan Theatre/); assert.match(html, /2026-11-15/); assert.match(html, /9 attendees/); assert.match(html, /&lt;script&gt;/);
+    assert.match(html, /<!DOCTYPE html>/);
+    assert.match(html, /class="email-container"/);
+    assert.match(html, /alt="APCS Logo"/);
+    assert.match(html, /class="footer"/);
+    assert.match(html, new RegExp(`&copy; ${new Date().getFullYear()} APCS Music`));
+    assert.doesNotMatch(html, /Orkestra|Pesanan|Penampil|Tunjukkan|Tempat duduk/);
+    assert.match(html, /Assignment reference: event/);
     assert.match(attendanceHtml({ ...booking, id: 'new-booking' }, assignment), /assignment pending/);
     assert.match(attendanceHtml({ ...booking, seatingMode: 'free' }, null), /No numbered seat/);
 });
@@ -176,6 +214,9 @@ test('ORCHESTRA: email shows pending or named venue/session, group count and esc
 test('ORCHESTRA: every new admin endpoint enforces whitelist authentication', () => {
     const routes = fs.readFileSync(path.join(__dirname, '../src/routes/PaymentRoute.js'), 'utf8');
     for (const action of ['list', 'assign', 'notify', 'session', 'sessions']) assert.ok(routes.includes(`'/public-ticket/admin/orchestra/${action}', requireTicketingAdmin,`));
+    for (const action of ['release-booking', 'mark-manual-paid', 'resend-manual-instructions']) {
+        assert.ok(routes.includes(`'/public-ticket/admin/${action}', requireTicketingAdmin,`));
+    }
 });
 
 test('ORCHESTRA: paginated discovery still counts all paid purchases for each visible winner', async () => {

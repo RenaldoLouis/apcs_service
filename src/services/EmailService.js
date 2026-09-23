@@ -2908,10 +2908,32 @@ module.exports = {
     sendEmailSoundOfAsia2026InviteJson,
     sendEmailPaymentInfoOptionsJson,
     sendPublicSeatHoldEmail,
+    sendManualTicketPaymentInstructions,
     sendPublicBookingConfirmationEmail,
     sendOrchestraAssignmentEmail,
     sendJuryDeadlineReminderEmail
 };
+
+async function sendManualTicketPaymentInstructions(booking) {
+    const ticketSummary = (booking.tickets || [])
+        .map(ticket => `${Number(ticket.quantity || 0)}x ${ticket.name || ticket.id}`).join(', ');
+    const amount = new Intl.NumberFormat('id-ID', {
+        style: 'currency', currency: 'IDR', minimumFractionDigits: 0,
+    }).format(Number(booking.totalAmount || 0));
+    const { subject, html } = getTemplate('PAYMENT_INFO_OPTIONS', {
+        ticketBooking: true,
+        name: escapeTicketHtml(booking.buyerName || booking.userName || ''),
+        price: escapeTicketHtml(amount),
+        competitionCategory: escapeTicketHtml(`${ticketSummary} — ${booking.venueName || booking.venue} | ${booking.date} ${booking.session}`),
+        paymentReferenceOverride: escapeTicketHtml(booking.id),
+    });
+    await transporter.sendMail({
+        from: '"APCS Music" <hello@apcsmusic.com>',
+        to: booking.userEmail,
+        subject,
+        html,
+    });
+}
 
 async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, date, session, paymentUrl, lockExpiresAt }) {
     const deadline = new Date(lockExpiresAt).toLocaleString('id-ID', {
@@ -3031,7 +3053,7 @@ async function sendJuryDeadlineReminderEmail({ to, name, category, pendingCount,
 async function sendOrchestraAssignmentEmail(booking, assignment) {
     await transporter.sendMail({
         from: '"APCS Music" <hello@apcsmusic.com>', to: booking.userEmail,
-        subject: 'APCS — Your orchestra session / Sesi orkestra Anda',
+        subject: 'APCS — Your orchestra session',
         html: assignmentEmail(booking, assignment),
     });
 }

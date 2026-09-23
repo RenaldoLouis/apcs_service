@@ -88,6 +88,8 @@ router.post('/public-ticket/booking',         PublicTicketController.createPubli
 router.post('/public-ticket/webhook',         PublicTicketController.handlePublicTicketWebhook);
 router.post('/public-ticket/resend-email',    PublicTicketController.resendPublicTicketEmail);
 router.post('/public-ticket/admin/release-booking', requireTicketingAdmin, PublicTicketController.releasePublicTicketBooking);
+router.post('/public-ticket/admin/mark-manual-paid', requireTicketingAdmin, PublicTicketController.markManualBookingPaid);
+router.post('/public-ticket/admin/resend-manual-instructions', requireTicketingAdmin, PublicTicketController.resendManualPaymentInstructions);
 
 // --- System Settings ---
 router.get('/systemSettings/global', SystemSettingsController.getGlobalSettings);

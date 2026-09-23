@@ -22,12 +22,18 @@ async function readGroup(eventId, registrantId, transaction) {
     const allPaid = bookingsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(isPaid);
     const bookings = allPaid.filter(booking => booking.ticketingVersion === 2 && booking.orchestraAttendanceTickets > 0);
     const registration = registrationSnap.exists ? registrationSnap.data() : null;
-    const performerCount = Math.max(1, ...bookings.map(booking => Number(booking.performerCount || 1)));
+    const winnerBookings = bookings.filter(booking => booking.bookingType !== 'public_competition');
+    const performerCount = winnerBookings.length
+        ? Math.max(1, ...winnerBookings.map(booking => Number(booking.performerCount || 1))) : 0;
     const paidTicketCount = bookings.reduce((sum, booking) => sum + ticketCount(booking), 0);
+    const publicTicketCount = bookings.filter(booking => booking.bookingType === 'public_competition')
+        .reduce((sum, booking) => sum + ticketCount(booking), 0);
     return {
         id: idFor(eventId, registrantId), eventId, registrantId,
         name: bookings[0]?.registrantName || registration?.name || registrantId,
-        performerCount, paidTicketCount, quantity: paidTicketCount ? paidTicketCount + performerCount : 0,
+        performerCount, paidTicketCount, publicTicketCount,
+        winnerTicketCount: paidTicketCount - publicTicketCount,
+        quantity: paidTicketCount ? paidTicketCount + performerCount : 0,
         bookings,
         legacyConflict: allPaid.some(booking => booking.ticketingVersion !== 2 && Number(booking.complimentaryTickets || 0) > 0),
         assignment: assignmentSnap.exists ? assignmentSnap.data() : null,
@@ -60,7 +66,7 @@ async function assignGroup({ eventId, registrantId, sessionId }, actor) {
         if (!eventSnap.exists) throw fail('Event no longer exists.');
         const event = eventSnap.data();
         const group = await readGroup(eventId, registrantId, transaction);
-        if (!group.quantity) throw fail('Only paid winner purchases can receive an orchestra assignment.');
+        if (!group.quantity) throw fail('Only paid performance-linked purchases can receive an orchestra assignment.');
         if (group.legacyConflict) throw fail('This winner has legacy orchestra allocations. Reconcile those records before assigning new attendance.');
         const sessions = event.orchestraSessions || [];
         const target = sessions.find(session => session.id === sessionId);
@@ -87,7 +93,7 @@ async function assignGroup({ eventId, registrantId, sessionId }, actor) {
         }
         const assigned = Number(target.freeSeatingAssigned || 0) - (old?.sessionId === sessionId ? old.quantity : 0) + group.quantity;
         if (assigned + Number(target.complimentaryClaimed || 0) > Number(target.complimentaryQuota || 0)) {
-            throw fail('The whole group exceeds this session’s remaining winner quota. Choose another session or increase its capacity safely.');
+            throw fail('The whole group exceeds this session’s remaining performance quota. Choose another session or increase its capacity safely.');
         }
         const bookingIds = group.bookings.map(booking => booking.id).sort();
         const unchanged = old && old.sessionId === sessionId && old.quantity === group.quantity
@@ -98,6 +104,7 @@ async function assignGroup({ eventId, registrantId, sessionId }, actor) {
             eventId, registrantId, sessionId, venue: venue.id, venueName: venue.label || venue.id,
             date: target.date, time: target.time, quantity: group.quantity,
             performerCount: group.performerCount, paidTicketCount: group.paidTicketCount,
+            publicTicketCount: group.publicTicketCount, winnerTicketCount: group.winnerTicketCount,
             bookingIds, revision: Number(old?.revision || 0) + 1, notifiedBookingIds: [],
             assignedBy: actor.email, assignedAt: admin.firestore.FieldValue.serverTimestamp(),
         };
@@ -160,11 +167,11 @@ async function saveSession({ eventId, session, deleteSessionId }) {
         const totalCapacity = (venue.seatConfig || []).reduce((sum, row) => sum + Number(row.seatCount || 0), 0);
         const paidCount = retained.reduce((sum, booking) => sum + ticketCount(booking), 0);
         if (!Number.isSafeInteger(quota) || quota < Number(old?.freeSeatingAssigned || 0) + Number(old?.complimentaryClaimed || 0)
-            || quota + paidCount > totalCapacity) throw fail('Winner quota must cover assigned attendance and fit alongside paid tickets within the venue capacity.');
+            || quota + paidCount > totalCapacity) throw fail('Performance quota must cover assigned attendance and fit alongside paid tickets within the venue capacity.');
         // Read the same ledger used by checkout, so concurrent reservations conflict.
         const capacitySnap = await transaction.get(db.collection('ticketCapacity').doc(capacityIdFor({ ...session, eventId })));
         const reservedPaid = capacitySnap.exists ? Object.values(capacitySnap.data().reservedByTier || {}).reduce((sum, count) => sum + Number(count), 0) : paidCount;
-        if (quota + reservedPaid > totalCapacity) throw fail('Winner quota would exceed venue capacity with current paid reservations.');
+        if (quota + reservedPaid > totalCapacity) throw fail('Performance quota would exceed venue capacity with current paid reservations.');
         const updated = { ...old, id, venue: session.venue, date: session.date, time: session.time,
             complimentaryQuota: quota, complimentaryClaimed: Number(old?.complimentaryClaimed || 0),
             freeSeatingAssigned: Number(old?.freeSeatingAssigned || 0), seatingMode: 'free' };
