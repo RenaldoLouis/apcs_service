@@ -153,11 +153,19 @@ async function saveSessionAssignments(req, res, next) {
             return res.status(400).json({ error: "eventId and assignments are required." });
         }
 
-        const docRef = db.collection('sessionAssignments').doc(eventId);
-        await docRef.set({
-            eventId,
-            assignments,
-            updatedAt: new Date().toISOString(),
+        await db.runTransaction(async transaction => {
+            const eventSnap = await transaction.get(db.collection('events').doc(eventId));
+            if (!eventSnap.exists) {
+                throw Object.assign(new Error('Event not found.'), { statusCode: 404, isOperational: true });
+            }
+            if (eventSnap.data().competitionScheduleState) {
+                throw Object.assign(new Error('Planning controls this event. Edit draft groups before publication.'), { statusCode: 409, isOperational: true });
+            }
+            transaction.set(db.collection('sessionAssignments').doc(eventId), {
+                eventId,
+                assignments,
+                updatedAt: new Date().toISOString(),
+            });
         });
 
         res.status(200).json({ message: "Assignments saved successfully!" });

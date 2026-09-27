@@ -908,3 +908,41 @@ test('PUBLIC PERFORMANCE: public sale remains available when the winner purchase
     assert.equal(publicList.winners.length, 1);
     assert.equal(publicList.winners[0].email, '');
 });
+
+test('PLANNING: draft and published competition sessions are closed in discovery and checkout', async () => {
+    for (const status of ['draft', 'published']) {
+        const f = fixture();
+        f.records.get('events/APCS2026').competitionScheduleState = { status, revision: 1 };
+        const event = await new Promise((resolve, reject) =>
+            f.repo.getPublicTicketEventData(null, (error, data) => error ? reject(error) : resolve(data)));
+        assert.deepEqual(event.venues[0].sessions['2026-11-01'], []);
+        const winners = await new Promise((resolve, reject) =>
+            f.repo.getEligibleWinners({}, (error, data) => error ? reject(error) : resolve(data)));
+        assert.equal(winners.winners.length, 0);
+        const order = await f.book({ bookingType: 'winner', registrantId: 'winner' });
+        assert.match(order.error.message, /not ready/);
+        assert.equal(f.invoices.length, 0);
+    }
+});
+
+test('PLANNING: ready competition sessions retain the existing checkout path', async () => {
+    const f = fixture();
+    f.records.get('events/APCS2026').competitionScheduleState = { status: 'ready', revision: 2 };
+    const event = await new Promise((resolve, reject) =>
+        f.repo.getPublicTicketEventData(null, (error, data) => error ? reject(error) : resolve(data)));
+    assert.deepEqual(event.venues[0].sessions['2026-11-01'], ['09:00-10:00']);
+    const order = await f.book({ bookingType: 'winner', registrantId: 'winner' });
+    assert.ifError(order.error);
+});
+
+test('PLANNING RESET: a late paid callback cannot reopen an archived test booking', async () => {
+    const f = fixture();
+    f.seed('publicBookings/old-test', {
+        eventId: 'APCS2026', paymentStatus: 'archived_test', invoiceId: 'old-invoice',
+    });
+    await assert.rejects(
+        f.repo.handlePublicTicketWebhookPaid('old-test', { invoice: { id: 'old-invoice', status: 'paid' } }),
+        /archived during schedule reset/
+    );
+    assert.equal(f.records.get('publicBookings/old-test').paymentStatus, 'archived_test');
+});

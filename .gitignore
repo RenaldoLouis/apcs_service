@@ -53,6 +53,7 @@ web_modules/
 *.lock
 *.serviceAccountKey.json
 serviceAccountKey.json
+/.local/
 
 
 # Optional eslint cache

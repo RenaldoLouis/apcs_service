@@ -152,6 +152,12 @@ async function handlePublicTicketWebhook(req, res, next) {
             const bookingId = payloadData.invoice.number; // we set number = bookingId
             logger.info(`Processing paid public booking: ${bookingId}`);
 
+            const bookingSnap = await db.collection('publicBookings').doc(bookingId).get();
+            if (bookingSnap.exists && bookingSnap.data().paymentStatus === 'archived_test') {
+                logger.info(`Ignoring Paper callback for archived test booking ${bookingId}.`);
+                return res.status(200).json({ status: 'IGNORED_TEST_RESET' });
+            }
+
             const bookingData = await PublicTicketService.handlePublicTicketWebhookPaid(bookingId, payloadData);
 
 

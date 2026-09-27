@@ -51,6 +51,11 @@ const getAuthoritativeSessionType = (eventData, venue, date, session) => {
     return { type: 'competition', session: null };
 };
 
+const competitionSalesOpen = eventData => {
+    const state = eventData.competitionScheduleState;
+    return !state || state.status === 'ready'; // Events predating planning keep their existing sales path.
+};
+
 const getPaidCapacityByTier = venue => {
     return (venue?.seatConfig || []).reduce((counts, config) => {
         const tierId = String(config.areaType || '').toLowerCase();
@@ -122,7 +127,15 @@ const getPublicTicketEventData = async (_body, callback) => {
             throw new Error(`Event data for ${eventId} not found in events collection.`);
         }
 
-        callback(null, { id: docSnap.id, ...docSnap.data() });
+        const event = docSnap.data();
+        if (competitionSalesOpen(event)) return callback(null, { id: docSnap.id, ...event });
+        const venues = (event.venues || []).map(venue => ({
+            ...venue,
+            sessions: Object.fromEntries(Object.entries(venue.sessions || {}).map(([date, times]) => [
+                date, times.filter(time => getAuthoritativeSessionType(event, venue.id, date, time).type !== 'competition'),
+            ])),
+        }));
+        callback(null, { id: docSnap.id, ...event, venues });
     } catch (error) {
         logger.error(`getPublicTicketEventData failed: ${error.message}`);
         callback(error);
@@ -141,6 +154,15 @@ const getPublicTicketSeats = async (query, callback) => {
         }
 
         const eventId = await getCurrentEventId();
+        const eventSnap = await db.collection('events').doc(eventId).get();
+        if (eventSnap.exists && !competitionSalesOpen(eventSnap.data())) {
+            const separator = sessionId.indexOf('_');
+            const date = sessionId.slice(0, separator);
+            const time = sessionId.slice(separator + 1);
+            if (getAuthoritativeSessionType(eventSnap.data(), venueId, date, time).type === 'competition') {
+                return callback(new Error('Competition ticket sales are not ready.'));
+            }
+        }
         const seatsRef = db.collection(`seats${eventId}`);
         const q = seatsRef
             .where('venueId', '==', venueId)
@@ -269,6 +291,9 @@ const createPublicTicketBooking = async (body, callback) => {
             throw new Error('Selected venue session is unavailable.');
         }
         const authoritativeSession = getAuthoritativeSessionType(eventData, venue, date, session);
+        if (authoritativeSession.type === 'competition' && !competitionSalesOpen(eventData)) {
+            throw new Error('Competition ticket sales are not ready.');
+        }
         const isAuthoritativeMasterclass = authoritativeSession.type === 'masterclass';
         const isAuthoritativeOrchestra = authoritativeSession.type === 'orchestra';
         if (bookingType === 'public_legacy') {
@@ -472,6 +497,9 @@ const createPublicTicketBooking = async (body, callback) => {
             }
             const currentEventData = currentEventDoc.data();
             const currentSessionType = getAuthoritativeSessionType(currentEventData, venue, date, session);
+            if (currentSessionType.type === 'competition' && !competitionSalesOpen(currentEventData)) {
+                throw new Error('Competition ticket sales are not ready.');
+            }
             if (currentSessionType.type !== authoritativeSession.type || currentSessionType.session?.id !== authoritativeSession.session?.id) {
                 throw new Error('Session configuration changed. Please review your purchase.');
             }
@@ -721,6 +749,7 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
         const bookingSnap = await transaction.get(bookingRef);
         if (!bookingSnap.exists) throw new Error(`Public booking ${bookingId} not found.`);
         const booking = bookingSnap.data();
+        if (booking.paymentStatus === 'archived_test') throw new Error('This test booking was archived during schedule reset.');
         if (booking.paymentStatus === 'failed') {
             throw new Error(`Booking ${bookingId} checkout failed; payment requires reconciliation.`);
         }
@@ -869,6 +898,10 @@ const getEligibleWinners = async (query, callback) => {
     try {
         const eventId = await getCurrentEventId();
         const allowedTiers = await getTodayAllowedTiers();
+        const eventSnap = await db.collection('events').doc(eventId).get();
+        if (eventSnap.exists && !competitionSalesOpen(eventSnap.data())) {
+            return callback(null, { winners: [], allowedTiers: allowedTiers || [], eligibilityEnabled: !!allowedTiers });
+        }
 
         // 1. Fetch session assignments
         const assignmentsDoc = await db.collection('sessionAssignments').doc(eventId).get();

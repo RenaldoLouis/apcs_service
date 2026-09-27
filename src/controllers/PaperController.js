@@ -100,6 +100,10 @@ async function handlePaperWebhook(req, res, next) {
                 const publicBookingDoc = await publicBookingRef.get();
 
                 if (publicBookingDoc.exists) {
+                    if (publicBookingDoc.data().paymentStatus === 'archived_test') {
+                        logger.info(`Ignoring Paper callback for archived test booking ${firebaseId}.`);
+                        return res.status(200).json({ status: 'IGNORED_TEST_RESET' });
+                    }
                     logger.info(`Routing payment ${firebaseId} to Public Tickets Webhook Handler`);
 
                     // Route to public ticket logic

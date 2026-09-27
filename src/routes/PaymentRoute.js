@@ -54,7 +54,7 @@ router.get('/getVideos', FirebaseController.getVideos)
 router.get('/getSponsors', FirebaseController.getSponsors)
 router.post('/updatePrices', FirebaseController.updatePrices)
 router.post('/migrateEventId', FirebaseController.migrateEventId)
-router.post('/saveSessionAssignments', FirebaseController.saveSessionAssignments)
+router.post('/saveSessionAssignments', requireTicketingAdmin, FirebaseController.saveSessionAssignments)
 router.get('/getSessionAssignments/:eventId', FirebaseController.getSessionAssignments)
 
 router.post('/register', registerLimiter, RegisterController.postRegistrant)
@@ -103,5 +103,16 @@ router.post('/public-ticket/admin/orchestra/notify', requireTicketingAdmin, Orch
 router.post('/public-ticket/admin/orchestra/session', requireTicketingAdmin, OrchestraAssignmentController.saveSession);
 
 router.post('/public-ticket/admin/orchestra/sessions', requireTicketingAdmin, OrchestraAssignmentController.sessions);
+
+const CompetitionPlanningController = require('../controllers/CompetitionPlanningController');
+router.post('/competition-planning/:eventId/groups', requireTicketingAdmin, CompetitionPlanningController.saveGroup);
+router.post('/competition-planning/:eventId/draft', requireTicketingAdmin, CompetitionPlanningController.saveDraft);
+router.delete('/competition-planning/:eventId/groups/:groupId', requireTicketingAdmin, CompetitionPlanningController.deleteGroup);
+router.post('/competition-planning/:eventId/slots', requireTicketingAdmin, CompetitionPlanningController.saveSlot);
+router.post('/competition-planning/:eventId/slots/:slotId/delete', requireTicketingAdmin, CompetitionPlanningController.deleteSlot);
+router.get('/competition-planning/:eventId', requireTicketingAdmin, CompetitionPlanningController.getPlanningState);
+router.post('/competition-planning/:eventId/preview', requireTicketingAdmin, CompetitionPlanningController.previewPublication);
+router.post('/competition-planning/:eventId/publish', requireTicketingAdmin, CompetitionPlanningController.publish);
+router.post('/competition-planning/:eventId/ready', requireTicketingAdmin, CompetitionPlanningController.markReady);
 
 module.exports = router;
