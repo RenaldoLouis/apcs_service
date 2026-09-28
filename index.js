@@ -14,7 +14,6 @@ const { startJuryDeadlineReminder } = require('./src/jobs/JuryDeadlineReminder.j
 
 app.use(cors())
 app.set('trust proxy', 1) // Required for express-rate-limit when behind reverse proxies (like cPanel)
-app.use(bodyParser.json({ limit: '1mb' }))
 
 // Global rate limiter
 const globalLimiter = rateLimit({
@@ -25,6 +24,10 @@ const globalLimiter = rateLimit({
     message: { error: 'Too many requests, please try again later.' }
 })
 app.use(globalLimiter)
+
+// Result email PDFs have a dedicated authenticated payload limit.
+app.use('/api/v1/apcs/scoring-result-emails', require('./src/routes/ScoringResultEmailRoute'))
+app.use(bodyParser.json({ limit: '1mb' }))
 
 app.use(
     bodyParser.urlencoded({
