@@ -909,6 +909,74 @@ test('PUBLIC PERFORMANCE: public sale remains available when the winner purchase
     assert.equal(publicList.winners[0].email, '');
 });
 
+for (const manualPayment of [false, true]) {
+    test(`PUBLIC PERFORMANCE: seat selection is server-priced and fulfilled with ${manualPayment ? 'manual' : 'Paper.id'} payment`, async () => {
+        const f = fixture(); f.seat();
+        const order = await f.book({
+            bookingType: 'public_competition', registrantId: 'winner', manualPayment,
+            tickets: [{ id: 'presto', name: 'Presto', quantity: 2, priceEach: 1 }],
+            selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'],
+        });
+        assert.ifError(order.error);
+        const id = order.result.bookingId;
+        const booking = f.records.get(`publicBookings/${id}`);
+        assert.equal(booking.totalAmount, 310000);
+        assert.equal(booking.performerCount, 0);
+        assert.equal(booking.orchestraAttendanceTickets, 2);
+        assert.equal(booking.selectedSeatIds.length, 1);
+        assert.equal(booking.capacityReservation.byTier.presto, 2);
+        assert.equal(f.records.get('seatsAPCS2026/seat-1').lockedByBookingId, id);
+        if (manualPayment) {
+            assert.equal(f.invoices.length, 0);
+            await f.repo.markManualBookingPaid(id, { uid: 'admin-1', email: 'admin@example.invalid' });
+        } else {
+            assert.equal(f.invoices[0].items.reduce((sum, item) => sum + item.price, 0), 310000);
+            await f.repo.handlePublicTicketWebhookPaid(id, paidInvoice(id, 310000));
+        }
+        assert.equal(f.records.get(`publicBookings/${id}`).paymentStatus, 'PAID');
+        assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'booked');
+    });
+}
+
+test('PUBLIC PERFORMANCE: seat selection preserves quantity, tier, session and availability checks', async () => {
+    const cases = [
+        { overrides: { addOnIds: [] }, message: /add-on only covers/ },
+        { overrides: { tickets: [{ id: 'presto', quantity: 1 }], selectedSeatIds: ['seat-1', 'seat-2'], addOnIds: ['seat_selection_performer', 'seat_selection_performer'] }, message: /more seats/ },
+        { seat: { areaType: 'lento' }, message: /tier/ },
+        { seat: { sessionId: '2026-11-01_10:00-11:00' }, message: /session/ },
+        { seat: { status: 'booked', bookingId: 'another-booking' }, message: /available/ },
+    ];
+    for (const scenario of cases) {
+        const f = fixture(); f.seat('seat-1', scenario.seat || {}); f.seat('seat-2', { number: 2, seatLabel: 'A2' });
+        const order = await f.book({
+            bookingType: 'public_competition', registrantId: 'winner',
+            selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'],
+            ...scenario.overrides,
+        });
+        assert.match(order.error.message, scenario.message);
+        assert.equal(f.invoices.length, 0);
+    }
+});
+
+test('PUBLIC PERFORMANCE: unrelated configured add-ons remain unavailable', async () => {
+    const f = fixture();
+    f.records.get('events/APCS2026').addOns.push({ id: 'souvenir', name: 'Souvenir', price: 50000 });
+    const order = await f.book({ bookingType: 'public_competition', registrantId: 'winner', addOnIds: ['souvenir'] });
+    assert.match(order.error.message, /only support the performance seat-selection add-on/);
+    assert.equal(f.invoices.length, 0);
+});
+
+test('PUBLIC ORCHESTRA: performance seat-selection add-on and numbered seats remain rejected', async () => {
+    for (const extras of [{ addOnIds: ['seat_selection_performer'] }, { selectedSeatIds: ['seat-1'] }]) {
+        const f = fixture(); f.seat();
+        f.records.get('events/APCS2026').venues[0].sessions['2026-11-01'].push('19:00-20:00');
+        const order = await f.book({ bookingType: 'public_orchestra', session: '19:00-20:00', ...extras });
+        assert.match(order.error.message, /free seating without seat selections or add-ons/);
+        assert.equal(f.invoices.length, 0);
+        assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'available');
+    }
+});
+
 test('PLANNING: draft and published competition sessions are closed in discovery and checkout', async () => {
     for (const status of ['draft', 'published']) {
         const f = fixture();

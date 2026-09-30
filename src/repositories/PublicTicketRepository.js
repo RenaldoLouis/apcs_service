@@ -343,8 +343,9 @@ const createPublicTicketBooking = async (body, callback) => {
         if (bookingType !== 'winner' && Object.keys(ticketQuantities).some(id => !['presto', 'allegro'].includes(id))) {
             throw new Error('Public tickets must be Presto or Allegro.');
         }
-        if (bookingType === 'public_competition' && (addOnIds || []).length) {
-            throw new Error('Public performance tickets cannot include add-ons.');
+        if (bookingType === 'public_competition'
+            && (addOnIds || []).some(id => id !== 'seat_selection_performer')) {
+            throw new Error('Public performance tickets only support the performance seat-selection add-on.');
         }
         const containsMasterclassTicket = Object.keys(ticketQuantities).some(id => isMasterclassTicketId(id) || /master[ _-]?class/i.test((eventData.ticketTiers || []).find(tier => tier.id === id)?.name || ''));
         if (containsMasterclassTicket) throw new Error('Ticket tier does not match the selected session type.');
