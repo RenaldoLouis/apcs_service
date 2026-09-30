@@ -590,6 +590,26 @@ const templates = {
         `;
     },
 
+    brandedMessage: (data) => `
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${data.title}</title>
+            <style>${commonCss}</style>
+        </head>
+        <body>
+            <div class="email-wrapper">
+                <div class="email-container">
+                    ${generateCommonHeader()}
+                    <div class="content">${data.content}</div>
+                    ${generateCommonFooter(data.copyrightText)}
+                </div>
+            </div>
+        </body>
+        </html>
+    `,
     orchestraAssignment: (data) => `
         <!DOCTYPE html>
         <html lang="en">

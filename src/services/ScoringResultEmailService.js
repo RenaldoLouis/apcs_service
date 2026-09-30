@@ -4,6 +4,15 @@ const content = require('./ScoringResultEmailContent');
 
 const FROM = '"APCS Music" <hello@apcsmusic.com>';
 const WINNING_AWARDS = ['Silver', 'Gold', 'Diamond', 'Sapphire'];
+const PREVIEW_READ_CONCURRENCY = 6;
+
+async function mapPreviewReads(items, mapper) {
+    const results = [];
+    for (let index = 0; index < items.length; index += PREVIEW_READ_CONCURRENCY) {
+        results.push(...await Promise.all(items.slice(index, index + PREVIEW_READ_CONCURRENCY).map(mapper)));
+    }
+    return results;
+}
 
 function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
     const deliveryRef = (eventId, registrantId, performerIndex, kind) => db.collection('scoringResultEmailDeliveries')
@@ -67,15 +76,14 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
             || new Set(input.registrantIds).size !== input.registrantIds.length) {
             throw new AppError('Preview between 1 and 40 distinct registrations per request.', 400);
         }
-        const recipients = [];
-        for (const registrantId of input.registrantIds) {
+        const groups = await mapPreviewReads(input.registrantIds, async registrantId => {
             const group = await getRecipients(input.eventId, registrantId, input.kind);
-            for (const recipient of group) {
+            return mapPreviewReads(group, async recipient => {
                 const delivery = await deliveryRef(input.eventId, registrantId, recipient.performerIndex, input.kind).get();
-                recipients.push({ ...recipient, deliveryStatus: delivery.exists ? delivery.data().status : 'pending' });
-            }
-        }
-        return { recipients };
+                return { ...recipient, deliveryStatus: delivery.exists ? delivery.data().status : 'pending' };
+            });
+        });
+        return { recipients: groups.flat() };
     }
 
     async function send(input, actor) {
@@ -94,7 +102,8 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
             if (!recipient || recipient.problem) throw new AppError(recipient?.problem || 'Performer was not found.', 400);
             if (recipient.snapshot !== input.snapshot) throw new AppError('The performer or result changed. Refresh the preview.', 409);
             if (input.kind === 'nonQualifier') {
-                if (recipients.filter(item => content.normalizeName(item.name) === content.normalizeName(recipient.name)).length !== 1) {
+                if (input.manualAttachmentSelection !== true
+                    && recipients.filter(item => content.normalizeName(item.name) === content.normalizeName(recipient.name)).length !== 1) {
                     throw new AppError('Duplicate performer names prevent automatic PDF matching.', 400);
                 }
                 if (content.normalizeName(attachment.filename.slice(0, -4)) !== content.normalizeName(recipient.name)) {
@@ -153,8 +162,8 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
     async function test(input) {
         content.validateKind(input.kind);
         const dates = {
-            confirmationDeadline: input.dates?.confirmationDeadline || '31 October 2026 (sample deadline)',
-            rundownReleaseDate: input.dates?.rundownReleaseDate || '7 November 2026 (sample release date)',
+            confirmationDeadline: input.dates?.confirmationDeadline || '12 October 2026',
+            rundownReleaseDate: input.dates?.rundownReleaseDate || '19 October 2026',
         };
         const attachment = input.kind === 'winner' && input.attachment
             ? content.decodePdf(input.attachment) : content.dummyPdf(input.kind);
