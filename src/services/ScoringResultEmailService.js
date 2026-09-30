@@ -94,6 +94,11 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
         }
         // Validate PDF before reserving a delivery. Re-check its name with the current performer below.
         const attachment = content.decodePdf(input.attachment);
+        const certificate = input.kind === 'nonQualifier'
+            ? content.decodePdf(input.certificateAttachment) : null;
+        if (certificate?.content.equals(attachment.content)) {
+            throw new AppError('Choose a distinct E-certificate and comment sheet PDF.', 400);
+        }
         const ref = deliveryRef(input.eventId, input.registrantId, input.performerIndex, input.kind);
         const attemptId = uuid();
         const reservation = await db.runTransaction(async transaction => {
@@ -107,7 +112,10 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
                     throw new AppError('Duplicate performer names prevent automatic PDF matching.', 400);
                 }
                 if (content.normalizeName(attachment.filename.slice(0, -4)) !== content.normalizeName(recipient.name)) {
-                    throw new AppError('The PDF filename does not match this performer.', 400);
+                    throw new AppError('The comment sheet PDF filename does not match this performer.', 400);
+                }
+                if (content.normalizeName(certificate.filename.slice(0, -4)) !== content.normalizeName(recipient.name)) {
+                    throw new AppError('The E-certificate PDF filename does not match this performer.', 400);
                 }
             }
             const previous = await transaction.get(ref);
@@ -121,6 +129,8 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
                 snapshot: recipient.snapshot, status: 'sending', attemptId, actor: actor.email,
                 startedAt: now(), attachmentFilename: attachment.filename,
                 attachmentSha256: content.hash(attachment.content), contentSha256: content.hash(message.text),
+                ...(certificate ? { certificateFilename: certificate.filename,
+                    certificateSha256: content.hash(certificate.content) } : {}),
             });
             return { recipient, message };
         });
@@ -135,8 +145,12 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
         }
         let info;
         try {
+            const attachments = certificate ? [
+                { ...certificate, filename: `${reservation.recipient.name} - E-Certificate.pdf` },
+                { ...attachment, filename: `${reservation.recipient.name} - Comment Sheet.pdf` },
+            ] : [attachment];
             info = await sendMail({ from: FROM, to: reservation.recipient.email,
-                ...reservation.message, attachments: [attachment] });
+                ...reservation.message, attachments });
             const accepted = (info?.accepted || []).map(email => String(email).toLowerCase());
             if (!accepted.includes(reservation.recipient.email.toLowerCase())) {
                 await finish('failed', { failure: 'Recipient was not accepted by SMTP.' });
@@ -167,9 +181,11 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
         };
         const attachment = input.kind === 'winner' && input.attachment
             ? content.decodePdf(input.attachment) : content.dummyPdf(input.kind);
+        const attachments = input.kind === 'nonQualifier'
+            ? [content.dummyPdf('certificate'), attachment] : [attachment];
         const message = content.template(input.kind, { name: 'Alex Example', award: 'Sapphire' }, dates);
         const info = await sendMail({ from: FROM, to: content.TEST_EMAIL, ...message,
-            subject: `[TEST] ${message.subject}`, attachments: [attachment] });
+            subject: `[TEST] ${message.subject}`, attachments });
         if (!(info?.accepted || []).some(email => String(email).toLowerCase() === content.TEST_EMAIL)) {
             throw new AppError('SMTP did not accept the test recipient.', 502);
         }

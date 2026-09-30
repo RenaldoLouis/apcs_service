@@ -72,7 +72,7 @@ function template(kind, recipient, dates) {
     ] : [
         `Dear ${recipient.name},`, 'Thank you for your participation in APCS The Sound of Asia 2026.',
         'We regret to inform you that your preliminary performance did not qualify for the APCS The Sound of Asia 2026 Gala Concert. However, we sincerely appreciate your hard work, dedication, and the passion you have shown throughout this competition. Each performance represents valuable progress in your musical journey, and we hope you take pride in your effort and growth.',
-        'Please find your e-comment sheet attached.',
+        'Please find below your E-certificate and comment sheets.',
         'We encourage you to continue pursuing your musical goals with the same enthusiasm and commitment. You have done an excellent job, and we look forward to seeing you again at our future events.',
         'Best regards,\nAPCS Team',
     ];
@@ -110,10 +110,7 @@ function template(kind, recipient, dates) {
     const nonQualifierContent = () => `
         ${paragraphHtml(paragraphs[0], [recipient.name])}
         ${paragraphs.slice(1, 3).map(paragraph => paragraphHtml(paragraph)).join('')}
-        <div style="background-color:#f7f7f7;border:1px solid #dedede;border-left:4px solid #c79b45;border-radius:6px;padding:18px 22px;margin:22px 0">
-            <p style="font-weight:700;margin:0 0 6px">Your e-comment sheet</p>
-            <p style="margin:0">${escapeHtml(paragraphs[3])}</p>
-        </div>
+        ${paragraphHtml(paragraphs[3], [paragraphs[3]])}
         ${paragraphHtml(paragraphs[4])}
         ${paragraphHtml(paragraphs[5], ['APCS Team'])}`;
     return {
@@ -128,7 +125,8 @@ function template(kind, recipient, dates) {
 // A real, deliberately fictional one-page PDF. No registrant information is read for tests.
 function dummyPdf(kind) {
     const label = kind === 'winner' ? 'DUMMY APCS winner guidelines - TEST ONLY'
-        : 'DUMMY jury comment sheet for Alex Example - TEST ONLY';
+        : kind === 'certificate' ? 'DUMMY E-certificate for Alex Example - TEST ONLY'
+            : 'DUMMY jury comment sheet for Alex Example - TEST ONLY';
     const stream = `BT /F1 14 Tf 45 760 Td (${label}) Tj ET`;
     const objects = [
         '<< /Type /Catalog /Pages 2 0 R >>',
@@ -146,7 +144,7 @@ function dummyPdf(kind) {
     const xref = source.length;
     source += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(offset => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}`
         + `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
-    return { filename: 'APCS_DUMMY_TEST_ONLY.pdf', content: Buffer.from(source), contentType: 'application/pdf' };
+    return { filename: `APCS_${kind.toUpperCase()}_DUMMY_TEST_ONLY.pdf`, content: Buffer.from(source), contentType: 'application/pdf' };
 }
 
 module.exports = { TEST_EMAIL, MAX_PDF_BYTES, normalizeName, performerName, validEmail, hash,

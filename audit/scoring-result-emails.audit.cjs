@@ -54,7 +54,8 @@ function fixture(sendMail, readDelayMs = 0) {
     const payload = recipient => ({ eventId: 'APCS2026', kind: recipient.award === 'Fail' ? 'nonQualifier' : 'winner',
         registrantId: recipient.registrantId, performerIndex: recipient.performerIndex, snapshot: recipient.snapshot,
         dates: { confirmationDeadline: '12 October 2026', rundownReleaseDate: '19 October 2026' },
-        attachment: { filename: `${recipient.name}.pdf`, base64: content.dummyPdf('nonQualifier').content.toString('base64') } });
+        attachment: { filename: `${recipient.name}.pdf`, base64: content.dummyPdf('nonQualifier').content.toString('base64') },
+        certificateAttachment: { filename: `${recipient.name}.pdf`, base64: content.dummyPdf('certificate').content.toString('base64') } });
     const send = async (index = 0, kind = 'winner') => service.send(payload((await preview(kind)).recipients[index]), { email: 'admin@example.com' });
     return { records, messages, service, preview, payload, send };
 }
@@ -116,18 +117,20 @@ test('RESULT EMAILS: every ensemble performer gets their own address and greetin
     assert.ok(!f.messages.some(message => message.to === 'parent@example.com'));
 });
 
-test('RESULT EMAILS: fail gets one matched PDF and no certificate promise', async () => {
+test('RESULT EMAILS: fail gets the matched certificate and comment sheet with bold attachment text', async () => {
     const f = fixture();
     Object.assign(f.records.get('Registrants2025/R1'), { finalAward: 'Fail', averageScore: 70 });
     assert.equal((await f.send(0, 'nonQualifier')).status, 'sent');
-    assert.equal(f.messages[0].attachments.length, 1);
+    assert.deepEqual(f.messages[0].attachments.map(file => file.filename),
+        ['Alice Example - E-Certificate.pdf', 'Alice Example - Comment Sheet.pdf']);
     assert.match(f.messages[0].text, /did not qualify/);
-    assert.match(f.messages[0].text, /e-comment sheet attached/);
-    assert.doesNotMatch(f.messages[0].text, /e-certificate/);
+    assert.match(f.messages[0].text, /Please find below your E-certificate and comment sheets\./);
     assert.match(f.messages[0].html, /class="email-container"/);
     assert.match(f.messages[0].html, /Dear <strong>Alice Example<\/strong>,/);
-    assert.match(f.messages[0].html, /border-left:4px solid #c79b45/);
-    assert.match(f.messages[0].html, /Your e-comment sheet/);
+    assert.match(f.messages[0].html, /<p><strong>Please find below your E-certificate and comment sheets\.<\/strong><\/p>/);
+    assert.doesNotMatch(f.messages[0].html, /Your e-comment sheet/);
+    assert.equal(f.records.get([...f.records.keys()].find(key => key.startsWith('scoringResultEmailDeliveries/'))).certificateFilename,
+        'Alice Example.pdf');
     assert.match(f.messages[0].html, /Best regards,<br><strong>APCS Team<\/strong>/);
 });
 
@@ -192,6 +195,18 @@ test('RESULT EMAILS: wrong comment-sheet name and duplicate performer names are 
     await assert.rejects(f.service.send(input, { email: 'admin@example.com' }), /match/);
     f.records.get('Registrants2025/R1').performers[1].fullName = 'Alice Example';
     await assert.rejects(f.send(0, 'nonQualifier'), /Duplicate/);
+    assert.equal(f.messages.length, 0);
+});
+
+test('RESULT EMAILS: missing or mismatched E-certificate blocks a fail email before SMTP', async () => {
+    const f = fixture();
+    Object.assign(f.records.get('Registrants2025/R1'), { finalAward: 'Fail', averageScore: 70 });
+    const input = f.payload((await f.preview('nonQualifier')).recipients[0]);
+    await assert.rejects(f.service.send({ ...input, certificateAttachment: undefined }, { email: 'admin@example.com' }), /PDF/);
+    await assert.rejects(f.service.send({ ...input, certificateAttachment: { ...input.certificateAttachment,
+        filename: 'Bob Example.pdf' } }, { email: 'admin@example.com' }), /E-certificate PDF filename/);
+    await assert.rejects(f.service.send({ ...input, certificateAttachment: input.attachment },
+        { email: 'admin@example.com' }), /distinct E-certificate/);
     assert.equal(f.messages.length, 0);
 });
 
@@ -279,7 +294,7 @@ test('RESULT EMAILS: invalid PDF, payload size, filename path and missing dates 
 });
 
 for (const kind of ['winner', 'nonQualifier']) {
-    test(`RESULT EMAILS: ${kind} dummy test is fixed to Gmail with fictional data and exactly one PDF`, async () => {
+    test(`RESULT EMAILS: ${kind} dummy test is fixed to Gmail with fictional attachments`, async () => {
         const f = fixture();
         await f.service.test({ kind, to: 'real-client@example.com', name: 'Real Student' });
         assert.equal(f.messages[0].to, content.TEST_EMAIL);
@@ -293,8 +308,8 @@ for (const kind of ['winner', 'nonQualifier']) {
         assert.match(f.messages[0].html, /font-family: -apple-system, BlinkMacSystemFont/);
         assert.match(f.messages[0].html, /class="footer"/);
         assert.match(f.messages[0].html, new RegExp(`&copy; ${new Date().getFullYear()} APCS Music`));
-        assert.equal(f.messages[0].attachments.length, 1);
-        assert.match(f.messages[0].attachments[0].content.toString(), /DUMMY/);
+        assert.equal(f.messages[0].attachments.length, kind === 'nonQualifier' ? 2 : 1);
+        f.messages[0].attachments.forEach(file => assert.match(file.content.toString(), /DUMMY/));
         assert.equal([...f.records.keys()].filter(key => key.startsWith('scoringResultEmailDeliveries/')).length, 0);
     });
 }
