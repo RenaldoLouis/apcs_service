@@ -81,18 +81,25 @@ test('RESULT EMAILS: preview does not serialize Firestore latency across registr
 });
 
 for (const [score, award] of [[80, 'Silver'], [87, 'Gold'], [93, 'Diamond'], [99, 'Sapphire']]) {
-    test(`RESULT EMAILS: finalized ${award} gets actual award and only one shared PDF`, async () => {
+    test(`RESULT EMAILS: finalized ${award} gets invitation award and one shared PDF`, async () => {
         const f = fixture();
         Object.assign(f.records.get('Registrants2025/R1'), { finalAward: award, averageScore: score });
         assert.equal((await f.preview()).recipients[0].award, award);
         assert.equal((await f.send()).status, 'sent');
-        assert.match(f.messages[0].text, new RegExp(`${award.toUpperCase()} WINNER`));
+        const invitationAward = award === 'Sapphire' ? 'Diamond' : award;
+        assert.match(f.messages[0].text, new RegExp(`${invitationAward.toUpperCase()} WINNER`));
         assert.equal(f.messages[0].attachments.length, 1);
         assert.equal(f.messages[0].subject, 'APCS Gala Concert 2026 – Performance Invitation');
         assert.match(f.messages[0].html, /class="email-container"/);
         assert.match(f.messages[0].html, /Dear <strong>Alice Example<\/strong>,/);
         assert.match(f.messages[0].html, /Dear <strong>Alice Example<\/strong>,<\/p>\s*<p>Congratulations!<\/p>/);
-        assert.match(f.messages[0].html, new RegExp(`<strong>${award.toUpperCase()} WINNER</strong>`));
+        assert.match(f.messages[0].html, new RegExp(`<strong>${invitationAward.toUpperCase()} WINNER</strong>`));
+        if (award === 'Sapphire') {
+            assert.doesNotMatch(f.messages[0].text, /SAPPHIRE/i);
+            assert.doesNotMatch(f.messages[0].html, /SAPPHIRE/i);
+            const delivery = [...f.records.entries()].find(([key]) => key.startsWith('scoringResultEmailDeliveries/'))[1];
+            assert.equal(delivery.award, 'Sapphire');
+        }
         assert.match(f.messages[0].html, /<strong>APCS Gala Concert The Sound of Asia 2026<\/strong>/);
         assert.doesNotMatch(f.messages[0].html, /<h1[^>]*>Performance invitation<\/h1>|APCS GALA CONCERT 2026/);
         assert.match(f.messages[0].html, /EVENT DETAILS/);
@@ -124,10 +131,10 @@ test('RESULT EMAILS: fail gets the matched certificate and comment sheet with bo
     assert.deepEqual(f.messages[0].attachments.map(file => file.filename),
         ['Alice Example - E-Certificate.pdf', 'Alice Example - Comment Sheet.pdf']);
     assert.match(f.messages[0].text, /did not qualify/);
-    assert.match(f.messages[0].text, /Please find below your E-certificate and comment sheets\./);
+    assert.match(f.messages[0].text, /Please find below your E-certificate and E-comment sheets\./);
     assert.match(f.messages[0].html, /class="email-container"/);
     assert.match(f.messages[0].html, /Dear <strong>Alice Example<\/strong>,/);
-    assert.match(f.messages[0].html, /<p><strong>Please find below your E-certificate and comment sheets\.<\/strong><\/p>/);
+    assert.match(f.messages[0].html, /<p><strong>Please find below your E-certificate and E-comment sheets\.<\/strong><\/p>/);
     assert.doesNotMatch(f.messages[0].html, /Your e-comment sheet/);
     assert.equal(f.records.get([...f.records.keys()].find(key => key.startsWith('scoringResultEmailDeliveries/'))).certificateFilename,
         'Alice Example.pdf');
@@ -139,7 +146,8 @@ test('RESULT EMAILS: backend ignores supplied destination/award and rejects stal
     const payload = f.payload((await f.preview()).recipients[0]);
     await f.service.send({ ...payload, to: 'outsider@example.com', award: 'Fail' }, { email: 'admin@example.com' });
     assert.equal(f.messages[0].to, 'alice@example.com');
-    assert.match(f.messages[0].text, /SAPPHIRE WINNER/);
+    assert.match(f.messages[0].text, /DIAMOND WINNER/);
+    assert.doesNotMatch(f.messages[0].text, /SAPPHIRE/i);
     f.records.get('Registrants2025/R1').performers[0].email = 'changed@example.com';
     await assert.rejects(f.service.send(payload, { email: 'admin@example.com' }), /changed/);
 });
@@ -303,6 +311,8 @@ for (const kind of ['winner', 'nonQualifier']) {
         if (kind === 'winner') {
             assert.match(f.messages[0].text, /no later than 12 October 2026/);
             assert.match(f.messages[0].text, /shared on 19 October 2026/);
+            assert.match(f.messages[0].text, /DIAMOND WINNER/);
+            assert.doesNotMatch(f.messages[0].text, /SAPPHIRE/i);
         }
         assert.match(f.messages[0].html, /alt="APCS Logo"/);
         assert.match(f.messages[0].html, /font-family: -apple-system, BlinkMacSystemFont/);

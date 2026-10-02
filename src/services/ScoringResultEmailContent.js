@@ -57,11 +57,12 @@ function template(kind, recipient, dates) {
     const address = 'Jln. Boulevard Bintaro, Block B7/B1 No.5, Bintaro Jaya, Sektor 7, Tangerang 15424, Indonesia';
     const galaName = 'APCS Gala Concert The Sound of Asia 2026';
     const whatsappNumber = '+62 822-1300-2686';
+    const invitationAward = recipient.award === 'Sapphire' ? 'Diamond' : recipient.award;
     const confirmationDeadline = kind === 'winner' ? dates.confirmationDeadline.trim() : '';
     const rundownReleaseDate = kind === 'winner' ? dates.rundownReleaseDate.trim() : '';
     const paragraphs = kind === 'winner' ? [
         `Dear ${recipient.name},`, 'Congratulations!',
-        `You have been awarded as a ${recipient.award.toUpperCase()} WINNER and are officially invited to perform at the ${galaName}.`,
+        `You have been awarded as a ${invitationAward.toUpperCase()} WINNER and are officially invited to perform at the ${galaName}.`,
         `Date: ${eventDate}`, `Venue: ${venue}`, `Address: ${address}`,
         'Please carefully read the attached PDF, which contains all important event guidelines and performance information.',
         `Kindly confirm your attendance no later than ${confirmationDeadline}. After this deadline, no changes to the attendance confirmation or performer substitution will be permitted.`,
@@ -72,7 +73,7 @@ function template(kind, recipient, dates) {
     ] : [
         `Dear ${recipient.name},`, 'Thank you for your participation in APCS The Sound of Asia 2026.',
         'We regret to inform you that your preliminary performance did not qualify for the APCS The Sound of Asia 2026 Gala Concert. However, we sincerely appreciate your hard work, dedication, and the passion you have shown throughout this competition. Each performance represents valuable progress in your musical journey, and we hope you take pride in your effort and growth.',
-        'Please find below your E-certificate and comment sheets.',
+        'Please find below your E-certificate and E-comment sheets.',
         'We encourage you to continue pursuing your musical goals with the same enthusiasm and commitment. You have done an excellent job, and we look forward to seeing you again at our future events.',
         'Best regards,\nAPCS Team',
     ];
@@ -92,7 +93,7 @@ function template(kind, recipient, dates) {
     const winnerContent = () => `
         ${paragraphHtml(paragraphs[0], [recipient.name])}
         ${paragraphHtml(paragraphs[1])}
-        ${paragraphHtml(paragraphs[2], [`${recipient.award.toUpperCase()} WINNER`, galaName])}
+        ${paragraphHtml(paragraphs[2], [`${invitationAward.toUpperCase()} WINNER`, galaName])}
         <div style="background-color:#fbf8f0;border:1px solid #e5d6b4;border-left:4px solid #c79b45;border-radius:6px;padding:20px 22px;margin:24px 0">
             <p style="color:#72561d;font-size:12px;font-weight:700;letter-spacing:1px;margin:0 0 12px">EVENT DETAILS</p>
             <p style="margin:0 0 12px"><strong>Date:</strong><br>${escapeHtml(eventDate)}</p>
