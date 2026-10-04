@@ -2,9 +2,16 @@ const { createHash } = require('node:crypto');
 const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
 const { getTemplate } = require('./EmailTemplateService');
 
-const TEST_EMAIL = 'renaldolouis555@gmail.com';
+// const TEST_EMAIL = 'renaldolouis555@gmail.com';
+const TEST_EMAIL = 'michaelasutejoo@gmail.com';
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
-const normalizeName = value => String(value || '').normalize('NFC').trim().toLowerCase();
+const normalizeName = value => String(value || '').normalize('NFC').replace(/\s+/g, '').toLowerCase();
+const matchesPerformerPdf = (filename, name, performanceCategory) => {
+    const basename = filename.slice(0, -4);
+    const normalizedName = normalizeName(name);
+    return normalizeName(basename) === normalizedName || (performanceCategory === 'Ensemble'
+        && basename.split('&').some(part => normalizeName(part) === normalizedName));
+};
 const performerName = performer => String(performer?.fullName
     || `${performer?.firstName || ''} ${performer?.lastName || ''}`.trim()).trim();
 const validEmail = value => typeof value === 'string' && /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/.test(value);
@@ -50,7 +57,7 @@ function template(kind, recipient, dates) {
     validateKind(kind);
     validateDates(kind, dates);
     const subject = kind === 'winner'
-        ? 'APCS Gala Concert 2026 – Performance Invitation'
+        ? 'APCS The Sound of Asia 2026 – Winner Announcement'
         : 'APCS The Sound of Asia 2026 – Result Announcement';
     const eventDate = '14–15 November 2026';
     const venue = 'Titan Center';
@@ -72,18 +79,18 @@ function template(kind, recipient, dates) {
         'Best regards,\nAPCS Team',
     ] : [
         `Dear ${recipient.name},`, 'Thank you for your participation in APCS The Sound of Asia 2026.',
-        'We regret to inform you that your preliminary performance did not qualify for the APCS The Sound of Asia 2026 Gala Concert. However, we sincerely appreciate your hard work, dedication, and the passion you have shown throughout this competition. Each performance represents valuable progress in your musical journey, and we hope you take pride in your effort and growth.',
+        'We regret to inform you that your preliminary performance did not qualify for APCS The Sound of Asia 2026 Gala Concert. However, we sincerely appreciate your hard work, dedication, and the passion you have shown throughout this competition. Each performance represents valuable progress in your musical journey, and we hope you take pride in your effort and growth.',
         'Please find below your E-certificate and E-comment sheets.',
         'We encourage you to continue pursuing your musical goals with the same enthusiasm and commitment. You have done an excellent job, and we look forward to seeing you again at our future events.',
         'Best regards,\nAPCS Team',
     ];
-    const paragraphHtml = (value, bold = []) => {
+    const paragraphHtml = (value, bold = [], justify = true) => {
         let html = escapeHtml(value).replace(/\n/g, '<br>');
         for (const phrase of bold) {
             const escaped = escapeHtml(phrase);
             html = html.replace(escaped, `<strong>${escaped}</strong>`);
         }
-        return `<p>${html}</p>`;
+        return `<p${justify ? ' style="text-align:justify"' : ''}>${html}</p>`;
     };
     const linkedPhoneParagraph = () => {
         const boldPhone = `<strong>${escapeHtml(whatsappNumber)}</strong>`;
@@ -100,9 +107,9 @@ function template(kind, recipient, dates) {
             <p style="margin:0 0 12px"><strong>Venue:</strong><br>${escapeHtml(venue)}</p>
             <p style="margin:0"><strong>Address:</strong><br>${escapeHtml(address)}</p>
         </div>
-        ${paragraphHtml(paragraphs[6], ['attached PDF'])}
+        ${paragraphHtml(paragraphs[6], ['attached PDF', 'all important event guidelines and performance information'])}
         <div style="background-color:#f7f7f7;border:1px solid #dedede;border-radius:6px;padding:18px 22px;margin:22px 0">
-            ${paragraphHtml(paragraphs[7], [`no later than ${confirmationDeadline}`, 'no changes to the attendance confirmation or performer substitution will be permitted'])}
+            ${paragraphHtml(paragraphs[7], ['confirm your attendance', `no later than ${confirmationDeadline}`, 'no changes to the attendance confirmation or performer substitution will be permitted'])}
             ${paragraphHtml(paragraphs[8], ['final performance rundown', rundownReleaseDate])}
         </div>
         ${linkedPhoneParagraph()}
@@ -111,14 +118,14 @@ function template(kind, recipient, dates) {
     const nonQualifierContent = () => `
         ${paragraphHtml(paragraphs[0], [recipient.name])}
         ${paragraphs.slice(1, 3).map(paragraph => paragraphHtml(paragraph)).join('')}
-        ${paragraphHtml(paragraphs[3], [paragraphs[3]])}
+        ${paragraphHtml(paragraphs[3], [paragraphs[3]], true)}
         ${paragraphHtml(paragraphs[4])}
         ${paragraphHtml(paragraphs[5], ['APCS Team'])}`;
     return {
         subject, text: paragraphs.join('\n\n'),
         html: getTemplate('brandedMessage', {
             title: escapeHtml(subject),
-            content: kind === 'winner' ? winnerContent() : nonQualifierContent(),
+            content: `<div style="text-align:justify">${kind === 'winner' ? winnerContent() : nonQualifierContent()}</div>`,
         }),
     };
 }
@@ -148,5 +155,5 @@ function dummyPdf(kind) {
     return { filename: `APCS_${kind.toUpperCase()}_DUMMY_TEST_ONLY.pdf`, content: Buffer.from(source), contentType: 'application/pdf' };
 }
 
-module.exports = { TEST_EMAIL, MAX_PDF_BYTES, normalizeName, performerName, validEmail, hash,
+module.exports = { TEST_EMAIL, MAX_PDF_BYTES, normalizeName, matchesPerformerPdf, performerName, validEmail, hash,
     validateKind, validateDates, decodePdf, template, dummyPdf };

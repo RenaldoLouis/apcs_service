@@ -89,10 +89,10 @@ for (const [score, award] of [[80, 'Silver'], [87, 'Gold'], [93, 'Diamond'], [99
         const invitationAward = award === 'Sapphire' ? 'Diamond' : award;
         assert.match(f.messages[0].text, new RegExp(`${invitationAward.toUpperCase()} WINNER`));
         assert.equal(f.messages[0].attachments.length, 1);
-        assert.equal(f.messages[0].subject, 'APCS Gala Concert 2026 – Performance Invitation');
+        assert.equal(f.messages[0].subject, 'APCS The Sound of Asia 2026 – Winner Announcement');
         assert.match(f.messages[0].html, /class="email-container"/);
         assert.match(f.messages[0].html, /Dear <strong>Alice Example<\/strong>,/);
-        assert.match(f.messages[0].html, /Dear <strong>Alice Example<\/strong>,<\/p>\s*<p>Congratulations!<\/p>/);
+        assert.match(f.messages[0].html, /Dear <strong>Alice Example<\/strong>,<\/p>\s*<p style="text-align:justify">Congratulations!<\/p>/);
         assert.match(f.messages[0].html, new RegExp(`<strong>${invitationAward.toUpperCase()} WINNER</strong>`));
         if (award === 'Sapphire') {
             assert.doesNotMatch(f.messages[0].text, /SAPPHIRE/i);
@@ -106,6 +106,8 @@ for (const [score, award] of [[80, 'Silver'], [87, 'Gold'], [93, 'Diamond'], [99
         assert.match(f.messages[0].html, /<strong>Date:<\/strong><br>14–15 November 2026/);
         assert.match(f.messages[0].html, /<strong>attached PDF<\/strong>/);
         assert.match(f.messages[0].html, /<strong>no later than 12 October 2026<\/strong>/);
+        assert.match(f.messages[0].html, /<strong>confirm your attendance<\/strong>/);
+        assert.match(f.messages[0].html, /<strong>all important event guidelines and performance information<\/strong>/);
         assert.match(f.messages[0].html, /<strong>no changes to the attendance confirmation or performer substitution will be permitted<\/strong>/);
         assert.match(f.messages[0].html, /<strong>final performance rundown<\/strong> will be shared on <strong>19 October 2026<\/strong>/);
         assert.match(f.messages[0].html, /href="https:\/\/wa\.me\/6282213002686"[^>]*><strong>\+62 822-1300-2686<\/strong><\/a>/);
@@ -134,7 +136,7 @@ test('RESULT EMAILS: fail gets the matched certificate and comment sheet with bo
     assert.match(f.messages[0].text, /Please find below your E-certificate and E-comment sheets\./);
     assert.match(f.messages[0].html, /class="email-container"/);
     assert.match(f.messages[0].html, /Dear <strong>Alice Example<\/strong>,/);
-    assert.match(f.messages[0].html, /<p><strong>Please find below your E-certificate and E-comment sheets\.<\/strong><\/p>/);
+    assert.match(f.messages[0].html, /<p style="text-align:justify"><strong>Please find below your E-certificate and E-comment sheets\.<\/strong><\/p>/);
     assert.doesNotMatch(f.messages[0].html, /Your e-comment sheet/);
     assert.equal(f.records.get([...f.records.keys()].find(key => key.startsWith('scoringResultEmailDeliveries/'))).certificateFilename,
         'Alice Example.pdf');
@@ -216,6 +218,32 @@ test('RESULT EMAILS: missing or mismatched E-certificate blocks a fail email bef
     await assert.rejects(f.service.send({ ...input, certificateAttachment: input.attachment },
         { email: 'admin@example.com' }), /distinct E-certificate/);
     assert.equal(f.messages.length, 0);
+});
+
+test('RESULT EMAILS: both real-send attachment names ignore whitespace', async () => {
+    const f = fixture();
+    Object.assign(f.records.get('Registrants2025/R1'), { finalAward: 'Fail', averageScore: 70 });
+    const recipient = (await f.preview('nonQualifier')).recipients[0];
+    const input = f.payload(recipient);
+    input.attachment.filename = ' AliceExample .pdf';
+    input.certificateAttachment.filename = 'ALICE\u00a0  EXAMPLE.pdf';
+    assert.equal((await f.service.send(input, { email: 'admin@example.com' })).status, 'sent');
+    assert.equal(f.messages.length, 1);
+});
+
+test('RESULT EMAILS: shared ensemble PDFs go to each performer', async () => {
+    const f = fixture();
+    Object.assign(f.records.get('Registrants2025/R1'), { finalAward: 'Fail', averageScore: 70, PerformanceCategory: 'Ensemble' });
+    for (const recipient of (await f.preview('nonQualifier')).recipients) {
+        const input = f.payload(recipient);
+        input.attachment.filename = ' ALICE EXAMPLE & BOB EXAMPLE.pdf';
+        input.certificateAttachment.filename = 'AliceExample & Bob Example.pdf';
+        assert.equal((await f.service.send(input, { email: 'admin@example.com' })).status, 'sent');
+    }
+    assert.deepEqual(f.messages.map(message => message.to), ['alice@example.com', 'bob@example.com']);
+    assert.deepEqual(f.messages[0].attachments.map(file => file.content), f.messages[1].attachments.map(file => file.content));
+    assert.equal(content.matchesPerformerPdf('Alice Example & Bob Example.pdf', 'Alice', 'Ensemble'), false);
+    assert.equal(content.matchesPerformerPdf('Alice Example & Bob Example.pdf', 'Alice Example', 'Solo'), false);
 });
 
 test('RESULT EMAILS: manual PDF selection sends only the chosen duplicate-name performer', async () => {

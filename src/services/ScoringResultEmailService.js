@@ -63,7 +63,7 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
             const name = content.performerName(performer);
             const email = typeof performer?.email === 'string' ? performer.email.trim() : '';
             const recipient = { registrantId, performerIndex, name, email, award };
-            return { ...recipient, problem: !name ? 'Missing performer name'
+            return { ...recipient, performanceCategory: registrant.PerformanceCategory, problem: !name ? 'Missing performer name'
                 : !content.validEmail(email) ? 'Missing or invalid performer email' : '',
             snapshot: content.hash(JSON.stringify({ ...recipient, score: registrant.averageScore,
                 revision: registrant.videoPenaltyConfigRevision ?? null })) };
@@ -111,10 +111,10 @@ function createService({ db, sendMail, now = Date.now, uuid = randomUUID }) {
                     && recipients.filter(item => content.normalizeName(item.name) === content.normalizeName(recipient.name)).length !== 1) {
                     throw new AppError('Duplicate performer names prevent automatic PDF matching.', 400);
                 }
-                if (content.normalizeName(attachment.filename.slice(0, -4)) !== content.normalizeName(recipient.name)) {
+                if (!content.matchesPerformerPdf(attachment.filename, recipient.name, recipient.performanceCategory)) {
                     throw new AppError('The comment sheet PDF filename does not match this performer.', 400);
                 }
-                if (content.normalizeName(certificate.filename.slice(0, -4)) !== content.normalizeName(recipient.name)) {
+                if (!content.matchesPerformerPdf(certificate.filename, recipient.name, recipient.performanceCategory)) {
                     throw new AppError('The E-certificate PDF filename does not match this performer.', 400);
                 }
             }
