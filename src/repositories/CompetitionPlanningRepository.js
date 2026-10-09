@@ -17,6 +17,15 @@ const hasActiveBookings = snap => snap.docs.some(doc => doc.data().paymentStatus
 const seatActivity = eventId => db.collection(`seats${eventId}`).limit(1);
 const capacityActivity = eventId => db.collection('ticketCapacity').where('eventId', '==', eventId).limit(1);
 const ownershipActivity = eventId => db.collection('ticketSeatOwnership').where('eventId', '==', eventId).limit(1);
+// Orchestra attendance is independent of a registrant's competition performance assignment.
+const GROUP_PURPOSES = ['competition', 'orchestra_attendance'];
+const purposeOf = group => group?.purpose || 'competition';
+const isAttendanceGroup = group => purposeOf(group) === 'orchestra_attendance';
+const attendanceOnlyIds = groups => {
+  const performers = new Set(groups.filter(group => !isAttendanceGroup(group)).flatMap(group => group.registrantIds || []));
+  return [...new Set(groups.filter(isAttendanceGroup).flatMap(group => group.registrantIds || []))]
+    .filter(id => !performers.has(id));
+};
 
 function groupIdFor() {
   return `plan_${randomUUID()}`;
@@ -98,6 +107,8 @@ function hasLegacyCompetitionSlots(event) {
 
 function validateGroup(data, eventId, event, others) {
   const { venueId, date, ordinal, label, start, end, registrantIds } = data;
+  if (!GROUP_PURPOSES.includes(purposeOf(data))) throw fail('Select a valid group type.');
+  if (isAttendanceGroup(data) && (data.slotId || start || end)) throw fail('Orchestra attendance groups cannot use a performer session.');
   if (!validKey(venueId) || !(event.venues || []).some(v => v.id === venueId)) throw fail('Select an event venue.');
   if (!validDate(date)) throw fail('Select a valid date.');
   if (!Number.isInteger(ordinal) || ordinal < 1) throw fail('Group number must be a positive integer.');
@@ -108,12 +119,14 @@ function validateGroup(data, eventId, event, others) {
     throw fail('Enter a valid start and end time, or leave both empty.');
   }
   if (others.some(g => g.ordinal === ordinal)) throw fail('Group number is already used.');
-  if (others.some(g => g.registrantIds.some(id => registrantIds.includes(id)))) throw fail('A registrant is already in another group.');
+  if (others.some(g => purposeOf(g) === purposeOf(data) && g.registrantIds.some(id => registrantIds.includes(id)))) {
+    throw fail('A registrant is already in another group of this type.');
+  }
 }
 
 async function getGroups(eventId) {
   const snap = await groupCollection(eventId).get();
-  return snap.docs.map(doc => ({ ...doc.data(), groupId: doc.id })).sort((a, b) => a.ordinal - b.ordinal);
+  return snap.docs.map(doc => ({ ...doc.data(), groupId: doc.id, purpose: purposeOf(doc.data()) })).sort((a, b) => a.ordinal - b.ordinal);
 }
 
 async function getPlanningState(eventId) {
@@ -150,6 +163,7 @@ async function saveGroup(eventId, data) {
     const existing = groupSnap.docs.find(doc => doc.id === id);
     if (data.groupId && !existing) throw fail('Group no longer exists. Refresh the page.');
     const others = groupSnap.docs.filter(doc => doc.id !== id).map(doc => doc.data());
+    if (isAttendanceGroup(data) && data.slotId) throw fail('Orchestra attendance groups cannot use a performer session.');
     const slot = (planSnap.data()?.draftSlots || []).find(item => item.slotId === data.slotId);
     if (data.slotId && (!slot || slot.venueId !== data.venueId || slot.date !== data.date
       || others.some(group => group.slotId === data.slotId))) throw fail('Select an unused session for this venue and date.');
@@ -158,7 +172,7 @@ async function saveGroup(eventId, data) {
     const revision = (state?.revision || 0) + 1;
     const group = {
       groupId: id, eventId, venueId: data.venueId, date: data.date, ordinal: data.ordinal,
-      label: data.label.trim(), slotId: data.slotId || null, start: groupData.start, end: groupData.end,
+      label: data.label.trim(), purpose: purposeOf(data), slotId: data.slotId || null, start: groupData.start, end: groupData.end,
       registrantIds: data.registrantIds, updatedAt: stamp(),
     };
     transaction.set(groupCollection(eventId).doc(id), { ...group, createdAt: existing?.data().createdAt || stamp() });
@@ -205,6 +219,7 @@ async function saveDraft(eventId, expectedRevision, proposedGroups) {
       throw fail('Duplicate or invalid group IDs.');
     }
     const slots = planSnap.data()?.draftSlots || [];
+    if (groups.some(group => isAttendanceGroup(group) && group.slotId)) throw fail('Orchestra attendance groups cannot use a performer session.');
     groups.forEach((group, index) => {
       const slot = slots.find(item => item.slotId === group.slotId);
       if (group.slotId && (!slot || slot.venueId !== group.venueId || slot.date !== group.date
@@ -218,7 +233,7 @@ async function saveDraft(eventId, expectedRevision, proposedGroups) {
     for (const group of groups) {
       transaction.set(groupCollection(eventId).doc(group.groupId), {
         groupId: group.groupId, eventId, venueId: group.venueId, date: group.date,
-        ordinal: group.ordinal, label: group.label.trim(), slotId: group.slotId || null, start: group.start || null,
+        ordinal: group.ordinal, label: group.label.trim(), purpose: purposeOf(group), slotId: group.slotId || null, start: group.start || null,
         end: group.end || null, registrantIds: group.registrantIds,
         createdAt: existing.get(group.groupId)?.createdAt || stamp(), updatedAt: stamp(),
       });
@@ -250,9 +265,22 @@ async function deleteGroup(eventId, groupId) {
   });
 }
 
-function validatePublication(groups, event, existingAssignments, draftSlots = []) {
+function validatePublication(allGroups, event, existingAssignments, draftSlots = []) {
   const errors = [];
-  if (!groups.length) errors.push('Add at least one group.');
+  const groups = allGroups.filter(group => !isAttendanceGroup(group));
+  const attendanceGroups = allGroups.filter(isAttendanceGroup);
+  if (!allGroups.length) errors.push('Add at least one group.');
+  else if (!groups.length) errors.push('Add at least one competition group.');
+  const seen = new Set();
+  // One attendance group and one competition group per registration are allowed.
+  const attendanceSeen = new Set();
+  for (const group of attendanceGroups) {
+    if (group.slotId || group.start || group.end) errors.push(`Group ${group.ordinal}: orchestra attendance groups cannot use a performer session.`);
+    for (const id of group.registrantIds || []) {
+      if (attendanceSeen.has(id)) errors.push(`Registrant ${id} is in multiple orchestra attendance groups.`);
+      attendanceSeen.add(id);
+    }
+  }
   const linkedSlotIds = new Set();
   for (const group of groups) {
     const slot = draftSlots.find(item => item.slotId === group.slotId);
@@ -267,7 +295,6 @@ function validatePublication(groups, event, existingAssignments, draftSlots = []
     }
   }
   if (draftSlots.some(slot => !linkedSlotIds.has(slot.slotId))) errors.push('Assign every draft session to a group or delete unused sessions.');
-  const seen = new Set();
   const slots = [];
   for (const g of groups) {
     if (!g.start || !g.end || !validTime(g.start) || !validTime(g.end) || g.start >= g.end) {
@@ -300,7 +327,8 @@ function validatePublication(groups, event, existingAssignments, draftSlots = []
     }
     slots.push({ ...g, time, key });
   }
-  return { errors, slots };
+  const attendanceRegistrantIds = attendanceOnlyIds(allGroups);
+  return { errors, slots, attendanceRegistrantIds };
 }
 
 async function previewPublication(eventId) {
@@ -336,7 +364,7 @@ async function publish(eventId, expectedRevision, actor) {
     if (hasActiveBookings(bookingSnap) || !seatsSnap.empty || !capacitySnap.empty || !ownershipSnap.empty) throw fail('Existing ticket activity requires reconciliation before publication.');
     const groups = groupSnap.docs.map(doc => doc.data());
     const previousAssignments = assignmentSnap.data()?.assignments || {};
-    const { errors, slots } = validatePublication(groups, event, previousAssignments, planSnap.data().draftSlots || []);
+    const { errors, slots, attendanceRegistrantIds } = validatePublication(groups, event, previousAssignments, planSnap.data().draftSlots || []);
     if (errors.length) throw fail(`Publication blocked: ${errors.join(' ')}`);
     const registrantIds = [...new Set(groups.flatMap(group => group.registrantIds))];
     const registrants = await Promise.all(registrantIds.map(id => transaction.get(db.collection('Registrants2025').doc(id))));
@@ -356,7 +384,8 @@ async function publish(eventId, expectedRevision, actor) {
     const nextState = { status: 'published', revision, publishedAt: stamp() };
     transaction.update(eventRef, { venues, competitionScheduleState: nextState });
     transaction.update(db.collection('competitionSessionPlans').doc(eventId), { status: 'published', revision, publishedAt: stamp() });
-    transaction.set(assignmentRef, { eventId, assignments, updatedAt: stamp() });
+    // Exclude only attendance members without a competition performance; dual membership stays ticketable.
+    transaction.set(assignmentRef, { eventId, assignments, attendanceOnlyRegistrantIds: attendanceRegistrantIds, updatedAt: stamp() });
     return { eventId, status: 'published', revision, publishedSlots: slots.length };
   });
 }
@@ -374,9 +403,14 @@ async function markReady(eventId, actor) {
     const event = eventSnap.data();
     const state = stateOf(event);
     if (state?.status !== 'published') throw fail('Only published plans can be checked.');
-    const groups = groupsSnap.docs.map(doc => doc.data());
-    if (!groups.length) throw fail('No published groups.');
+    const allGroups = groupsSnap.docs.map(doc => doc.data());
+    if (!allGroups.length) throw fail('No published groups.');
+    const groups = allGroups.filter(group => !isAttendanceGroup(group));
+    if (!groups.length) throw fail('No published competition groups.');
     const issues = [];
+    const expectedAttendance = attendanceOnlyIds(allGroups).sort().join('|');
+    const publishedAttendance = [...(assignmentSnap.data()?.attendanceOnlyRegistrantIds || [])].sort().join('|');
+    if (expectedAttendance !== publishedAttendance) issues.push('Orchestra attendance groups differ from the published ticketing projection.');
     const eligibility = settingsSnap.data()?.ticketEligibility;
     if (eligibility?.enabled && !(eligibility.schedule || []).some(day =>
       Array.isArray(day.allowedTiers) && day.allowedTiers.length > 0)) {

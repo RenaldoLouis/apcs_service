@@ -1,6 +1,5 @@
 const { db, admin } = require('../configs/firebase-init');
 const idFor = (eventId, registrantId) => encodeURIComponent(`${eventId}|${registrantId}`);
-const capacityIdFor = session => encodeURIComponent(`${session.eventId}|${session.venue}|${session.date}|${session.time}|paid`).replace(/%/g, '_');
 const isPaid = booking => ['PAID', 'paid'].includes(booking.paymentStatus);
 const ticketCount = booking => (booking.tickets || []).reduce((sum, ticket) => sum + Number(ticket.quantity || 0), 0);
 const fail = message => Object.assign(new Error(message), { statusCode: 409, isOperational: true });
@@ -73,27 +72,13 @@ async function assignGroup({ eventId, registrantId, sessionId }, actor) {
         if (!target) throw fail('Orchestra session no longer exists.');
         const venue = (event.venues || []).find(item => item.id === target.venue);
         if (!venue) throw fail('Orchestra venue no longer exists.');
-        const capacitySnap = await transaction.get(db.collection('ticketCapacity').doc(capacityIdFor({ ...target, eventId })));
-        const oldPaidBookings = !capacitySnap.exists ? await transaction.get(db.collection('publicBookings')
-            .where('eventId', '==', eventId).where('venue', '==', target.venue)
-            .where('date', '==', target.date).where('session', '==', target.time)) : null;
-        const reservedPaid = capacitySnap.exists
-            ? Object.values(capacitySnap.data().reservedByTier || {}).reduce((sum, count) => sum + Number(count), 0)
-            : (oldPaidBookings?.docs || []).map(doc => doc.data()).filter(booking => isPaid(booking)
-                || booking.paymentStatus === 'pending' || (booking.paymentStatus === 'failed' && booking.checkoutFailure?.cleanupStatus !== 'complete'))
-                .reduce((sum, booking) => sum + ticketCount(booking), 0);
-        const totalCapacity = (venue.seatConfig || []).reduce((sum, row) => sum + Number(row.seatCount || 0), 0);
-        const quota = Number(target.complimentaryQuota || 0);
-        if (!Number.isSafeInteger(quota) || quota < 0 || quota + reservedPaid > totalCapacity) throw fail('Session quota and paid reservations exceed the venue capacity. Review Orchestra Settings.');
+        // Staff-managed capacity: neither the competition seat layout nor the informational
+        // performance quota limits orchestra assignment. Counters below stay exact.
         const old = group.assignment;
         if (old?.notificationLease?.expiresAt > Date.now()) throw fail('Assignment emails are being sent. Please retry shortly.');
         const oldSession = old && sessions.find(session => session.id === old.sessionId);
         if (old && (!oldSession || Number(oldSession.freeSeatingAssigned || 0) < old.quantity)) {
             throw fail('Previous session attendance counter needs reconciliation.');
-        }
-        const assigned = Number(target.freeSeatingAssigned || 0) - (old?.sessionId === sessionId ? old.quantity : 0) + group.quantity;
-        if (assigned + Number(target.complimentaryClaimed || 0) > Number(target.complimentaryQuota || 0)) {
-            throw fail('The whole group exceeds this session’s remaining performance quota. Choose another session or increase its capacity safely.');
         }
         const bookingIds = group.bookings.map(booking => booking.id).sort();
         const unchanged = old && old.sessionId === sessionId && old.quantity === group.quantity
@@ -163,15 +148,9 @@ async function saveSession({ eventId, session, deleteSessionId }) {
             .where('venue', '==', session.venue).where('date', '==', session.date).where('session', '==', session.time)) : null;
         if (slotBookings?.docs.some(doc => isPaid(doc.data()) || doc.data().paymentStatus === 'pending'
             || (doc.data().paymentStatus === 'failed' && doc.data().checkoutFailure?.cleanupStatus !== 'complete'))) throw fail('This slot already has active bookings.');
+        // The performance quota is informational for orchestra sessions; staff manage actual admission capacity.
         const quota = Number(session.complimentaryQuota);
-        const totalCapacity = (venue.seatConfig || []).reduce((sum, row) => sum + Number(row.seatCount || 0), 0);
-        const paidCount = retained.reduce((sum, booking) => sum + ticketCount(booking), 0);
-        if (!Number.isSafeInteger(quota) || quota < Number(old?.freeSeatingAssigned || 0) + Number(old?.complimentaryClaimed || 0)
-            || quota + paidCount > totalCapacity) throw fail('Performance quota must cover assigned attendance and fit alongside paid tickets within the venue capacity.');
-        // Read the same ledger used by checkout, so concurrent reservations conflict.
-        const capacitySnap = await transaction.get(db.collection('ticketCapacity').doc(capacityIdFor({ ...session, eventId })));
-        const reservedPaid = capacitySnap.exists ? Object.values(capacitySnap.data().reservedByTier || {}).reduce((sum, count) => sum + Number(count), 0) : paidCount;
-        if (quota + reservedPaid > totalCapacity) throw fail('Performance quota would exceed venue capacity with current paid reservations.');
+        if (!Number.isSafeInteger(quota) || quota < 0) throw fail('Performance quota must be a whole number of zero or more.');
         const updated = { ...old, id, venue: session.venue, date: session.date, time: session.time,
             complimentaryQuota: quota, complimentaryClaimed: Number(old?.complimentaryClaimed || 0),
             freeSeatingAssigned: Number(old?.freeSeatingAssigned || 0), seatingMode: 'free' };

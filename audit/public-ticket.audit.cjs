@@ -86,6 +86,7 @@ function fixture(options = {}) {
         },
     });
     const db = { collection, batch: () => writer(false), runTransaction: async callback => {
+        if (options.beforeTransaction) await options.beforeTransaction({ records, seed });
         const transaction = writer(true);
         const result = await callback(transaction);
         await transaction.commit();
@@ -99,6 +100,11 @@ function fixture(options = {}) {
             if (options.invoiceRejects) throw new Error('Fixture rejected invoice promise');
             if (options.invoiceFails) callback(Object.assign(new Error('Fixture invoice failure'), options.errorInvoiceId ? { invoiceId: options.errorInvoiceId } : {}));
             else callback(null, { invoiceId: `invoice-${body.externalId}`, paymentUrl: 'https://example.invalid/pay' });
+        },
+        // Provider invoice lookup used only by verified payment recovery.
+        getInvoice: async id => {
+            if (options.getInvoice) return options.getInvoice(id, { records });
+            throw new Error('Fixture provider lookup unavailable');
         },
         deleteInvoice: async id => {
             if (options.onCancel) options.onCancel(id);
@@ -115,6 +121,7 @@ function fixture(options = {}) {
         const filename = path.join(__dirname, '..', relative);
         const context = {
             module: { exports: {} }, process: { env: {} }, Date: AuditDate,
+            console: { log() {}, error() {}, warn() {} },
             setTimeout: callback => timers.push(callback), setInterval: callback => intervals.push(callback),
             require: name => {
                 if (name.endsWith('firebase-init')) return { db, admin };
@@ -123,6 +130,8 @@ function fixture(options = {}) {
                 if (name.endsWith('/PaperRepository')) return paper;
                 if (name.endsWith('/PublicTicketFailureRepository')) return load('src/repositories/PublicTicketFailureRepository.js');
                 if (name === 'jsonwebtoken') return {};
+                const extra = options.extraRequire && options.extraRequire(name, load);
+                if (extra) return extra;
                 throw new Error(`Unmocked dependency: ${name}`);
             },
         };
@@ -566,13 +575,21 @@ test('REGRESSION: client masterclass flags cannot bypass competition-seat capaci
     assert.match(error.message, /product does not match|session type/i);
 });
 
-test('REGRESSION: free-seating public orchestra demand preserves the winner headcount pool', async () => {
+// Policy revision, 7 October 2026: the owner selected staff-managed orchestra capacity with an
+// informational performance quota. The former assertion (a second purchase must fail because the
+// competition layout minus quota was full) encoded the retired ceiling; see TICKETING_REPAIR_PLAN_2026-10-07.md.
+test('POLICY: free-seating public orchestra demand is not capped by the competition layout or performance quota', async () => {
     const f = fixture();
     f.records.get('events/APCS2026').venues[0].sessions['2026-11-01'].push('19:00-20:00');
     const first = await f.book({ session: '19:00-20:00', tickets: [{ id: 'presto', name: 'Presto', quantity: 10 }], isOrchestra: true });
     assert.ifError(first.error);
     assert.equal(f.records.get(`publicBookings/${first.result.bookingId}`).seatingMode, 'free');
-    assert.ok((await f.book({ session: '19:00-20:00', isOrchestra: true })).error);
+    const second = await f.book({ session: '19:00-20:00', isOrchestra: true });
+    assert.ifError(second.error);
+    const counter = [...f.records.entries()].find(([key]) => key.startsWith('ticketCapacity/'))[1];
+    assert.equal(counter.reservedByTier.presto, 11, 'Orchestra headcount stays exact without a ceiling');
+    assert.equal(counter.capacityPolicy, 'staff_managed');
+    assert.equal(counter.capacityByTier, null);
 });
 
 test('REGRESSION: winner attendance is recorded without a customer session or pending personal claim', async () => {
@@ -969,12 +986,87 @@ test('PUBLIC PERFORMANCE: unrelated configured add-ons remain unavailable', asyn
 test('PUBLIC ORCHESTRA: performance seat-selection add-on and numbered seats remain rejected', async () => {
     for (const extras of [{ addOnIds: ['seat_selection_performer'] }, { selectedSeatIds: ['seat-1'] }]) {
         const f = fixture(); f.seat();
-        f.records.get('events/APCS2026').venues[0].sessions['2026-11-01'].push('19:00-20:00');
         const order = await f.book({ bookingType: 'public_orchestra', session: '19:00-20:00', ...extras });
         assert.match(order.error.message, /free seating without seat selections or add-ons/);
         assert.equal(f.invoices.length, 0);
         assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'available');
     }
+});
+
+test('PUBLIC ORCHESTRA: both configured orchestra times sell without competition timetable entries', async () => {
+    const f = fixture();
+    const event = f.records.get('events/APCS2026');
+    event.orchestraSessions = ['15:30-17:30', '19:30-21:30'].map((time, index) => ({
+        id: `orch-${index}`, venue: 'V1', date: '2026-11-01', time,
+    }));
+    for (const slot of event.orchestraSessions) {
+        const order = await f.book({ bookingType: 'public_orchestra', session: slot.time });
+        assert.ifError(order.error);
+        const booking = f.records.get(`publicBookings/${order.result.bookingId}`);
+        assert.equal(booking.seatingMode, 'free');
+        assert.equal(booking.session, slot.time);
+        assert.equal(booking.selectedSeatIds.length, 0);
+        assert.equal(booking.totalAmount, 150000);
+    }
+    assert.equal(f.invoices.length, 2);
+    assert.deepEqual(event.venues[0].sessions['2026-11-01'], ['09:00-10:00']);
+    assert.equal([...f.records.keys()].filter(key => key.startsWith('ticketSeatOwnership/')).length, 0);
+});
+
+test('PUBLIC ORCHESTRA: configured admission does not require a competition timetable or competition readiness', async () => {
+    const f = fixture();
+    const event = f.records.get('events/APCS2026');
+    delete event.venues[0].sessions;
+    event.competitionScheduleState = { status: 'draft' };
+    const order = await f.book({ bookingType: 'public_orchestra', session: '19:00-20:00' });
+    assert.ifError(order.error);
+    assert.equal(f.invoices.length, 1);
+});
+
+test('PUBLIC ORCHESTRA: unknown venue, date, time and competition-only slots create no invoice', async () => {
+    for (const overrides of [
+        { venue: 'missing' }, { date: '2026-11-02' }, { session: '20:00-21:00' },
+        { session: '09:00-10:00' },
+    ]) {
+        const f = fixture();
+        const order = await f.book({ bookingType: 'public_orchestra', session: '19:00-20:00', ...overrides });
+        assert.ok(order.error);
+        assert.equal(f.invoices.length, 0);
+        assert.equal([...f.records.keys()].filter(key => key.startsWith('publicBookings/')).length, 0);
+    }
+});
+
+test('PUBLIC ORCHESTRA: transaction rejects a removed orchestra slot even if a competition time remains', async () => {
+    const f = fixture({ beforeTransaction: ({ records }) => {
+        const event = records.get('events/APCS2026');
+        event.orchestraSessions = [];
+        event.venues[0].sessions['2026-11-01'].push('19:00-20:00');
+    } });
+    const order = await f.book({ bookingType: 'public_orchestra', session: '19:00-20:00' });
+    assert.match(order.error.message, /Session configuration changed/);
+    assert.equal(f.invoices.length, 0);
+    assert.equal([...f.records.keys()].filter(key => key.startsWith('publicBookings/')).length, 0);
+});
+
+test('PUBLIC ORCHESTRA: transaction rejects a venue removed after initial validation', async () => {
+    const f = fixture({ beforeTransaction: ({ records }) => {
+        records.get('events/APCS2026').venues = [];
+    } });
+    const order = await f.book({ bookingType: 'public_orchestra', session: '19:00-20:00' });
+    assert.match(order.error.message, /Selected venue session is unavailable/);
+    assert.equal(f.invoices.length, 0);
+});
+
+test('COMPETITION: transaction still rejects a withdrawn competition timetable entry', async () => {
+    const f = fixture({ beforeTransaction: ({ records }) => {
+        records.get('events/APCS2026').venues[0].sessions['2026-11-01'] = [];
+    } });
+    f.seat();
+    const order = await f.book({ bookingType: 'public_competition', registrantId: 'winner',
+        selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
+    assert.match(order.error.message, /Selected venue session is unavailable/);
+    assert.equal(f.invoices.length, 0);
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'available');
 });
 
 test('PLANNING: draft and published competition sessions are closed in discovery and checkout', async () => {

@@ -92,6 +92,8 @@ router.post('/public-ticket/resend-email',    PublicTicketController.resendPubli
 router.post('/public-ticket/admin/release-booking', requireTicketingAdmin, PublicTicketController.releasePublicTicketBooking);
 router.post('/public-ticket/admin/mark-manual-paid', requireTicketingAdmin, PublicTicketController.markManualBookingPaid);
 router.post('/public-ticket/admin/resend-manual-instructions', requireTicketingAdmin, PublicTicketController.resendManualPaymentInstructions);
+router.post('/public-ticket/admin/assign-seats', requireTicketingAdmin, PublicTicketController.assignPaidBookingSeats);
+router.post('/public-ticket/admin/seats/generate', requireTicketingAdmin, PublicTicketController.generateSeatLayout);
 
 // --- System Settings ---
 router.get('/systemSettings/global', SystemSettingsController.getGlobalSettings);

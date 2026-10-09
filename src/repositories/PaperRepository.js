@@ -168,7 +168,32 @@ const deleteInvoice = async (invoiceId) => {
     }
 }
 
+// Paper.id "Retrieve a Sales Invoice Details" (GET /sales-invoices/{invoice_id}).
+// Read-only provider truth used to verify payment recovery candidates; callers must catch failures.
+const getInvoice = async (invoiceId) => {
+    const response = await axios.get(
+        `${PAPER_BASE_URL}/sales-invoices/${encodeURIComponent(invoiceId)}`,
+        {
+            headers: {
+                'client_id': process.env.PAPER_CLIENT_ID,
+                'client_secret': process.env.PAPER_CLIENT_SECRET,
+                'Content-Type': 'application/json'
+            },
+            timeout: 20000,
+        }
+    );
+    const body = response.data || {};
+    const detail = body.data || {};
+    return {
+        invoiceId,
+        number: detail.number ?? body.number ?? null,
+        paymentStatus: String(detail.status?.payment_status ?? body.status?.payment_status ?? '').toLowerCase(),
+        total: body.total ?? detail.total ?? null,
+    };
+}
+
 module.exports = {
     createInvoice,
-    deleteInvoice
+    deleteInvoice,
+    getInvoice
 }

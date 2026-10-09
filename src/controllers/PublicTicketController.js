@@ -1,9 +1,13 @@
 const PublicTicketService = require('../services/PublicTicketService');
+const PublicTicketPaymentService = require('../services/PublicTicketPaymentService');
 const PublicTicketAdminReleaseService = require('../services/PublicTicketAdminReleaseService');
 const PublicTicketRepository = require('../repositories/PublicTicketRepository');
+const TicketSeatAdminRepository = require('../repositories/TicketSeatAdminRepository');
 const { db } = require('../configs/firebase-init');
 const emailService = require('../services/EmailService');
 const { logger } = require('../utils/Logger');
+
+const isBookingReference = value => typeof value === 'string' && value.length > 0 && value.length < 200 && !value.includes('/');
 
 /** GET /api/v1/apcs/public-ticket/event-data */
 async function getPublicTicketEventData(req, res, next) {
@@ -66,9 +70,19 @@ async function createPublicTicketBooking(req, res, next) {
             return res.status(201).json(data);
         }
 
+        // A paid callback may have arrived before the invoice identity was saved.
+        try {
+            await PublicTicketPaymentService.reconcileBookingReceipts(data.bookingId);
+        } catch (replayErr) {
+            logger.error(`Early payment receipt replay failed for ${data.bookingId}: ${replayErr.message}`);
+        }
+
         const bookingSnap = await db.collection('publicBookings').doc(data.bookingId).get();
         if (!bookingSnap.exists) throw new Error('Booking could not be loaded after checkout.');
         const booking = bookingSnap.data();
+        if (booking.paymentStatus === 'PAID' || booking.paymentStatus === 'paid') {
+            return res.status(201).json(data);
+        }
 
         // Send "seats locked" holding email
         try {
@@ -140,42 +154,47 @@ async function resendManualPaymentInstructions(req, res, next) {
 
 /** POST /api/v1/apcs/public-ticket/webhook — Paper.id calls this on payment success */
 async function handlePublicTicketWebhook(req, res, next) {
+    const payload = req.body || {};
+    logger.info('Public ticket webhook received: ' + JSON.stringify(payload));
+
+    // Safely handle both Production (flat) and Development (nested in .data) payload structures automatically
+    const payloadData = payload.invoice ? payload : (payload.data ? payload.data : payload);
+    const isPaid = String(payloadData?.invoice?.status || '').toLowerCase() === 'paid';
+    if (!isPaid) {
+        logger.info('Public ticket webhook: status is not paid, ignoring.');
+        return res.status(200).json({ status: 'OK' });
+    }
+
+    const bookingId = payloadData.invoice.number; // we set number = bookingId
+    if (!isBookingReference(bookingId)) {
+        logger.error('Public ticket webhook: paid notification has no usable booking reference.');
+        return res.status(200).json({ status: 'IGNORED_INVALID_REFERENCE' });
+    }
+    let bookingSnap;
     try {
-        const payload = req.body;
-        logger.info('Public ticket webhook received: ' + JSON.stringify(payload));
-
-        // Safely handle both Production (flat) and Development (nested in .data) payload structures automatically
-        const payloadData = payload.invoice ? payload : (payload.data ? payload.data : payload);
-        const isPaid = payloadData.invoice && payloadData.invoice.status?.toLowerCase() === 'paid';
-
-        if (isPaid) {
-            const bookingId = payloadData.invoice.number; // we set number = bookingId
-            logger.info(`Processing paid public booking: ${bookingId}`);
-
-            const bookingSnap = await db.collection('publicBookings').doc(bookingId).get();
-            if (bookingSnap.exists && bookingSnap.data().paymentStatus === 'archived_test') {
-                logger.info(`Ignoring Paper callback for archived test booking ${bookingId}.`);
-                return res.status(200).json({ status: 'IGNORED_TEST_RESET' });
-            }
-
-            const bookingData = await PublicTicketService.handlePublicTicketWebhookPaid(bookingId, payloadData);
-
-
-            // Send booking confirmation email
-            try {
-                await emailService.sendPublicBookingConfirmationEmail(bookingData);
-            } catch (emailErr) {
-                logger.error(`Confirmation email failed for ${bookingData.userEmail}: ${emailErr.message}`);
-            }
-        } else {
-            logger.info('Public ticket webhook: status is not paid, ignoring.');
-        }
-
-        // Always respond 200 so Paper.id doesn't retry
-        res.status(200).json({ status: 'OK' });
+        bookingSnap = await db.collection('publicBookings').doc(bookingId).get();
     } catch (err) {
-        logger.error(`Public ticket webhook error: ${err.message}`);
-        res.status(200).json({ status: 'Error handled' });
+        // Nothing durable was recorded, so the provider must be allowed to retry.
+        logger.error(`Public ticket webhook could not read booking ${bookingId}: ${err.message}`);
+        return res.status(500).json({ status: 'RECEIPT_NOT_STORED' });
+    }
+    if (!bookingSnap.exists) {
+        logger.error(`Public ticket webhook: booking ${bookingId} not found.`);
+        return res.status(200).json({ status: 'IGNORED_UNKNOWN_BOOKING' });
+    }
+    if (bookingSnap.data().paymentStatus === 'archived_test') {
+        logger.info(`Ignoring Paper callback for archived test booking ${bookingId}.`);
+        return res.status(200).json({ status: 'IGNORED_TEST_RESET' });
+    }
+    logger.info(`Processing paid public booking: ${bookingId}`);
+    try {
+        const { statusCode, body } = await PublicTicketPaymentService.handlePublicBookingPaidCallback(
+            bookingId, bookingSnap.data(), payloadData);
+        return res.status(statusCode).json(body);
+    } catch (err) {
+        // Unexpected failure: a stored receipt is idempotent, so a provider retry is safe.
+        logger.error(`Public ticket webhook error for ${bookingId}: ${err.message}`);
+        return res.status(500).json({ status: 'RECEIPT_NOT_STORED' });
     }
 }
 
@@ -251,6 +270,30 @@ async function releasePublicTicketBooking(req, res, next) {
     }
 }
 
+/** POST /api/v1/apcs/public-ticket/admin/assign-seats */
+async function assignPaidBookingSeats(req, res, next) {
+    try {
+        const result = await TicketSeatAdminRepository.assignPaidBookingSeats({
+            bookingId: String(req.body?.bookingId || '').trim(),
+            seatIds: req.body?.seatIds,
+        }, req.ticketingAdmin);
+        return res.status(200).json(result);
+    } catch (err) {
+        return next(err);
+    }
+}
+
+/** POST /api/v1/apcs/public-ticket/admin/seats/generate */
+async function generateSeatLayout(req, res, next) {
+    try {
+        const { eventId, venueId, sessionIds } = req.body || {};
+        const result = await TicketSeatAdminRepository.generateSeatLayout({ eventId, venueId, sessionIds });
+        return res.status(200).json(result);
+    } catch (err) {
+        return next(err);
+    }
+}
+
 module.exports = {
     getPublicTicketEventData,
     createPublicTicketBooking,
@@ -262,4 +305,6 @@ module.exports = {
     releasePublicTicketBooking,
     markManualBookingPaid,
     resendManualPaymentInstructions,
+    assignPaidBookingSeats,
+    generateSeatLayout,
 };

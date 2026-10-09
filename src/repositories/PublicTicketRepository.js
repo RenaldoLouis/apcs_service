@@ -269,6 +269,9 @@ const createPublicTicketBooking = async (body, callback) => {
                 throw new Error(`Registrants with ${award} award are not eligible to purchase tickets today.`);
             }
             const assignmentDoc = await assignmentRef.get();
+            if ((assignmentDoc.data()?.attendanceOnlyRegistrantIds || []).includes(registrantId)) {
+                throw new Error('This registration is in an orchestra attendance group and has no ticketable performance.');
+            }
             const assignmentKey = `${venue}_${date}_${session}`;
             const assigned = assignmentDoc.exists
                 && (assignmentDoc.data().assignments?.[assignmentKey] || []).some(entry => entry.registrantId === registrantId);
@@ -286,11 +289,12 @@ const createPublicTicketBooking = async (body, callback) => {
 
         const venueMap = {};
         (eventData.venues || []).forEach(v => { venueMap[v.id] = v.label || v.id; });
+        const authoritativeSession = getAuthoritativeSessionType(eventData, venue, date, session);
         const selectedVenue = (eventData.venues || []).find(item => item.id === venue);
-        if (!selectedVenue || !(selectedVenue.sessions?.[date] || []).includes(session)) {
+        if (!selectedVenue || (authoritativeSession.type !== 'orchestra'
+            && !(selectedVenue.sessions?.[date] || []).includes(session))) {
             throw new Error('Selected venue session is unavailable.');
         }
-        const authoritativeSession = getAuthoritativeSessionType(eventData, venue, date, session);
         if (authoritativeSession.type === 'competition' && !competitionSalesOpen(eventData)) {
             throw new Error('Competition ticket sales are not ready.');
         }
@@ -487,6 +491,7 @@ const createPublicTicketBooking = async (body, callback) => {
                 const currentAward = currentRegistration?.finalAward || '';
                 const assignmentKey = `${venue}_${date}_${session}`;
                 const stillAssigned = currentAssignmentDoc?.exists
+                    && !(currentAssignmentDoc.data().attendanceOnlyRegistrantIds || []).includes(registrantId)
                     && (currentAssignmentDoc.data().assignments?.[assignmentKey] || [])
                         .some(entry => entry.registrantId === registrantId);
                 if (!currentRegistration || currentRegistration.eventId !== eventId || !stillAssigned
@@ -505,12 +510,12 @@ const createPublicTicketBooking = async (body, callback) => {
                 throw new Error('Session configuration changed. Please review your purchase.');
             }
             const currentVenue = (currentEventData.venues || []).find(item => item.id === venue);
-            if (!currentVenue || !(currentVenue.sessions?.[date] || []).includes(session)) {
+            if (!currentVenue || (currentSessionType.type !== 'orchestra'
+                && !(currentVenue.sessions?.[date] || []).includes(session))) {
                 throw new Error('Selected venue session is unavailable.');
             }
-            const paidOrchestraSession = bookingType === 'public_orchestra' && authoritativeSession.type === 'orchestra'
-                ? (currentEventData.orchestraSessions || []).find(item => item.id === authoritativeSession.session.id) : null;
-            const capacityCounts = getPaidCapacityByTier(currentVenue);
+            // Orchestra admission capacity is staff-managed: the numbered competition layout is not its ceiling.
+            const capacityCounts = isAuthoritativeOrchestra ? null : getPaidCapacityByTier(currentVenue);
             const retainsCapacity = booking => booking.paymentStatus === 'pending'
                 || booking.paymentStatus === 'PAID'
                 || booking.paymentStatus === 'paid'
@@ -527,23 +532,13 @@ const createPublicTicketBooking = async (body, callback) => {
             }, {});
             const reservedByTier = capacitySnap?.exists
                 ? (capacitySnap.data().reservedByTier || {}) : migratedReservedByTier;
-            if (!isAuthoritativeMasterclass) {
+            if (capacityCounts) {
                 Object.entries(ticketQuantities).forEach(([tierId, quantity]) => {
                     const capacity = capacityCounts[tierId] || 0;
                     if (quantity + (reservedByTier[tierId] || 0) > capacity) {
                         throw new Error(`Not enough ${tierId} capacity remains for this session.`);
                     }
                 });
-            }
-
-            if (paidOrchestraSession) {
-                const totalCapacity = Object.values(capacityCounts).reduce((sum, count) => sum + count, 0);
-                const reservedPaid = Object.values(reservedByTier).reduce((sum, count) => sum + Number(count), 0);
-                const winnerQuota = Number(paidOrchestraSession.complimentaryQuota || 0);
-                if (!Number.isSafeInteger(winnerQuota) || winnerQuota < Number(paidOrchestraSession.complimentaryClaimed || 0) + Number(paidOrchestraSession.freeSeatingAssigned || 0)) throw new Error('Orchestra quota needs reconciliation.');
-                if (reservedPaid + ticketsQty + winnerQuota > totalCapacity) {
-                    throw new Error('Not enough public orchestra capacity remains after the winner attendance allocation.');
-                }
             }
 
             // 2. Validate and Lock Seats
@@ -595,8 +590,10 @@ const createPublicTicketBooking = async (body, callback) => {
                 Object.entries(ticketQuantities).forEach(([tierId, quantity]) => {
                     updatedReservedByTier[tierId] = Number(updatedReservedByTier[tierId] || 0) + quantity;
                 });
+                // Orchestra counters remain an accurate transactional headcount without a ceiling.
                 const capacityData = {
                     eventId, venue, date, session, pool: 'paid', capacityByTier: capacityCounts,
+                    capacityPolicy: capacityCounts ? 'numbered_layout' : 'staff_managed',
                     reservedByTier: updatedReservedByTier, updatedAt: lockedAt,
                 };
                 if (capacitySnap?.exists) transaction.update(capacityRef, capacityData);
@@ -739,39 +736,62 @@ const createPublicTicketBooking = async (body, callback) => {
     return callback(null, response);
 };
 
+const paymentError = (message, code) => Object.assign(new Error(message), { code });
+
 /**
- * Called by the Paper.id webhook when payment is confirmed (isPaid = true).
- * Upgrades seat status from 'locked' → 'reserved' and marks booking as PAID.
- * Returns the booking data for the caller to use when sending the confirmation email.
+ * Applies a Paper.id paid notification to a public booking (seats locked → booked, booking PAID).
+ * A booking without a saved invoice ID, or a failed checkout whose inventory is still held, is
+ * recovered only with `options.verifiedInvoice` from the authenticated provider invoice API.
+ * `options.receiptRef` marks the durable payment receipt processed in the same transaction.
+ * Returns the booking data plus `alreadyPaid` for the caller's confirmation email decision.
  */
-const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
+const handlePublicTicketWebhookPaid = async (bookingId, payloadData, options = {}) => {
     const bookingRef = db.collection('publicBookings').doc(bookingId);
-    const bookingData = await db.runTransaction(async transaction => {
+    const receiptRef = options.receiptRef || null;
+    const outcome = await db.runTransaction(async transaction => {
         const bookingSnap = await transaction.get(bookingRef);
-        if (!bookingSnap.exists) throw new Error(`Public booking ${bookingId} not found.`);
+        if (!bookingSnap.exists) throw paymentError(`Public booking ${bookingId} not found.`, 'BOOKING_NOT_FOUND');
         const booking = bookingSnap.data();
-        if (booking.paymentStatus === 'archived_test') throw new Error('This test booking was archived during schedule reset.');
-        if (booking.paymentStatus === 'failed') {
-            throw new Error(`Booking ${bookingId} checkout failed; payment requires reconciliation.`);
+        if (booking.paymentStatus === 'archived_test') {
+            throw paymentError('This test booking was archived during schedule reset.', 'ARCHIVED_TEST');
         }
         const providerInvoiceId = payloadData?.invoice?.id;
-        if (!providerInvoiceId || providerInvoiceId !== booking.invoiceId) {
-            throw new Error(`Payment invoice does not match booking ${bookingId}.`);
+        const verified = options.verifiedInvoice?.paymentStatus === 'paid' && providerInvoiceId
+            && options.verifiedInvoice.invoiceId === providerInvoiceId ? options.verifiedInvoice : null;
+        if (booking.paymentStatus === 'failed') {
+            if (booking.checkoutFailure?.cleanupStatus === 'complete') {
+                throw paymentError(`Booking ${bookingId} inventory was released before payment confirmation.`, 'BOOKING_RELEASED');
+            }
+            if (!verified) {
+                throw paymentError(`Booking ${bookingId} checkout failed; payment requires reconciliation.`, 'PROVIDER_VERIFICATION_REQUIRED');
+            }
+        }
+        if (!providerInvoiceId || (booking.invoiceId && providerInvoiceId !== booking.invoiceId)) {
+            throw paymentError(`Payment invoice does not match booking ${bookingId}.`, 'PAYMENT_INVOICE_MISMATCH');
+        }
+        if (!booking.invoiceId && !verified) {
+            throw paymentError(`Payment invoice does not match booking ${bookingId}.`, 'AWAITING_INVOICE_IDENTITY');
         }
         const providerCurrency = payloadData?.invoice?.currency || payloadData?.invoice?.currency_code;
         if (providerCurrency && String(providerCurrency).toUpperCase() !== String(booking.paymentCurrency || 'IDR').toUpperCase()) {
-            throw new Error(`Payment currency does not match booking ${bookingId}.`);
+            throw paymentError(`Payment currency does not match booking ${bookingId}.`, 'PAYMENT_CURRENCY_MISMATCH');
         }
-        if (booking.paymentStatus === 'PAID' || booking.paymentStatus === 'paid') return booking;
-        if (booking.paymentStatus === 'expired') throw new Error(`Booking ${bookingId} was canceled before payment confirmation.`);
+        if (booking.paymentStatus === 'PAID' || booking.paymentStatus === 'paid') {
+            if (receiptRef) transaction.update(receiptRef, { status: 'processed', reason: 'already_paid', processedAt: admin.firestore.FieldValue.serverTimestamp() });
+            return { booking, alreadyPaid: true };
+        }
+        if (booking.paymentStatus === 'expired') {
+            throw paymentError(`Booking ${bookingId} was canceled before payment confirmation.`, 'BOOKING_CANCELED');
+        }
 
         const invoice = payloadData?.invoice || {};
         const reportedAmounts = [invoice.total_amount, invoice.amount]
             .filter(value => value !== undefined && value !== null && value !== '');
         const amountPaid = Number(reportedAmounts[0]);
         if (!reportedAmounts.length || reportedAmounts.some(value =>
-            !Number.isFinite(Number(value)) || Number(value) !== Number(booking.totalAmount))) {
-            throw new Error(`Payment amount does not match booking ${bookingId}.`);
+            !Number.isFinite(Number(value)) || Number(value) !== Number(booking.totalAmount))
+            || (verified && Number(verified.total) !== Number(booking.totalAmount))) {
+            throw paymentError(`Payment amount does not match booking ${bookingId}.`, 'PAYMENT_AMOUNT_MISMATCH');
         }
 
         const seatIds = [...new Set([...(booking.selectedSeatIds || []), ...(booking.orchestraSelectedSeatIds || [])])];
@@ -782,7 +802,7 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
         const ownershipDocs = ownershipRefs.length ? await transaction.getAll(...ownershipRefs) : [];
         for (const seat of seats) {
             if (!seat.exists || seat.data().status !== 'locked' || seat.data().lockedByBookingId !== bookingId) {
-                throw new Error(`Booking ${bookingId} no longer owns every selected seat.`);
+                throw paymentError(`Booking ${bookingId} no longer owns every selected seat.`, 'SEAT_OWNERSHIP_LOST');
             }
         }
 
@@ -800,7 +820,7 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
         for (let i = 0; i < ownershipDocs.length; i++) {
             const ownership = ownershipDocs[i];
             if (!ownership.exists || ownership.data().bookingId !== bookingId) {
-                throw new Error(`Booking ${bookingId} no longer owns every physical seat.`);
+                throw paymentError(`Booking ${bookingId} no longer owns every physical seat.`, 'SEAT_OWNERSHIP_LOST');
             }
             transaction.update(ownership.ref, {
                 status: 'booked', active: true, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -809,12 +829,21 @@ const handlePublicTicketWebhookPaid = async (bookingId, payloadData) => {
         transaction.update(bookingRef, {
             paymentStatus: 'PAID', paidAt: admin.firestore.FieldValue.serverTimestamp(),
             amountPaid, paymentDetails: payloadData,
+            ...(booking.invoiceId ? {} : { invoiceId: providerInvoiceId }),
+            ...(verified ? {
+                paymentVerification: {
+                    source: 'paper_sales_invoice_api', invoiceId: providerInvoiceId,
+                    recoveredFromStatus: booking.paymentStatus, verifiedAt: verified.verifiedAt || null,
+                },
+            } : {}),
+            ...(receiptRef ? { paymentReceipt: { receiptId: receiptRef.id, status: 'processed', reason: 'paid' } } : {}),
         });
-        return booking;
+        if (receiptRef) transaction.update(receiptRef, { status: 'processed', reason: 'paid', processedAt: admin.firestore.FieldValue.serverTimestamp() });
+        return { booking, alreadyPaid: false };
     });
-    logger.info(`Booking ${bookingId} marked PAID. Seats permanently reserved.`);
+    if (!outcome.alreadyPaid) logger.info(`Booking ${bookingId} marked PAID. Seats permanently reserved.`);
 
-    return { id: bookingId, ...bookingData };
+    return { id: bookingId, ...outcome.booking, alreadyPaid: outcome.alreadyPaid };
 };
 
 const markManualBookingPaid = async (bookingId, actor) => {
@@ -910,6 +939,8 @@ const getEligibleWinners = async (query, callback) => {
             return callback(null, { winners: [], allowedTiers: allowedTiers || [], eligibilityEnabled: !!allowedTiers });
         }
         const assignmentsData = assignmentsDoc.data().assignments || {};
+        // Published attendance-only members have no competition performance; dual members stay ticketable.
+        const attendanceOnly = new Set(assignmentsDoc.data().attendanceOnlyRegistrantIds || []);
 
         // 2. Build a map of registrantId → session info from assignments
         //    Assignment shape: { [sessionId]: [ { registrantId, name, ... }, ... ] }
@@ -922,7 +953,7 @@ const getEligibleWinners = async (query, callback) => {
             const venue = parts.join('_') || '';
 
             (assignmentsData[sessionId] || []).forEach(entry => {
-                if (entry.registrantId) {
+                if (entry.registrantId && !attendanceOnly.has(entry.registrantId)) {
                     registrantSessionMap[entry.registrantId] = {
                         sessionId,
                         venue,
@@ -1017,4 +1048,7 @@ module.exports = {
     getPublicTicketSeats,
     getEligibleWinners,
     markManualBookingPaid,
+    physicalSeatKey,
+    safeDocumentId,
+    SEAT_OWNERSHIP_COLLECTION,
 };

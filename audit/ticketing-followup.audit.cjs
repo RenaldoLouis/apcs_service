@@ -93,8 +93,11 @@ test('FOLLOWUP: the physical ownership guard includes existing booked aliases wi
     assert.ok(second.error, 'A booked legacy alias must block selling the same chair through a new document ID');
 });
 
+// Revised 7 October 2026: staff assignment moved from a browser Web SDK transaction (which cannot
+// read a Query) to the protected backend Admin SDK transaction executed here.
 test('FOLLOWUP: actual staff assignment and public checkout cannot fulfill the same physical chair', async () => {
-    const f = fixture();
+    const f = fixture({ extraRequire: (name, load) => name.endsWith('/PublicTicketRepository')
+        ? load('src/repositories/PublicTicketRepository.js') : undefined });
     f.seat('staff-chair');
     f.seat('public-alias', { seatLabel: 'A-1' });
     const first = await f.book({});
@@ -103,33 +106,19 @@ test('FOLLOWUP: actual staff assignment and public checkout cannot fulfill the s
         invoice: { id: `invoice-${first.result.bookingId}`, total_amount: 150000 },
     });
 
-    const filename = path.join(__dirname, '../../apcs_web/src/Pages/AdminDashboard/PublicCustomersList.js');
-    const pageSource = fs.readFileSync(filename, 'utf8');
-    const start = pageSource.indexOf('    const handleAssignSeatsSubmit = ');
-    const end = pageSource.indexOf('    const handleMarkPaid = ', start);
-    assert.ok(start >= 0 && end > start, 'Actual assignment handler boundary must be recognizable');
-    const errors = [];
-    const pageContext = {
-        db: f.db, selectedBooking: { id: first.result.bookingId }, quantityToAssign: 1,
-        selectedNewSeats: [{ id: 'staff-chair', seatLabel: 'A1' }],
-        isPaidBooking: booking => String(booking.paymentStatus).toUpperCase() === 'PAID',
-        isMasterclassTicket: ticket => ['masterclass', 'master_class'].includes(String(ticket.id).toLowerCase()),
-        doc: (db, collection, id) => db.collection(collection).doc(id),
-        collection: (db, name) => db.collection(name),
-        where: (field, operator, value) => ({ field, operator, value }),
-        query: (source, ...constraints) => constraints.reduce((current, constraint) =>
-            current.where(constraint.field, constraint.operator, constraint.value), source),
-        runTransaction: (db, callback) => db.runTransaction(transaction => callback({
-            ...transaction,
-            get: async ref => { const snap = await transaction.get(ref); return { ...snap, exists: () => snap.exists }; },
-        })),
-        setLoading() {}, setIsAssignModalOpen() {}, fetchCustomers() {},
-        message: { success() {}, error: error => errors.push(error) }, console: { error() {} },
-    };
-    vm.runInNewContext(pageSource.slice(start, end) + '\nglobalThis.assign = handleAssignSeatsSubmit;', pageContext, { filename });
-    await pageContext.assign();
-    assert.deepEqual(errors, []);
+    const pageSource = fs.readFileSync(path.join(__dirname, '../../apcs_web/src/Pages/AdminDashboard/PublicCustomersList.js'), 'utf8');
+    const handler = pageSource.slice(pageSource.indexOf('    const handleAssignSeatsSubmit = '), pageSource.indexOf('    const handleMarkPaid = '));
+    assert.match(handler, /apis\.publicTicket\.assignSeats\(/, 'Public Customers must use the protected backend assignment');
+    assert.doesNotMatch(handler, /runTransaction|transaction\.get/, 'The browser must not run the unsupported query transaction');
+
+    const seatAdmin = f.load('src/repositories/TicketSeatAdminRepository.js');
+    const assigned = await seatAdmin.assignPaidBookingSeats({ bookingId: first.result.bookingId, seatIds: ['staff-chair'] },
+        { uid: 'staff-1', email: 'staff@example.invalid' });
+    assert.deepEqual(assigned.assignedSeatIds, ['staff-chair']);
     assert.equal(f.records.get('seatsAPCS2026/staff-chair').status, 'booked');
+    const paidBooking = getBooking(f, first.result);
+    assert.equal(paidBooking.physicalSeatKeys.length, paidBooking.selectedSeatIds.length);
+    assert.equal(paidBooking.seatAssignments[0].assignedByEmail, 'staff@example.invalid');
     const second = await f.book({ selectedSeatIds: ['public-alias'], addOnIds: ['seat_selection_performer'] });
     if (!second.error) {
         await f.repo.handlePublicTicketWebhookPaid(second.result.bookingId, {

@@ -10,6 +10,7 @@ const paperRoute = require('./src/routes/PaperRoute.js')
 const PaymentIntegrationRoute = require('./src/routes/PaymentIntegrationRoute.js')
 const wasteRoute = require('./src/routes/WasteRoutes.js')
 const { startPublicTicketSweeper } = require('./src/jobs/PublicTicketSweeper.js')
+const { startPublicTicketPaymentRecovery } = require('./src/jobs/PublicTicketPaymentRecoveryJob.js')
 const { startJuryDeadlineReminder } = require('./src/jobs/JuryDeadlineReminder.js')
 
 app.use(cors())
@@ -46,6 +47,7 @@ app.use(errorHandler)
 
 // Start background jobs
 startPublicTicketSweeper()
+startPublicTicketPaymentRecovery()
 startJuryDeadlineReminder()
 
 app.listen(port, () => {

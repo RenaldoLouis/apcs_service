@@ -3,6 +3,7 @@ const { validationResult } = require('express-validator');
 const { logger } = require('../utils/Logger.js');
 const { db, admin } = require('../configs/firebase-init');
 const emailService = require('../services/EmailService');
+const PublicTicketPaymentService = require('../services/PublicTicketPaymentService');
 const { getVocalChoirDiscount } = require('../utils/discountUtils');
 
 async function createInvoice(req, res, next) {
@@ -96,31 +97,27 @@ async function handlePaperWebhook(req, res, next) {
 
                 // 3. Update Firebase
                 // First, check if it's a public ticket booking
-                const publicBookingRef = db.collection('publicBookings').doc(firebaseId);
-                const publicBookingDoc = await publicBookingRef.get();
+                let publicBookingDoc;
+                try {
+                    if (typeof firebaseId === 'string' && firebaseId.length < 200 && !firebaseId.includes('/')) {
+                        publicBookingDoc = await db.collection('publicBookings').doc(firebaseId).get();
+                    }
+                } catch (lookupErr) {
+                    // Routing is unknown and nothing durable was recorded, so allow a provider retry.
+                    logger.error(`[PAPER_WEBHOOK] Booking lookup failed for ${firebaseId}: ${lookupErr.message}`);
+                    return res.status(500).json({ status: 'RECEIPT_NOT_STORED' });
+                }
 
-                if (publicBookingDoc.exists) {
+                if (publicBookingDoc?.exists) {
                     if (publicBookingDoc.data().paymentStatus === 'archived_test') {
                         logger.info(`Ignoring Paper callback for archived test booking ${firebaseId}.`);
                         return res.status(200).json({ status: 'IGNORED_TEST_RESET' });
                     }
                     logger.info(`Routing payment ${firebaseId} to Public Tickets Webhook Handler`);
-
-                    // Route to public ticket logic
-                    const PublicTicketService = require('../services/PublicTicketService');
-                    const bookingData = await PublicTicketService.handlePublicTicketWebhookPaid(firebaseId, payloadData);
-
-
-                    // Send booking confirmation email
-                    try {
-                        await emailService.sendPublicBookingConfirmationEmail(bookingData);
-                        await publicBookingRef.update({ emailSent: true });
-                    } catch (emailErr) {
-                        logger.error(`Confirmation email failed for ${bookingData.userEmail}: ${emailErr.message}`);
-                        await publicBookingRef.update({ emailSent: false });
-                    }
-
-                    return res.status(200).json({ status: 'OK' });
+                    // Shared with the dedicated public route: durable receipt first, then fulfillment.
+                    const { statusCode, body } = await PublicTicketPaymentService.handlePublicBookingPaidCallback(
+                        firebaseId, publicBookingDoc.data(), payloadData);
+                    return res.status(statusCode).json(body);
                 }
 
                 // If not a public ticket, assume it's a Competition Registration

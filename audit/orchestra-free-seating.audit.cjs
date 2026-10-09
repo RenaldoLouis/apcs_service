@@ -82,14 +82,18 @@ test('ORCHESTRA: solo repeats and duplicate paid callbacks count one performer',
     assert.equal((await repo(f).readGroup('APCS2026', 'winner')).quantity, 6);
 });
 
-test('ORCHESTRA: paid group only; insufficient quota cannot cap or partially assign', async () => {
+// Policy revisions, 7 October 2026: orchestra admission capacity is staff-managed and the performance
+// quota is informational for orchestra sessions only. Earlier assertions that a quota or the competition
+// seat layout must reject assignment, settings or direct sales encoded the retired rule.
+test('ORCHESTRA POLICY: paid group only; the informational quota never caps or partially assigns', async () => {
     const f = fixture(); ensemble(f);
     await purchase(f, 3, false);
     await assert.rejects(repo(f).assignGroup(request, actor), /Only paid/);
     await purchase(f, 2);
     f.records.get('events/APCS2026').orchestraSessions[0].complimentaryQuota = 5;
-    await assert.rejects(repo(f).assignGroup(request, actor), /whole group/);
-    assert.equal([...f.records.keys()].filter(key => key.startsWith('orchestraAssignments/')).length, 0);
+    const assigned = await repo(f).assignGroup(request, actor);
+    assert.equal(assigned.assignment.quantity, 6, 'The whole paid group is assigned, never truncated');
+    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].freeSeatingAssigned, 6);
 });
 
 test('ORCHESTRA: assignment retry is idempotent and reassign releases the old count once', async () => {
@@ -125,14 +129,14 @@ test('ORCHESTRA: later purchases leave confirmed places intact and require the a
     assert.equal((await repository.readGroup('APCS2026', 'winner')).assignment.notifiedBookingIds.length, 0, 'Stale email acknowledgement cannot confirm a newer assignment');
 });
 
-test('ORCHESTRA: distinct winners share transactional session quota', async () => {
+test('ORCHESTRA POLICY: distinct winners share exact session attendance counters without a quota ceiling', async () => {
     const f = fixture();
     await purchase(f, 3); await repo(f).assignGroup(request, actor);
     f.seed('Registrants2025/winner2', { eventId: 'APCS2026', performers: [{}], finalAward: 'Gold' });
     f.records.get('sessionAssignments/APCS2026').assignments['V1_2026-11-01_09:00-10:00'].push({ registrantId: 'winner2' });
     await purchase(f, 6, true, { registrantId: 'winner2' });
-    await assert.rejects(repo(f).assignGroup({ ...request, registrantId: 'winner2' }, actor), /whole group/);
-    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].freeSeatingAssigned, 4);
+    await repo(f).assignGroup({ ...request, registrantId: 'winner2' }, actor);
+    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].freeSeatingAssigned, 11, 'Counters add 4 + 7 exactly once');
 });
 
 test('ORCHESTRA: legacy allocations are preserved and block accidental duplicate assignment', async () => {
@@ -163,11 +167,13 @@ test('ORCHESTRA: Presto has no new Masterclass benefit or invoice line', async (
     assert.equal(f.records.get(`publicBookings/${id}`).venueName, 'Hall 1');
 });
 
-test('ORCHESTRA: settings reject quota below assignments and deletion of active sessions', async () => {
+test('ORCHESTRA POLICY: settings accept an informational quota below assignments; active sessions still cannot be deleted', async () => {
     const f = fixture(); await purchase(f, 3); await repo(f).assignGroup(request, actor);
     const event = f.records.get('events/APCS2026'); event.venues[0].sessions['2026-11-01'].push('19:00-20:00');
     const repository = repo(f);
-    await assert.rejects(repository.saveSession({ eventId: 'APCS2026', session: { ...event.orchestraSessions[0], complimentaryQuota: 3 } }), /quota/);
+    const below = await repository.saveSession({ eventId: 'APCS2026', session: { ...event.orchestraSessions[0], complimentaryQuota: 3 } });
+    assert.equal(below.complimentaryQuota, 3); assert.equal(below.freeSeatingAssigned, 4);
+    await assert.rejects(repository.saveSession({ eventId: 'APCS2026', session: { ...event.orchestraSessions[0], complimentaryQuota: -1 } }), /whole number/);
     await assert.rejects(repository.saveSession({ eventId: 'APCS2026', deleteSessionId: 'orch' }), /cannot be deleted/);
     const saved = await repository.saveSession({ eventId: 'APCS2026', session: { ...event.orchestraSessions[0], complimentaryQuota: 5 } });
     assert.equal(saved.freeSeatingAssigned, 4);
@@ -180,7 +186,7 @@ test('ORCHESTRA: settings cannot convert a competition with performer assignment
     await assert.rejects(repo(f).saveSession({ eventId: 'APCS2026', session: { venue: 'V1', date: '2026-11-01', time: '09:00-10:00', complimentaryQuota: 5 } }), /competition performers/);
 });
 
-test('ORCHESTRA: public free seating retains tier and overall capacity without numbered seats', async () => {
+test('ORCHESTRA POLICY: direct orchestra sales and quota exceed the competition layout while competition tier capacity holds', async () => {
     const f = fixture(); const event = f.records.get('events/APCS2026');
     event.venues[0].seatConfig.push({ row: 'C', seatCount: 5, areaType: 'allegro' });
     event.ticketTiers.push({ id: 'allegro', name: 'Allegro', venuePrices: { V1: 100000 } });
@@ -189,8 +195,14 @@ test('ORCHESTRA: public free seating retains tier and overall capacity without n
     assert.ifError(first.error);
     const booking = f.records.get(`publicBookings/${first.result.bookingId}`);
     assert.equal(booking.selectedSeatIds.length, 0); assert.equal(booking.seatingMode, 'free');
-    assert.ok((await f.book({ session: '19:00-20:00' })).error);
-    await assert.rejects(repo(f).saveSession({ eventId: 'APCS2026', session: { ...event.orchestraSessions[0], complimentaryQuota: 11 } }), /capacity/);
+    const beyondLayout = await f.book({ session: '19:00-20:00', tickets: [{ id: 'presto', quantity: 25 }] });
+    assert.ifError(beyondLayout.error);
+    const saved = await repo(f).saveSession({ eventId: 'APCS2026', session: { ...event.orchestraSessions[0], complimentaryQuota: 9999 } });
+    assert.equal(saved.complimentaryQuota, 9999);
+    // Numbered competition capacity is unchanged: presto has ten seats in the competition session.
+    assert.ifError((await f.book({ tickets: [{ id: 'presto', quantity: 10 }] })).error);
+    assert.match((await f.book({ tickets: [{ id: 'presto', quantity: 1 }] })).error.message, /capacity/);
+    assert.ok((await f.book({ tickets: [{ id: 'presto', quantity: 0 }] })).error, 'Quantity validation still applies');
 });
 
 test('ORCHESTRA: email shows pending or named venue/session, group count and escaped names', () => {

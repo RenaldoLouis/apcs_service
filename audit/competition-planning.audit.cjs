@@ -256,3 +256,92 @@ test('PLANNING RESET: both Paper callback routes ignore archived test bookings',
   assert.equal(publicResponse.data.status, 'IGNORED_TEST_RESET');
   assert.equal(registrationReads, 0);
 });
+
+// Attendance groups grant no admission; performers can also attend independently (9 October 2026).
+// link no performer session, create no seat inventory and are never published as performances.
+test('PLANNING CLASSIFICATION: attendance purpose persists through save and reload; existing groups stay competition', async () => {
+  const f = fixture();
+  f.records.set('Registrants2025/R2', { eventId: 'E1' });
+  await f.repo.saveDraft('E1', 0, []);
+  const slot = await f.repo.saveSlot('E1', 1, { venueId: 'V1', date: '2026-11-01', start: '09:00', end: '10:00' });
+  const slotId = slot.draftSlots[0].slotId;
+  const competition = { groupId: 'G1', venueId: 'V1', date: '2026-11-01', label: 'Group 1', slotId, registrantIds: ['R1'] };
+  const attendance = { groupId: 'G2', venueId: 'V1', date: '2026-11-01', label: 'Orchestra guests', purpose: 'orchestra_attendance', registrantIds: ['R2'] };
+  await assert.rejects(f.repo.saveDraft('E1', 2, [competition, { ...attendance, slotId }]), /cannot use a performer session/);
+  await assert.rejects(f.repo.saveDraft('E1', 2, [competition, { ...attendance, purpose: 'free_ticket' }]), /valid group type/);
+  await f.repo.saveDraft('E1', 2, [competition, attendance]);
+  assert.equal(f.records.get('competitionSessionPlans/E1/groups/G2').purpose, 'orchestra_attendance');
+  assert.equal(f.records.get('competitionSessionPlans/E1/groups/G2').slotId, null);
+  assert.equal(f.records.get('competitionSessionPlans/E1/groups/G1').purpose, 'competition');
+  // A group saved before classification existed is read back as a competition group.
+  delete f.records.get('competitionSessionPlans/E1/groups/G1').purpose;
+  const state = await f.repo.getPlanningState('E1');
+  assert.equal(JSON.stringify(state.groups.map(group => [group.groupId, group.purpose])), JSON.stringify([['G1', 'competition'], ['G2', 'orchestra_attendance']]));
+  assert.equal(state.groups[1].registrantIds.join(','), 'R2', 'Registration membership is retained');
+  await assert.rejects(f.repo.saveGroup('E1', { ...attendance, ordinal: 2, slotId }), /cannot use a performer session/);
+});
+
+test('PLANNING CLASSIFICATION: publication projects only competition groups and readiness ignores attendance groups', async () => {
+  const f = fixture();
+  f.records.set('Registrants2025/R2', { eventId: 'E1' });
+  await f.repo.saveDraft('E1', 0, []);
+  const attendanceOnly = [{ groupId: 'G2', venueId: 'V1', date: '2026-11-01', label: 'Orchestra guests', purpose: 'orchestra_attendance', registrantIds: ['R2'] }];
+  await f.repo.saveDraft('E1', 1, attendanceOnly);
+  const blocked = await f.repo.previewPublication('E1');
+  assert.equal(blocked.canPublish, false);
+  assert.ok(blocked.errors.includes('Add at least one competition group.'));
+  const slot = await f.repo.saveSlot('E1', 2, { venueId: 'V1', date: '2026-11-01', start: '09:00', end: '10:00' });
+  await f.repo.saveDraft('E1', 3, [
+    { groupId: 'G1', venueId: 'V1', date: '2026-11-01', label: 'Group 1', slotId: slot.draftSlots[0].slotId, registrantIds: ['R1'] },
+    ...attendanceOnly,
+  ]);
+  const preview = await f.repo.previewPublication('E1');
+  assert.equal(preview.canPublish, true, preview.errors.join(' '));
+  await f.repo.publish('E1', preview.revision, { uid: 'admin' });
+  const projection = f.records.get('sessionAssignments/E1');
+  assert.equal(Object.keys(projection.assignments).join(','), 'V1_2026-11-01_09:00-10:00');
+  assert.equal(projection.attendanceOnlyRegistrantIds.join(','), 'R2');
+  assert.equal(f.records.get('events/E1').venues[0].sessions['2026-11-01'].join(','), '09:00-10:00,19:00-20:00');
+  for (let number = 1; number <= 2; number++) {
+    f.records.set('seatsE1/A' + number, { venueId: 'V1', sessionId: '2026-11-01_09:00-10:00', areaType: 'presto', row: 'A', number });
+  }
+  assert.equal((await f.repo.markReady('E1', { uid: 'admin' })).ready, true);
+});
+
+
+test('PLANNING ATTENDANCE: same registration saves in one group of each type, reloads and remains a published performance', async () => {
+  const f = fixture();
+  f.records.set('Registrants2025/R2', { eventId: 'E1' });
+  await f.repo.saveDraft('E1', 0, []);
+  const slot = await f.repo.saveSlot('E1', 1, { venueId: 'V1', date: '2026-11-01', start: '09:00', end: '10:00' });
+  const competition = { groupId: 'G1', venueId: 'V1', date: '2026-11-01', label: 'Performance', slotId: slot.draftSlots[0].slotId, registrantIds: ['R1'] };
+  const attendance = { groupId: 'G2', venueId: 'V1', date: '2026-11-01', label: 'Orchestra', purpose: 'orchestra_attendance', registrantIds: ['R1', 'R2'] };
+  await f.repo.saveDraft('E1', 2, [competition, attendance]);
+  const state = await f.repo.getPlanningState('E1');
+  assert.equal(state.groups[0].registrantIds.join(','), 'R1');
+  assert.equal(state.groups[1].registrantIds.join(','), 'R1,R2');
+  // Single-group API follows the same rule as full-board save.
+  await f.repo.saveGroup('E1', { ...attendance, ordinal: 2 });
+  await assert.rejects(f.repo.saveGroup('E1', { ...attendance, groupId: undefined, ordinal: 3 }), /another group of this type/);
+  const revision = (await f.repo.getPlanningState('E1')).revision;
+  await assert.rejects(f.repo.saveDraft('E1', revision, [competition, attendance, { ...attendance, groupId: 'G3' }]), /another group of this type/);
+  await assert.rejects(f.repo.saveDraft('E1', revision, [competition, attendance, { ...competition, groupId: 'G3', slotId: null }]), /another group of this type/);
+  assert.equal((await f.repo.previewPublication('E1')).canPublish, true);
+  // Preview rechecks membership even for inconsistent stored drafts.
+  f.records.set('competitionSessionPlans/E1/groups/G3', { ...attendance, groupId: 'G3', ordinal: 3 });
+  assert.match((await f.repo.previewPublication('E1')).errors.join(' '), /multiple orchestra attendance groups/);
+  f.records.delete('competitionSessionPlans/E1/groups/G3');
+  await f.repo.publish('E1', revision, { uid: 'admin' });
+  const projection = f.records.get('sessionAssignments/E1');
+  assert.equal(projection.assignments['V1_2026-11-01_09:00-10:00'][0].registrantId, 'R1');
+  assert.equal(projection.attendanceOnlyRegistrantIds.join(','), 'R2', 'Only members without a performance are excluded');
+  for (let number = 1; number <= 2; number++) {
+    f.records.set('seatsE1/A' + number, { venueId: 'V1', sessionId: '2026-11-01_09:00-10:00', areaType: 'presto', row: 'A', number });
+  }
+  projection.attendanceOnlyRegistrantIds = ['R1', 'R2'];
+  const stale = await f.repo.markReady('E1', { uid: 'admin' });
+  assert.equal(stale.ready, false);
+  assert.match(stale.issues.join(' '), /attendance groups differ/);
+  projection.attendanceOnlyRegistrantIds = ['R2'];
+  assert.equal((await f.repo.markReady('E1', { uid: 'admin' })).ready, true);
+});
