@@ -1106,3 +1106,83 @@ test('PLANNING RESET: a late paid callback cannot reopen an archived test bookin
     );
     assert.equal(f.records.get('publicBookings/old-test').paymentStatus, 'archived_test');
 });
+
+
+function seedGuest(f, source = {}) {
+    f.seed('Registrants2025/winner', { achievement: 'Gold', performers: ['Historical performer'], ...source });
+    f.records.get('sessionAssignments/APCS2026').assignments['V1_2026-11-01_09:00-10:00'][0].sourceEventId = 'APCS2025';
+}
+
+test('GUEST TICKETING: published APCS2025 guests retain discovery and public/winner checkout without video', async () => {
+    for (const source of [{}, { eventId: 'APCS2025' }]) {
+        for (const bookingType of ['winner', 'public_competition']) {
+            const f = fixture();
+            seedGuest(f, source);
+            let listed;
+            await f.repo.getEligibleWinners({ buyerType: bookingType === 'winner' ? 'winner' : 'public' },
+                (error, data) => { assert.ifError(error); listed = data.winners; });
+            assert.equal(listed.length, 1);
+            assert.equal(listed[0].name, 'Historical performer');
+            const order = await f.book({ bookingType, registrantId: 'winner' });
+            assert.ifError(order.error);
+            assert.equal(f.records.get(`publicBookings/${order.result.bookingId}`).eventId, 'APCS2026');
+            assert.equal(f.records.get('Registrants2025/winner').eventId, source.eventId);
+        }
+    }
+});
+
+test('GUEST TICKETING: no published source, wrong source, attendance-only and missing award cannot buy', async () => {
+    for (const kind of ['no-source', 'wrong-source', 'attendance-only', 'no-award']) {
+        const f = fixture();
+        seedGuest(f);
+        const projection = f.records.get('sessionAssignments/APCS2026');
+        if (kind === 'no-source') delete projection.assignments['V1_2026-11-01_09:00-10:00'][0].sourceEventId;
+        if (kind === 'wrong-source') f.records.get('Registrants2025/winner').eventId = 'OTHER';
+        if (kind === 'attendance-only') projection.attendanceOnlyRegistrantIds = ['winner'];
+        if (kind === 'no-award') delete f.records.get('Registrants2025/winner').achievement;
+        let listed;
+        await f.repo.getEligibleWinners({}, (error, data) => { assert.ifError(error); listed = data.winners; });
+        assert.equal(listed.length, 0, kind);
+        const order = await f.book({ bookingType: 'winner', registrantId: 'winner' });
+        assert.ok(order.error, kind);
+        assert.equal(f.invoices.length, 0);
+    }
+});
+
+test('GUEST TICKETING: transaction rechecks guest source and performance membership before reserving', async () => {
+    for (const kind of ['source-changed', 'source-marker-removed', 'assignment-removed', 'attendance-only']) {
+        const f = fixture({ beforeTransaction: ({ records }) => {
+            const projection = records.get('sessionAssignments/APCS2026');
+            if (kind === 'source-changed') records.get('Registrants2025/winner').eventId = 'OTHER';
+            if (kind === 'source-marker-removed') delete projection.assignments['V1_2026-11-01_09:00-10:00'][0].sourceEventId;
+            if (kind === 'assignment-removed') projection.assignments = {};
+            if (kind === 'attendance-only') projection.attendanceOnlyRegistrantIds = ['winner'];
+        } });
+        seedGuest(f);
+        const order = await f.book({ bookingType: 'public_competition', registrantId: 'winner' });
+        assert.match(order.error.message, /assignment or eligibility changed/, kind);
+        assert.equal(f.invoices.length, 0);
+        assert.equal([...f.records.keys()].filter(key => key.startsWith('publicBookings/')).length, 0);
+    }
+});
+
+
+test("GUEST PARITY: source year does not alter today's winner award eligibility or public purchase path", async () => {
+    for (const historical of [false, true]) {
+        const f = fixture();
+        if (historical) seedGuest(f, { eventId: 'APCS2025' });
+        f.records.get('events/APCS2026').competitionScheduleState = { status: 'ready' };
+        f.records.get('systemSettings/global').ticketEligibility = {
+            enabled: true, schedule: [{ date: '2026-09-06', allowedTiers: ['Public'] }],
+        };
+        for (const buyerType of ['winner', 'public']) {
+            let result;
+            await f.repo.getEligibleWinners({ buyerType }, (error, data) => { assert.ifError(error); result = data; });
+            assert.equal(result.winners.length, buyerType === 'winner' ? 0 : 1);
+        }
+        assert.match((await f.book({ bookingType: 'winner', registrantId: 'winner' })).error.message, /not eligible to purchase tickets today/);
+        assert.ifError((await f.book({ bookingType: 'public_competition', registrantId: 'winner' })).error);
+        f.records.get('systemSettings/global').ticketEligibility.schedule[0].allowedTiers = ['Gold'];
+        assert.ifError((await f.book({ bookingType: 'winner', registrantId: 'winner' })).error);
+    }
+});

@@ -56,6 +56,17 @@ const competitionSalesOpen = eventData => {
     return !state || state.status === 'ready'; // Events predating planning keep their existing sales path.
 };
 
+// A guest's source record remains historical. Only a server-published performance
+// entry authorizes APCS2025 guests in APCS2026; an arbitrary old ID is insufficient.
+const registrationMatchesAssignment = (registration, eventId, entry) => {
+    const sourceEventId = registration?.eventId || 'APCS2025';
+    return Boolean(registration) && (sourceEventId === eventId
+        || (eventId === 'APCS2026' && sourceEventId === 'APCS2025' && entry?.sourceEventId === sourceEventId));
+};
+
+const ticketingAward = registration => String(registration?.finalAward
+    || ((!registration?.eventId || registration.eventId === 'APCS2025') ? registration?.achievement : '') || '').trim();
+
 const getPaidCapacityByTier = venue => {
     return (venue?.seatConfig || []).reduce((counts, config) => {
         const tierId = String(config.areaType || '').toLowerCase();
@@ -251,7 +262,10 @@ const createPublicTicketBooking = async (body, callback) => {
         const assignmentRef = registrantId ? db.collection('sessionAssignments').doc(eventId) : null;
         if (registrantId) {
             const regDoc = await registrantRef.get();
-            if (!regDoc.exists || regDoc.data().eventId !== eventId) {
+            const assignmentDoc = await assignmentRef.get();
+            const assignmentKey = `${venue}_${date}_${session}`;
+            const assignmentEntry = assignmentDoc.data()?.assignments?.[assignmentKey]?.find(entry => entry.registrantId === registrantId);
+            if (!regDoc.exists || !registrationMatchesAssignment(regDoc.data(), eventId, assignmentEntry)) {
                 throw new Error('Registrant not found for this event.');
             }
             const registration = regDoc.data();
@@ -261,18 +275,16 @@ const createPublicTicketBooking = async (body, callback) => {
             ).filter(Boolean).join(', ') || String(registration.name || '').trim();
             // Count registered performers, never the client-provided name/count.
             performerCount = bookingType === 'winner' ? Math.max(1, (registration.performers || []).length) : 0;
-            const award = registration.finalAward || '';
+            const award = ticketingAward(registration);
             if (!award || award === 'Fail' || award === 'N/A') {
                 throw new Error('Registrant is not eligible for winner ticket benefits.');
             }
             if (bookingType === 'winner' && allowedTiers && !allowedTiers.includes(award)) {
                 throw new Error(`Registrants with ${award} award are not eligible to purchase tickets today.`);
             }
-            const assignmentDoc = await assignmentRef.get();
             if ((assignmentDoc.data()?.attendanceOnlyRegistrantIds || []).includes(registrantId)) {
                 throw new Error('This registration is in an orchestra attendance group and has no ticketable performance.');
             }
-            const assignmentKey = `${venue}_${date}_${session}`;
             const assigned = assignmentDoc.exists
                 && (assignmentDoc.data().assignments?.[assignmentKey] || []).some(entry => entry.registrantId === registrantId);
             if (!assigned) throw new Error('Registrant is not assigned to the selected competition session.');
@@ -488,13 +500,14 @@ const createPublicTicketBooking = async (body, callback) => {
             if (!currentEventDoc.exists) throw new Error('Event no longer exists.');
             if (registrantId) {
                 const currentRegistration = currentRegistrantDoc?.exists ? currentRegistrantDoc.data() : null;
-                const currentAward = currentRegistration?.finalAward || '';
+                const currentAward = ticketingAward(currentRegistration);
                 const assignmentKey = `${venue}_${date}_${session}`;
+                const currentEntry = currentAssignmentDoc?.data()?.assignments?.[assignmentKey]?.find(entry => entry.registrantId === registrantId);
                 const stillAssigned = currentAssignmentDoc?.exists
                     && !(currentAssignmentDoc.data().attendanceOnlyRegistrantIds || []).includes(registrantId)
                     && (currentAssignmentDoc.data().assignments?.[assignmentKey] || [])
                         .some(entry => entry.registrantId === registrantId);
-                if (!currentRegistration || currentRegistration.eventId !== eventId || !stillAssigned
+                if (!registrationMatchesAssignment(currentRegistration, eventId, currentEntry) || !stillAssigned
                     || !currentAward || ['Fail', 'N/A'].includes(currentAward)
                     || (bookingType === 'winner' && allowedTiers && !allowedTiers.includes(currentAward))
                     || (bookingType === 'winner' && Math.max(1, (currentRegistration.performers || []).length) !== performerCount)) {
@@ -955,6 +968,7 @@ const getEligibleWinners = async (query, callback) => {
             (assignmentsData[sessionId] || []).forEach(entry => {
                 if (entry.registrantId && !attendanceOnly.has(entry.registrantId)) {
                     registrantSessionMap[entry.registrantId] = {
+                        sourceEventId: entry.sourceEventId,
                         sessionId,
                         venue,
                         date,
@@ -980,8 +994,8 @@ const getEligibleWinners = async (query, callback) => {
 
             snap.docs.forEach(doc => {
                 const data = doc.data();
-                if (data.eventId !== eventId) return;
-                const award = data.finalAward || '';
+                if (!registrationMatchesAssignment(data, eventId, registrantSessionMap[doc.id])) return;
+                const award = ticketingAward(data);
 
                 // Filter by allowed tiers if eligibility is enabled
                 if (query?.buyerType !== 'public' && allowedTiers && !allowedTiers.includes(award)) {
@@ -995,7 +1009,8 @@ const getEligibleWinners = async (query, callback) => {
 
                 const performer = data.performers?.[0];
                 const defaultName = performer
-                    ? (performer.fullName || `${performer.firstName || ''} ${performer.lastName || ''}`.trim())
+                    ? (typeof performer === 'string' ? performer.trim()
+                        : performer.fullName || `${performer.firstName || ''} ${performer.lastName || ''}`.trim() || performer.name || 'Unknown')
                     : (data.name || 'Unknown');
                 const email = performer?.email || data.email || '';
 

@@ -345,3 +345,44 @@ test('PLANNING ATTENDANCE: same registration saves in one group of each type, re
   projection.attendanceOnlyRegistrantIds = ['R2'];
   assert.equal((await f.repo.markReady('E1', { uid: 'admin' })).ready, true);
 });
+
+
+async function guestPlanningFixture(source = {}) {
+  const f = fixture();
+  f.records.set('events/APCS2026', f.records.get('events/E1'));
+  f.records.set('Registrants2025/guest', source);
+  f.records.set('Registrants2025/attendance', { eventId: 'APCS2025' });
+  await f.repo.saveDraft('APCS2026', 0, []);
+  const slot = await f.repo.saveSlot('APCS2026', 1, { venueId: 'V1', date: '2026-11-01', start: '09:00', end: '10:00' });
+  await f.repo.saveDraft('APCS2026', 2, [
+    { groupId: 'G1', venueId: 'V1', date: '2026-11-01', label: 'Performance', slotId: slot.draftSlots[0].slotId, registrantIds: ['guest'] },
+    { groupId: 'G2', venueId: 'V1', date: '2026-11-01', label: 'Orchestra', purpose: 'orchestra_attendance', registrantIds: ['guest', 'attendance'] },
+  ]);
+  return f;
+}
+
+test('GUEST PLANNING: incomplete legacy and explicit APCS2025 records save, reload and publish in both types', async () => {
+  for (const source of [{ name: 'Legacy guest' }, { eventId: 'APCS2025', performers: ['Older performer'] }]) {
+    const f = await guestPlanningFixture(source);
+    const state = await f.repo.getPlanningState('APCS2026');
+    assert.equal(state.groups[0].registrantIds.join(','), 'guest');
+    assert.equal(state.groups[1].registrantIds.join(','), 'guest,attendance');
+    const preview = await f.repo.previewPublication('APCS2026');
+    assert.equal(preview.canPublish, true);
+    await f.repo.publish('APCS2026', preview.revision, { uid: 'admin' });
+    const projection = f.records.get('sessionAssignments/APCS2026');
+    assert.equal(projection.assignments['V1_2026-11-01_09:00-10:00'][0].sourceEventId, 'APCS2025');
+    assert.equal(projection.attendanceOnlyRegistrantIds.join(','), 'attendance');
+    assert.deepEqual(f.records.get('Registrants2025/guest'), source);
+  }
+});
+
+test('GUEST PLANNING: deleted and unsupported source records reject publication atomically', async () => {
+  for (const missing of [false, true]) {
+    const f = await guestPlanningFixture({ eventId: 'OTHER' });
+    if (missing) f.records.delete('Registrants2025/guest');
+    await assert.rejects(f.repo.publish('APCS2026', 3, { uid: 'admin' }), /missing or belongs to an unsupported/);
+    assert.equal(f.records.has('sessionAssignments/APCS2026'), false);
+    assert.equal(f.records.get('events/APCS2026').competitionScheduleState.status, 'draft');
+  }
+});

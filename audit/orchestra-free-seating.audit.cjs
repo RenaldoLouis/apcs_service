@@ -308,3 +308,86 @@ test('ORCHESTRA: actual payment email resolves the booking event and preserves i
     await emailContext.sendPublicBookingConfirmationEmail({ ...booking, venueName: 'Behring Theatre', ticketingVersion: 2, registrantId: 'winner', orchestraAttendanceTickets: 1 });
     assert.equal(templateData.venueName, 'Behring Theatre'); assert.match(templateData.attendanceDetails, /<strong>19 October 2026<\/strong>/);
 });
+
+
+test('GUEST PARITY: native and historical registrants have identical prices, payment, seats and orchestra benefits', async () => {
+    const { attendanceHtml, assignmentEmail } = require('../src/services/OrchestraEmailDetails');
+    for (const rosterSize of [1, 3]) {
+        for (const bookingType of ['winner', 'public_competition']) {
+            for (const paymentMode of ['paper_id', 'manual']) {
+                let nativeResult;
+                for (const source of ['native', 'explicit2025', 'missingEventId', 'legacyAchievement']) {
+                    const f = fixture();
+                    const registration = f.records.get('Registrants2025/winner');
+                    registration.performers = Array.from({ length: rosterSize }, (_, index) => ({ fullName: `Parity performer ${index + 1}` }));
+                    if (source === 'explicit2025' || source === 'legacyAchievement') registration.eventId = 'APCS2025';
+                    if (source === 'missingEventId') delete registration.eventId;
+                    if (source === 'legacyAchievement') {
+                        registration.achievement = registration.finalAward;
+                        delete registration.finalAward;
+                    }
+                    if (source !== 'native') f.records.get('sessionAssignments/APCS2026')
+                        .assignments['V1_2026-11-01_09:00-10:00'][0].sourceEventId = 'APCS2025';
+                    f.records.get('events/APCS2026').competitionScheduleState = { status: 'ready' };
+                    const originalRegistration = JSON.stringify(registration);
+                    f.seat('seat-1', { number: 1 });
+                    f.seat('seat-2', { number: 2 });
+                    const order = await f.book({
+                        registrantId: 'winner', bookingType, manualPayment: paymentMode === 'manual',
+                        tickets: [{ id: 'presto', name: 'Presto', quantity: 2, priceEach: 1 }],
+                        selectedSeatIds: ['seat-1', 'seat-2'], addOnIds: ['seat_selection_performer', 'seat_selection_performer'],
+                    });
+                    assert.ifError(order.error);
+                    const bookingId = order.result.bookingId;
+                    const pending = f.records.get(`publicBookings/${bookingId}`);
+                    assert.equal(pending.eventId, 'APCS2026');
+                    assert.equal(pending.paymentStatus, 'pending');
+                    assert.equal(pending.paymentMode, paymentMode);
+                    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
+                    const pendingHtml = attendanceHtml({ ...pending, id: bookingId }, null);
+                    const duplicate = await f.book({ registrantId: 'winner', bookingType, manualPayment: paymentMode === 'manual',
+                        selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] });
+                    assert.ok(duplicate.error, 'A guest cannot take an already held chair');
+                    if (paymentMode === 'manual') {
+                        assert.equal(f.invoices.length, 0);
+                        await f.repo.markManualBookingPaid(bookingId, { uid: 'admin', email: actor.email });
+                        assert.equal((await f.repo.markManualBookingPaid(bookingId, { uid: 'admin' })).alreadyPaid, true);
+                    } else {
+                        assert.equal(f.invoices.length, 1);
+                        const payload = { invoice: { id: pending.invoiceId, total_amount: pending.totalAmount } };
+                        await f.repo.handlePublicTicketWebhookPaid(bookingId, payload);
+                        assert.equal((await f.repo.handlePublicTicketWebhookPaid(bookingId, payload)).alreadyPaid, true);
+                    }
+                    const paid = f.records.get(`publicBookings/${bookingId}`);
+                    assert.equal(paid.paymentStatus, 'PAID');
+                    for (const seatId of ['seat-1', 'seat-2']) {
+                        const seat = f.records.get(`seatsAPCS2026/${seatId}`);
+                        assert.equal(seat.status, 'booked');
+                        assert.equal(seat.bookingId, bookingId);
+                    }
+                    const assigned = await repo(f).assignGroup(request, actor);
+                    const expectedPerformers = bookingType === 'winner' ? rosterSize : 0;
+                    assert.equal(assigned.assignment.performerCount, expectedPerformers);
+                    assert.equal(assigned.assignment.quantity, 2 + expectedPerformers);
+                    const repeated = await repo(f).assignGroup(request, actor);
+                    assert.equal(repeated.assignment.revision, assigned.assignment.revision);
+                    assert.equal(f.records.get('events/APCS2026').orchestraSessions[0].freeSeatingAssigned, 2 + expectedPerformers);
+                    const result = JSON.stringify({
+                        price: paid.totalAmount, tickets: paid.tickets, labels: paid.performanceSeatLabels,
+                        performerCount: paid.performerCount, orchestraAttendanceTickets: paid.orchestraAttendanceTickets,
+                        seatingMode: paid.seatingMode, bookingType: paid.bookingType,
+                        invoiceLines: f.invoices[0]?.items,
+                        pendingHtml, assignment: assigned.assignment,
+                        confirmationDetails: attendanceHtml({ ...paid, id: bookingId }, assigned.assignment),
+                        assignmentEmail: assignmentEmail({ ...paid, id: bookingId }, assigned.assignment),
+                        capacity: [...f.records.entries()].filter(([key]) => key.startsWith('ticketCapacity/')),
+                        ownership: [...f.records.entries()].filter(([key]) => key.startsWith('ticketSeatOwnership/')),
+                    });
+                    if (source === 'native') nativeResult = result;
+                    else assert.equal(result, nativeResult, `${source}, ${rosterSize} performers, ${bookingType}, ${paymentMode}`);
+                    assert.equal(JSON.stringify(f.records.get('Registrants2025/winner')), originalRegistration);
+                }
+            }
+        }
+    }
+});

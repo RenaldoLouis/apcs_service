@@ -368,15 +368,19 @@ async function publish(eventId, expectedRevision, actor) {
     if (errors.length) throw fail(`Publication blocked: ${errors.join(' ')}`);
     const registrantIds = [...new Set(groups.flatMap(group => group.registrantIds))];
     const registrants = await Promise.all(registrantIds.map(id => transaction.get(db.collection('Registrants2025').doc(id))));
-    if (registrants.some(doc => !doc.exists || doc.data().eventId !== eventId)) {
-      throw fail('Every performer must be registered for this event.');
+    const sourceEventIds = new Map(registrants.map(doc => [doc.id, doc.data()?.eventId || 'APCS2025']));
+    if (registrants.some(doc => !doc.exists || !(sourceEventIds.get(doc.id) === eventId
+      || (eventId === 'APCS2026' && sourceEventIds.get(doc.id) === 'APCS2025')))) {
+      throw fail('A group member is missing or belongs to an unsupported source event.');
     }
     const assignments = { ...previousAssignments };
     const venues = (event.venues || []).map(venue => {
       const sessions = { ...(venue.sessions || {}) };
       for (const slot of slots.filter(g => g.venueId === venue.id)) {
         sessions[slot.date] = [...(sessions[slot.date] || []), slot.time].sort();
-        assignments[slot.key] = slot.registrantIds.map((registrantId, order) => ({ registrantId, order }));
+        assignments[slot.key] = slot.registrantIds.map((registrantId, order) => ({
+          registrantId, order, sourceEventId: sourceEventIds.get(registrantId),
+        }));
       }
       return { ...venue, sessions };
     });
