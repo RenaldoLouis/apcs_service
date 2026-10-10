@@ -208,7 +208,10 @@ test('ORCHESTRA POLICY: direct orchestra sales and quota exceed the competition 
 test('ORCHESTRA: email shows pending or named venue/session, group count and escaped names', () => {
     const { attendanceHtml, assignmentEmail } = require('../src/services/OrchestraEmailDetails');
     const booking = { id: 'b1', ticketingVersion: 2, registrantId: 'winner', orchestraAttendanceTickets: 3, tickets: [{ quantity: 3 }], buyerName: '<script>', registrantName: 'Ensemble' };
-    assert.match(attendanceHtml(booking, null), /assignment pending/);
+    const pendingHtml = attendanceHtml(booking, null);
+    assert.match(pendingHtml, /<strong>Orchestra &amp; Awarding Seating<\/strong>/);
+    assert.match(pendingHtml, /<strong>Seating<\/strong>: Free Seating · Redeem your orchestra ticket at the venue\./);
+    assert.match(pendingHtml, /The orchestra and awarding session assignments, including the venue, date, and time, will be sent by email on <strong>19 October 2026<\/strong>\./);
     const assignment = { bookingIds: ['b1'], venueName: 'Titan Theatre', date: '2026-11-15', time: '15:30-17:30', paidTicketCount: 5, performerCount: 4, quantity: 9 };
     const html = assignmentEmail(booking, assignment);
     assert.match(html, /Titan Theatre/); assert.match(html, /2026-11-15/); assert.match(html, /9 attendees/); assert.match(html, /&lt;script&gt;/);
@@ -219,7 +222,7 @@ test('ORCHESTRA: email shows pending or named venue/session, group count and esc
     assert.match(html, new RegExp(`&copy; ${new Date().getFullYear()} APCS Music`));
     assert.doesNotMatch(html, /Orkestra|Pesanan|Penampil|Tunjukkan|Tempat duduk/);
     assert.match(html, /Assignment reference: event/);
-    assert.match(attendanceHtml({ ...booking, id: 'new-booking' }, assignment), /assignment pending/);
+    assert.match(attendanceHtml({ ...booking, id: 'new-booking' }, assignment), /<strong>19 October 2026<\/strong>/);
     assert.match(attendanceHtml({ ...booking, seatingMode: 'free' }, null), /No numbered seat/);
 });
 
@@ -303,5 +306,5 @@ test('ORCHESTRA: actual payment email resolves the booking event and preserves i
     await emailContext.sendPublicBookingConfirmationEmail(booking);
     assert.equal(templateData.venueName, 'Hall 1');
     await emailContext.sendPublicBookingConfirmationEmail({ ...booking, venueName: 'Behring Theatre', ticketingVersion: 2, registrantId: 'winner', orchestraAttendanceTickets: 1 });
-    assert.equal(templateData.venueName, 'Behring Theatre'); assert.match(templateData.attendanceDetails, /assignment pending/);
+    assert.equal(templateData.venueName, 'Behring Theatre'); assert.match(templateData.attendanceDetails, /<strong>19 October 2026<\/strong>/);
 });

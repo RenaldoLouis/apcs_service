@@ -8,7 +8,7 @@ function attendanceHtml(booking, assignment, { includeCompetition = true } = {})
     const unassigned = Math.max(0, ticketCount(booking) - (booking.selectedSeatIds || []).length);
     const competition = includeCompetition && unassigned ? `<p>${unassigned} competition ticket(s) awaiting seat assignment.</p>` : '';
     if (!booking.registrantId || !booking.orchestraAttendanceTickets) return competition;
-    if (!assignment || !(assignment.bookingIds || []).includes(booking.id)) return competition + '<p><strong>Orchestra: free seating; session assignment pending.</strong> Our team will email the orchestra venue, date and time after assignment.</p>';
+    if (!assignment || !(assignment.bookingIds || []).includes(booking.id)) return competition + '<p><strong>Orchestra &amp; Awarding Seating</strong></p><p><strong>Seating</strong>: Free Seating · Redeem your orchestra ticket at the venue.</p><p>The orchestra and awarding session assignments, including the venue, date, and time, will be sent by email on <strong>19 October 2026</strong>.</p>';
     return competition + `<h3>Orchestra — Free seating</h3><p><strong>${escapeHtml(assignment.venueName)}</strong><br>${escapeHtml(assignment.date)} | ${escapeHtml(assignment.time)}</p><p>Your booking includes <strong>${ticketCount(booking)} orchestra place(s)</strong>. This performance group has ${assignment.paidTicketCount} ticket places${assignment.performerCount ? ` + ${assignment.performerCount} performer places` : ''} = <strong>${assignment.quantity} attendees</strong>. Performer places are counted once only when a winner purchase exists; public bookings add no performer places.</p>`;
 }
 function assignmentEmail(booking, assignment) {

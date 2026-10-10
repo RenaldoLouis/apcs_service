@@ -672,13 +672,15 @@ const templates = {
                                 ${(!data.performanceSeatLabels && !data.orchestraSeatLabels && data.seatLabels) ? `<div class="info-row"><span class="info-label">Seats</span><span class="info-value">${data.seatLabels}</span></div>` : ''}
                                 <hr class="divider">
                                 <div class="total-row">
-                                    <span>Total Paid</span>
+                                    <span style="padding-right: 12px;">Total Paid&nbsp;</span>
                                     <span class="total-amount">${data.totalAmountFormatted}</span>
                                 </div>
                             </div>
 
                             ${data.attendanceDetails || ''}
-                            <p>Please present this email or your Booking ID at the venue entrance. Our team will verify your booking.</p>
+                            <div style="background-color: #fff8e8; border-left: 4px solid #EBBC64; padding: 16px; margin: 20px 0;">
+                                <p style="margin: 0;"><strong>Important: Please present this email or your Booking ID at the venue entrance. Our team will verify your booking.</strong></p>
+                            </div>
                             <p>We look forward to seeing you at the concert!</p>
                             <p style="margin-top: 24px;">
                                 Warm regards,<br>
