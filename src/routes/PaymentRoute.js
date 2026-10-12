@@ -20,6 +20,9 @@ const SystemSettingsController = require("../controllers/SystemSettingsControlle
 const { paymentValidation } = require('../utils/ValidationUtil');
 const { multipartUploadValidation, partUploadValidation, completeUploadValidation, abortUploadValidation } = require('../middlewares/ValidationMiddleware');
 const { requireTicketingAdmin } = require('../middlewares/TicketingAdminMiddleware');
+const RegistrantAttendanceController = require('../controllers/RegistrantAttendanceController');
+router.post('/registrant-attendance/preview', requireTicketingAdmin, RegistrantAttendanceController.preview);
+router.post('/registrant-attendance/apply', requireTicketingAdmin, RegistrantAttendanceController.apply);
 const VenueController = require('../controllers/VenueController');
 router.post('/venue-settings/:eventId/:venueId/metadata', requireTicketingAdmin, VenueController.updateMetadata);
 

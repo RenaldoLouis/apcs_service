@@ -386,3 +386,67 @@ test('GUEST PLANNING: deleted and unsupported source records reject publication 
     assert.equal(f.records.get('events/APCS2026').competitionScheduleState.status, 'draft');
   }
 });
+
+
+test('GUEST PRESERVATION: add, move, remove and publish preserve existing members and historical records', async () => {
+  const f = fixture();
+  f.records.set('events/APCS2026', f.records.get('events/E1'));
+  f.records.set('Registrants2025/R1', { eventId: 'APCS2026', performers: [{ fullName: 'Current one' }], finalAward: 'Gold' });
+  f.records.set('Registrants2025/R2', { eventId: 'APCS2026', performers: [{ fullName: 'Current two' }], finalAward: 'Silver' });
+  f.records.set('Registrants2025/guest', { eventId: 'APCS2025', performers: [{ fullName: 'Historical guest' }], achievement: 'Gold' });
+  f.records.set('events/APCS2025', { venues: [{ id: 'OLD', sessions: { '2025-10-01': ['09:00-10:00'] } }] });
+  f.records.set('sessionAssignments/APCS2025', { assignments: { old: [{ registrantId: 'guest', order: 0 }] } });
+  f.records.set('JuryScores2025/old-score', { eventId: 'APCS2025', registrantId: 'guest', score: 90 });
+  f.records.set('publicBookings/old-booking', { eventId: 'APCS2025', registrantId: 'guest', paymentStatus: 'PAID' });
+  f.records.set('seatsAPCS2025/old-seat', { status: 'booked', bookingId: 'old-booking' });
+  f.records.set('orchestraAssignments/old-assignment', { eventId: 'APCS2025', registrantId: 'guest', quantity: 3 });
+  const protectedRecords = [...f.records].map(([key, value]) => [key, JSON.stringify(value)]);
+  const assertProtected = () => {
+    for (const [key, value] of protectedRecords) {
+      if (key === 'events/APCS2026') continue;
+      assert.equal(JSON.stringify(f.records.get(key)), value, `Unrelated record changed: ${key}`);
+    }
+    assert.equal([...f.records.keys()].filter(key => key.startsWith('Registrants2025/')).length, 3);
+  };
+  await f.repo.saveDraft('APCS2026', 0, []);
+  await f.repo.saveSlot('APCS2026', 1, { venueId: 'V1', date: '2026-11-01', start: '09:00', end: '10:00' });
+  const slots = await f.repo.saveSlot('APCS2026', 2, { venueId: 'V1', date: '2026-11-01', start: '11:00', end: '12:00' });
+  await f.repo.saveDraft('APCS2026', 3, [
+    { groupId: 'G1', venueId: 'V1', date: '2026-11-01', label: 'First', slotId: slots.draftSlots[0].slotId, registrantIds: ['R1'] },
+    { groupId: 'G2', venueId: 'V1', date: '2026-11-01', label: 'Second', slotId: slots.draftSlots[1].slotId, registrantIds: ['R2'] },
+    { groupId: 'G3', venueId: 'V1', date: '2026-11-01', label: 'Attendance', purpose: 'orchestra_attendance', registrantIds: ['R1'] },
+  ]);
+  const initial = await f.repo.getPlanningState('APCS2026');
+  const unrelatedGroup = JSON.stringify(f.records.get('competitionSessionPlans/APCS2026/groups/G2'));
+  const add = await f.repo.saveDraft('APCS2026', initial.revision, initial.groups.map(group =>
+    group.groupId === 'G2' ? group : { ...group, registrantIds: [...group.registrantIds, 'guest'] }));
+  assert.equal(JSON.stringify(f.records.get('competitionSessionPlans/APCS2026/groups/G2')), unrelatedGroup);
+  assert.equal(add.groups[0].registrantIds.join(','), 'R1,guest');
+  assert.equal(add.groups[2].registrantIds.join(','), 'R1,guest');
+  assertProtected();
+  const moved = await f.repo.saveDraft('APCS2026', add.revision, add.groups.map(group =>
+    group.groupId === 'G1' ? { ...group, registrantIds: ['R1'] }
+      : group.groupId === 'G2' ? { ...group, registrantIds: ['R2', 'guest'] } : group));
+  assert.equal(moved.groups[0].registrantIds.join(','), 'R1');
+  assert.equal(moved.groups[1].registrantIds.join(','), 'R2,guest');
+  assert.equal(moved.groups[2].registrantIds.join(','), 'R1,guest');
+  assertProtected();
+  const snapshot = JSON.stringify([...f.records]);
+  await assert.rejects(f.repo.saveDraft('APCS2026', add.revision, add.groups), /Draft changed/);
+  assert.equal(JSON.stringify([...f.records]), snapshot, 'A stale save must write nothing');
+  await assert.rejects(f.repo.saveDraft('APCS2026', moved.revision, moved.groups.map(group =>
+    group.groupId === 'G1' ? { ...group, registrantIds: ['R1', 'guest'] } : group)), /already in another group/);
+  assert.equal(JSON.stringify([...f.records]), snapshot, 'Duplicate membership must write nothing');
+  const removed = await f.repo.saveDraft('APCS2026', moved.revision, moved.groups.map(group =>
+    group.groupId === 'G3' ? { ...group, registrantIds: ['R1'] } : group));
+  assert.equal(removed.groups[1].registrantIds.join(','), 'R2,guest', 'Removing attendance preserves the performance');
+  assert.equal(removed.groups[2].registrantIds.join(','), 'R1');
+  assertProtected();
+  assert.equal((await f.repo.previewPublication('APCS2026')).canPublish, true);
+  await f.repo.publish('APCS2026', removed.revision, { uid: 'admin' });
+  const projection = f.records.get('sessionAssignments/APCS2026').assignments;
+  assert.equal(projection['V1_2026-11-01_09:00-10:00'].map(entry => entry.registrantId).join(','), 'R1');
+  assert.equal(projection['V1_2026-11-01_11:00-12:00'].map(entry => entry.registrantId).join(','), 'R2,guest');
+  assertProtected();
+  assert.equal(JSON.stringify(f.records.get('competitionSessionPlans/APCS2026').draftSlots), JSON.stringify(initial.draftSlots));
+});
