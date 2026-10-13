@@ -98,6 +98,13 @@ router.post('/public-ticket/admin/resend-manual-instructions', requireTicketingA
 router.post('/public-ticket/admin/assign-seats', requireTicketingAdmin, PublicTicketController.assignPaidBookingSeats);
 router.post('/public-ticket/admin/seats/generate', requireTicketingAdmin, PublicTicketController.generateSeatLayout);
 
+const TicketRedemptionController = require('../controllers/TicketRedemptionController');
+const { redemptionLimiter } = require('../middlewares/TicketRedemptionTraffic');
+router.use('/public-ticket/admin/redemption', redemptionLimiter);
+router.post('/public-ticket/admin/redemption/list', requireTicketingAdmin, TicketRedemptionController.list);
+router.post('/public-ticket/admin/redemption/detail', requireTicketingAdmin, TicketRedemptionController.detail);
+router.post('/public-ticket/admin/redemption/claim', requireTicketingAdmin, TicketRedemptionController.claim);
+
 // --- System Settings ---
 router.get('/systemSettings/global', SystemSettingsController.getGlobalSettings);
 router.post('/systemSettings/global', SystemSettingsController.updateGlobalSettings);

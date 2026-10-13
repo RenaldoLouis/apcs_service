@@ -81,6 +81,24 @@ async function assignGroup({ eventId, registrantId, sessionId }, actor) {
             throw fail('Previous session attendance counter needs reconciliation.');
         }
         const bookingIds = group.bookings.map(booking => booking.id).sort();
+        // Redemption belongs to the allowance, not an assignment revision. Do not move
+        // tickets already handed over into another orchestra session.
+        const coveredIds = [...new Set([...(old?.bookingIds || []), ...bookingIds])];
+        const redemptionStates = await Promise.all([
+            ...coveredIds.map(id => transaction.get(db.collection('ticketRedemptions')
+                .doc(encodeURIComponent(JSON.stringify([eventId, 'orchestra', id]))))),
+            transaction.get(db.collection('ticketRedemptions')
+                .doc(encodeURIComponent(JSON.stringify([eventId, 'performers', registrantId])))),
+        ]);
+        const claimed = snapshot => snapshot.exists
+            && Object.values(snapshot.data().redeemed || {}).some(quantity => Number(quantity) > 0);
+        if (old && old.sessionId !== sessionId && redemptionStates.some(claimed)) {
+            throw fail('Orchestra tickets have already been redeemed. Undo those claims in Ticket Redemption before changing the session.');
+        }
+        if (coveredIds.some((id, index) => !bookingIds.includes(id) && claimed(redemptionStates[index])) ||
+            Number(redemptionStates[coveredIds.length].data()?.redeemed?.performers || 0) > group.performerCount) {
+            throw fail('The new assignment would remove redeemed entitlements. Review Ticket Redemption first.');
+        }
         const unchanged = old && old.sessionId === sessionId && old.quantity === group.quantity
             && JSON.stringify(old.bookingIds) === JSON.stringify(bookingIds)
             && old.venueName === (venue.label || venue.id) && old.date === target.date && old.time === target.time;

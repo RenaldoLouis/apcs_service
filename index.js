@@ -2,6 +2,7 @@ const express = require('express')
 const app = express()
 const bodyParser = require('body-parser')
 const rateLimit = require('express-rate-limit')
+const { isTicketRedemptionRequest } = require('./src/middlewares/TicketRedemptionTraffic')
 const { errorHandler } = require("./src/middlewares/ErrorHandlerMiddleware.js") // ✅ Destructure to get errorHandler
 var cors = require('cors')
 const port = 8080
@@ -22,6 +23,7 @@ const globalLimiter = rateLimit({
     max: 100, // Limit each IP to 100 requests per `window` (here, per 1 minute)
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    skip: isTicketRedemptionRequest, // Staff redemption has its own limited request budget.
     message: { error: 'Too many requests, please try again later.' }
 })
 app.use(globalLimiter)
