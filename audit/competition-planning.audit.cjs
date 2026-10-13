@@ -74,6 +74,86 @@ function fixture() {
   return { repo: context.module.exports, records };
 }
 
+test('PLANNED ORCHESTRA: unpaid attendance saves and reloads an optional session without admission writes', async () => {
+  const f = fixture();
+  const registration = JSON.stringify(f.records.get('Registrants2025/R1'));
+  const event = f.records.get('events/E1');
+  const sessions = JSON.stringify(event.orchestraSessions);
+  const saved = await f.repo.saveDraft('E1', 0, [{ groupId: 'A1', purpose: 'orchestra_attendance',
+    venueId: 'V1', date: '2026-11-01', label: 'Planned attendees', registrantIds: ['R1'], orchestraSessionId: 'O1' }]);
+  assert.equal(saved.groups[0].orchestraSessionId, 'O1');
+  assert.equal((await f.repo.getPlanningState('E1')).groups[0].orchestraSessionId, 'O1');
+  assert.equal(JSON.stringify(f.records.get('Registrants2025/R1')), registration);
+  assert.equal(JSON.stringify(f.records.get('events/E1').orchestraSessions), sessions);
+  assert.equal([...f.records.keys()].some(key => /^(orchestraAssignments|publicBookings|ticketRedemptions|seats)/.test(key)), false);
+  assert.equal(f.records.has('sessionAssignments/E1'), false);
+});
+
+test('PLANNED ORCHESTRA: omission retains an existing link; explicit null clears it in both save paths', async () => {
+  const f = fixture();
+  const attendance = { groupId: 'A1', purpose: 'orchestra_attendance', ordinal: 1,
+    venueId: 'V1', date: '2026-11-01', label: 'Attendees', registrantIds: ['R1'] };
+  await f.repo.saveDraft('E1', 0, [{ ...attendance, orchestraSessionId: 'O1' }]);
+  assert.equal((await f.repo.saveDraft('E1', 1, [attendance])).groups[0].orchestraSessionId, 'O1');
+  assert.equal((await f.repo.saveGroup('E1', attendance)).orchestraSessionId, 'O1');
+  assert.equal((await f.repo.saveGroup('E1', { ...attendance, orchestraSessionId: null })).orchestraSessionId, null);
+  await f.repo.saveGroup('E1', { ...attendance, orchestraSessionId: 'O1' });
+  const state = await f.repo.getPlanningState('E1');
+  assert.equal((await f.repo.saveDraft('E1', state.revision, [{ ...attendance, orchestraSessionId: null }])).groups[0].orchestraSessionId, null);
+  assert.equal((await f.repo.saveGroup('E1', attendance)).orchestraSessionId, null);
+});
+
+test('PLANNED ORCHESTRA: invalid or mismatched links reject atomically instead of changing other board data', async () => {
+  for (const patch of [{ orchestraSessionId: 'missing' }, { orchestraSessionId: false },
+    { orchestraSessionId: 'O1', date: '2026-11-02' }, { orchestraSessionId: 'O1', venueId: 'V2' },
+    { orchestraSessionId: 'O1', purpose: 'competition' }]) {
+    const f = fixture();
+    f.records.get('events/E1').venues.push({ id: 'V2', sessions: {} });
+    const before = JSON.stringify([...f.records]);
+    const group = { purpose: 'orchestra_attendance', venueId: 'V1', date: '2026-11-01',
+      label: 'Attendees', registrantIds: ['R1'], ...patch };
+    await assert.rejects(f.repo.saveDraft('E1', 0, [group]), /Select an orchestra session/);
+    assert.equal(JSON.stringify([...f.records]), before);
+    await assert.rejects(f.repo.saveGroup('E1', { ...group, ordinal: 1 }), /Select an orchestra session/);
+    assert.equal(JSON.stringify([...f.records]), before);
+  }
+});
+
+test('PLANNED ORCHESTRA: changing venue/date or converting purpose clears an omitted old link', async () => {
+  for (const patch of [{ date: '2026-11-02' }, { purpose: 'competition' }]) {
+    const f = fixture();
+    const group = { groupId: 'A1', purpose: 'orchestra_attendance', venueId: 'V1',
+      date: '2026-11-01', label: 'Attendees', registrantIds: ['R1'] };
+    await f.repo.saveDraft('E1', 0, [{ ...group, orchestraSessionId: 'O1' }]);
+    const saved = await f.repo.saveDraft('E1', 1, [{ ...group, ...patch }]);
+    assert.equal(saved.groups[0].orchestraSessionId, null);
+    assert.equal(saved.groups[0].registrantIds.join(','), 'R1');
+  }
+});
+
+test('PLANNED ORCHESTRA: optional hints preserve publication, dual membership and the published edit lock', async () => {
+  const f = fixture();
+  await f.repo.saveDraft('E1', 0, []);
+  const slot = await f.repo.saveSlot('E1', 1, { venueId: 'V1', date: '2026-11-01', start: '09:00', end: '10:00' });
+  const groups = [
+    { groupId: 'P1', venueId: 'V1', date: '2026-11-01', label: 'Performance',
+      slotId: slot.draftSlots[0].slotId, registrantIds: ['R1'] },
+    { groupId: 'A1', venueId: 'V1', date: '2026-11-01', label: 'Attendees',
+      purpose: 'orchestra_attendance', orchestraSessionId: 'O1', registrantIds: ['R1'] },
+  ];
+  const saved = await f.repo.saveDraft('E1', 2, groups);
+  // A subsequently deleted optional session must not block competition publication.
+  f.records.get('events/E1').orchestraSessions = [];
+  const preview = await f.repo.previewPublication('E1');
+  assert.equal(preview.canPublish, true);
+  await f.repo.publish('E1', saved.revision, { uid: 'admin' });
+  const projection = f.records.get('sessionAssignments/E1');
+  assert.equal(projection.attendanceOnlyRegistrantIds.length, 0);
+  assert.equal(Object.keys(projection.assignments).length, 1);
+  assert.equal((await f.repo.getPlanningState('E1')).groups.find(group => group.groupId === 'A1').orchestraSessionId, 'O1');
+  await assert.rejects(f.repo.saveDraft('E1', saved.revision + 1, groups), /cannot be edited/);
+});
+
 test('PLANNING: draft can be timed later and publishes one assignment only after validation', async () => {
   const f = fixture();
   const group = await f.repo.saveGroup('E1', {

@@ -21,6 +21,16 @@ const ownershipActivity = eventId => db.collection('ticketSeatOwnership').where(
 const GROUP_PURPOSES = ['competition', 'orchestra_attendance'];
 const purposeOf = group => group?.purpose || 'competition';
 const isAttendanceGroup = group => purposeOf(group) === 'orchestra_attendance';
+// Older callers may omit the optional link; retain it when the same attendance
+// group stays at the same venue/date. Explicit null clears it.
+const withPlannedSession = (data, previous) => ({
+  ...data,
+  orchestraSessionId: Object.prototype.hasOwnProperty.call(data, 'orchestraSessionId')
+    ? data.orchestraSessionId ?? null
+    : isAttendanceGroup(data) && isAttendanceGroup(previous)
+      && previous.venueId === data.venueId && previous.date === data.date
+      ? previous.orchestraSessionId ?? null : null,
+});
 const attendanceOnlyIds = groups => {
   const performers = new Set(groups.filter(group => !isAttendanceGroup(group)).flatMap(group => group.registrantIds || []));
   return [...new Set(groups.filter(isAttendanceGroup).flatMap(group => group.registrantIds || []))]
@@ -111,6 +121,13 @@ function validateGroup(data, eventId, event, others) {
   if (isAttendanceGroup(data) && (data.slotId || start || end)) throw fail('Orchestra attendance groups cannot use a performer session.');
   if (!validKey(venueId) || !(event.venues || []).some(v => v.id === venueId)) throw fail('Select an event venue.');
   if (!validDate(date)) throw fail('Select a valid date.');
+  if (data.orchestraSessionId != null) {
+    const session = (event.orchestraSessions || []).find(item => item.id === data.orchestraSessionId);
+    if (!isAttendanceGroup(data) || !validKey(data.orchestraSessionId) || !session
+      || session.venue !== venueId || session.date !== date) {
+      throw fail('Select an orchestra session for this attendance group venue and date, or clear the planned session.');
+    }
+  }
   if (!Number.isInteger(ordinal) || ordinal < 1) throw fail('Group number must be a positive integer.');
   if (typeof label !== 'string' || !label.trim()) throw fail('Group label is required.');
   if (!Array.isArray(registrantIds) || registrantIds.some(id => !validKey(id))) throw fail('Invalid registrant IDs.');
@@ -167,12 +184,13 @@ async function saveGroup(eventId, data) {
     const slot = (planSnap.data()?.draftSlots || []).find(item => item.slotId === data.slotId);
     if (data.slotId && (!slot || slot.venueId !== data.venueId || slot.date !== data.date
       || others.some(group => group.slotId === data.slotId))) throw fail('Select an unused session for this venue and date.');
-    const groupData = { ...data, start: slot?.start || null, end: slot?.end || null };
+    const groupData = withPlannedSession({ ...data, start: slot?.start || null, end: slot?.end || null }, existing?.data());
     validateGroup(groupData, eventId, event, others);
     const revision = (state?.revision || 0) + 1;
     const group = {
       groupId: id, eventId, venueId: data.venueId, date: data.date, ordinal: data.ordinal,
       label: data.label.trim(), purpose: purposeOf(data), slotId: data.slotId || null, start: groupData.start, end: groupData.end,
+      orchestraSessionId: groupData.orchestraSessionId,
       registrantIds: data.registrantIds, updatedAt: stamp(),
     };
     transaction.set(groupCollection(eventId).doc(id), { ...group, createdAt: existing?.data().createdAt || stamp() });
@@ -209,12 +227,12 @@ async function saveDraft(eventId, expectedRevision, proposedGroups) {
       throw fail('Existing competition sessions, ticket inventory or assignments require reconciliation before planning can start.');
     }
     const existing = new Map(groupSnap.docs.map(doc => [doc.id, doc.data()]));
-    const groups = proposedGroups.map((group, index) => ({
+    const groups = proposedGroups.map((group, index) => withPlannedSession({
       ...group,
       groupId: group.groupId || groupIdFor(),
       eventId,
       ordinal: index + 1,
-    }));
+    }, existing.get(group.groupId)));
     if (groups.some(group => !validKey(group.groupId)) || new Set(groups.map(group => group.groupId)).size !== groups.length) {
       throw fail('Duplicate or invalid group IDs.');
     }
@@ -235,6 +253,7 @@ async function saveDraft(eventId, expectedRevision, proposedGroups) {
         groupId: group.groupId, eventId, venueId: group.venueId, date: group.date,
         ordinal: group.ordinal, label: group.label.trim(), purpose: purposeOf(group), slotId: group.slotId || null, start: group.start || null,
         end: group.end || null, registrantIds: group.registrantIds,
+        orchestraSessionId: group.orchestraSessionId,
         createdAt: existing.get(group.groupId)?.createdAt || stamp(), updatedAt: stamp(),
       });
     }

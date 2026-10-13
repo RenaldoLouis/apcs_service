@@ -52,7 +52,39 @@ async function listGroups({ eventId, cursor }) {
         booking.ticketingVersion === 2 && booking.registrantId && booking.orchestraAttendanceTickets > 0)
         .map(booking => booking.registrantId))];
     const groups = await Promise.all(ids.map(id => readGroup(eventId, id)));
-    return { groups: groups.map(({ bookings, ...group }) => ({ ...group, bookingCount: bookings.length })),
+    const plannedByRegistrant = new Map();
+    if (ids.length) {
+        // Read the saved plan once per page. It supplies a suggestion only; this
+        // read path never creates an assignment or changes confirmed attendance.
+        const [eventSnap, planGroups] = await Promise.all([
+            db.collection('events').doc(eventId).get(),
+            db.collection(`competitionSessionPlans/${eventId}/groups`).get(),
+        ]);
+        const event = eventSnap.data() || {};
+        const memberships = new Map();
+        for (const document of planGroups.docs) {
+            const group = document.data();
+            if (group.purpose !== 'orchestra_attendance' || (group.eventId && group.eventId !== eventId)
+                || !Array.isArray(group.registrantIds)) continue;
+            for (const id of group.registrantIds) {
+                const matches = memberships.get(id) || [];
+                matches.push({ ...group, groupId: document.id });
+                memberships.set(id, matches);
+            }
+        }
+        for (const id of ids) {
+            const matches = memberships.get(id) || [];
+            if (matches.length !== 1) continue;
+            const group = matches[0];
+            const session = (event.orchestraSessions || []).find(item => item.id === group.orchestraSessionId
+                && item.venue === group.venueId && item.date === group.date);
+            if (!session || !(event.venues || []).some(venue => venue.id === session.venue)) continue;
+            plannedByRegistrant.set(id, { sessionId: session.id, groupId: group.groupId,
+                groupLabel: group.label, venue: session.venue, date: session.date, time: session.time });
+        }
+    }
+    return { groups: groups.map(({ bookings, ...group }) => ({ ...group, bookingCount: bookings.length,
+        plannedSession: plannedByRegistrant.get(group.registrantId) || null })),
         nextCursor: page.docs.length === 25 ? page.docs[page.docs.length - 1].id : null };
 }
 

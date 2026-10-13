@@ -3053,7 +3053,7 @@ async function sendJuryDeadlineReminderEmail({ to, name, category, pendingCount,
 async function sendOrchestraAssignmentEmail(booking, assignment) {
     await transporter.sendMail({
         from: '"APCS Music" <hello@apcsmusic.com>', to: booking.userEmail,
-        subject: 'APCS — Your orchestra session',
+        subject: 'APCS Orchestra & Awarding Session Confirmation',
         html: assignmentEmail(booking, assignment),
     });
 }

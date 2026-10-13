@@ -616,7 +616,7 @@ const templates = {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>APCS Orchestra Session Confirmed</title>
+            <title>APCS Orchestra &amp; Awarding Session Confirmation</title>
             <style>${commonCss}</style>
         </head>
         <body>

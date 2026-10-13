@@ -205,25 +205,59 @@ test('ORCHESTRA POLICY: direct orchestra sales and quota exceed the competition 
     assert.ok((await f.book({ tickets: [{ id: 'presto', quantity: 0 }] })).error, 'Quantity validation still applies');
 });
 
-test('ORCHESTRA: email shows pending or named venue/session, group count and escaped names', () => {
+test('ORCHESTRA: assignment email uses booking categories, formatted session and escaped names', () => {
     const { attendanceHtml, assignmentEmail } = require('../src/services/OrchestraEmailDetails');
-    const booking = { id: 'b1', ticketingVersion: 2, registrantId: 'winner', orchestraAttendanceTickets: 3, tickets: [{ quantity: 3 }], buyerName: '<script>', registrantName: 'Ensemble' };
+    const booking = { id: 'b1', ticketingVersion: 2, registrantId: 'winner', orchestraAttendanceTickets: 3, tickets: [{ id: 'presto', quantity: 1 }, { id: 'allegro', quantity: 2 }], buyerName: '<script>', registrantName: 'Ensemble' };
     const pendingHtml = attendanceHtml(booking, null);
     assert.match(pendingHtml, /<strong>Orchestra &amp; Awarding Seating<\/strong>/);
     assert.match(pendingHtml, /<strong>Seating<\/strong>: Free Seating · Redeem your orchestra ticket at the venue\./);
     assert.match(pendingHtml, /The orchestra and awarding session assignments, including the venue, date, and time, will be sent by email on <strong>19 October 2026<\/strong>\./);
     const assignment = { bookingIds: ['b1'], venueName: 'Titan Theatre', date: '2026-11-15', time: '15:30-17:30', paidTicketCount: 5, performerCount: 4, quantity: 9 };
     const html = assignmentEmail(booking, assignment);
-    assert.match(html, /Titan Theatre/); assert.match(html, /2026-11-15/); assert.match(html, /9 attendees/); assert.match(html, /&lt;script&gt;/);
+    assert.match(html, /Titan Theatre/); assert.match(html, /15 November 2026/); assert.match(html, /15:30–17:30/); assert.match(html, /&lt;script&gt;/);
+    assert.match(html, /<strong>APCS 2026 Orchestra &amp; Awarding Session<\/strong> is confirmed!/);
+    assert.match(html, /<strong>Booking ID:<\/strong> b1/);
+    assert.match(html, /<strong>Winning Performer:<\/strong> Ensemble/);
+    assert.match(html, /PRESTO: 1 tickets — Free Seating/);
+    assert.match(html, /ALLEGRO: 2 tickets — Free Seating/);
+    assert.match(html, /The performer’s complimentary ticket can also be redeemed at the same time\./);
+    assert.match(html, /Please present your booking ID at the counter to redeem your tickets\./);
+    assert.match(html, /Seating is on a first-come, first-served basis according to ticket category\./);
+    assert.match(html, /We look forward to seeing you! ✨/);
+    assert.match(html, /<strong>APCS Music Team<\/strong>/);
     assert.match(html, /<!DOCTYPE html>/);
     assert.match(html, /class="email-container"/);
     assert.match(html, /alt="APCS Logo"/);
     assert.match(html, /class="footer"/);
     assert.match(html, new RegExp(`&copy; ${new Date().getFullYear()} APCS Music`));
     assert.doesNotMatch(html, /Orkestra|Pesanan|Penampil|Tunjukkan|Tempat duduk/);
-    assert.match(html, /Assignment reference: event/);
+    assert.doesNotMatch(html, /Assignment reference:|9 attendees|Performer places are counted|earlier orchestra assignment/);
+    assert.doesNotMatch(html, /LENTO/);
+    const publicHtml = assignmentEmail({ ...booking, userName: 'Buyer & Parent', buyerName: '',
+        tickets: [{ id: 'presto', quantity: 1 }, { id: 'PRESTO', quantity: 2 }] }, { ...assignment, performerCount: 0 });
+    assert.match(publicHtml, /Dear Buyer &amp; Parent,/);
+    assert.match(publicHtml, /PRESTO: 3 tickets — Free Seating/);
+    assert.match(publicHtml, /ALLEGRO: 0 tickets — Free Seating/);
+    assert.doesNotMatch(publicHtml, /performer’s complimentary ticket/);
+    // The separate payment-confirmation block retains its existing group summary.
+    assert.match(attendanceHtml(booking, assignment), /9 attendees/);
     assert.match(attendanceHtml({ ...booking, id: 'new-booking' }, assignment), /<strong>19 October 2026<\/strong>/);
     assert.match(attendanceHtml({ ...booking, seatingMode: 'free' }, null), /No numbered seat/);
+});
+
+test('ORCHESTRA: sender uses the requested assignment subject and rendered body', async () => {
+    const source = fs.readFileSync(path.join(__dirname, '../src/services/EmailService.js'), 'utf8');
+    const start = source.indexOf('async function sendOrchestraAssignmentEmail(');
+    let sent;
+    const emailContext = { assignmentEmail: require('../src/services/OrchestraEmailDetails').assignmentEmail,
+        transporter: { sendMail: async options => { sent = options; } } };
+    vm.runInNewContext(source.slice(start), emailContext);
+    await emailContext.sendOrchestraAssignmentEmail({ id: 'b2', userName: 'Parent', userEmail: 'parent@example.invalid',
+        registrantName: 'Winner', tickets: [{ id: 'allegro', quantity: 2 }] },
+    { venueName: 'Titan Theatre', date: '2026-11-15', time: '15:30-17:30', performerCount: 1 });
+    assert.equal(sent.subject, 'APCS Orchestra & Awarding Session Confirmation');
+    assert.equal(sent.to, 'parent@example.invalid');
+    assert.match(sent.html, /ALLEGRO: 2 tickets — Free Seating/);
 });
 
 test('ORCHESTRA: every new admin endpoint enforces whitelist authentication', () => {
