@@ -83,6 +83,15 @@ async function createPublicTicketBooking(req, res, next) {
         if (booking.paymentStatus === 'PAID' || booking.paymentStatus === 'paid') {
             return res.status(201).json(data);
         }
+        if (!data.paymentUrl) {
+            // An idempotent retry can arrive before the original request saves its invoice.
+            // Keep the existing reservation and do not email a missing payment link.
+            return res.status(202).json({
+                ...data,
+                paymentStatus: booking.paymentStatus,
+                message: 'Your booking is reserved and its invoice is still being prepared. Please retry with the same details shortly.',
+            });
+        }
 
         // Send "seats locked" holding email
         try {

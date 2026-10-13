@@ -69,6 +69,97 @@ function failPaidCommits(f) {
 }
 const seatBooking = { selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] };
 
+test('CHECKOUT RETRY: an invoice still being prepared returns the existing booking without sending an empty payment link', async () => {
+    let retryResponse;
+    const body = { ...seatBooking, idempotencyKey: 'invoice-in-flight-test' };
+    const f = fixture({ beforeInvoiceResponse: async () => {
+        retryResponse = response();
+        await f.load('src/controllers/PublicTicketController.js').createPublicTicketBooking(
+            { body: f.body(body) }, retryResponse, error => { throw error; });
+        assert.equal(f.emails.length, 0, 'A retry without a payment link must not send a holding email');
+    } });
+    f.seat();
+    const initialResponse = response();
+    await f.load('src/controllers/PublicTicketController.js').createPublicTicketBooking(
+        { body: f.body(body) }, initialResponse, error => { throw error; });
+    assert.equal(retryResponse.statusCode, 202);
+    assert.equal(retryResponse.body.bookingId, initialResponse.body.bookingId);
+    assert.equal(retryResponse.body.paymentUrl, null);
+    assert.match(retryResponse.body.message, /still being prepared/);
+    assert.equal(initialResponse.statusCode, 201);
+    assert.equal(f.invoices.length, 1);
+    assert.equal(f.emails.filter(email => email.name === 'sendPublicSeatHoldEmail').length, 1);
+    assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
+});
+
+// Owner-supplied Paper.id formats, 13 October 2026. Invoice identity/number/total
+// use the fixture booking; other fields retain the supplied callback structure.
+for (const route of ['dedicated', 'generic']) {
+    for (const format of ['staging', 'production']) {
+        test(`CALLBACK FORMAT: ${route} route fulfills ${format} invoice, books its seat and confirms once`, async () => {
+            const f = fixture(); f.seat();
+            const { error, result } = await f.book(seatBooking);
+            assert.ifError(error);
+            const id = result.bookingId;
+            const current = booking(f, id);
+            const invoice = {
+                id: current.invoiceId, number: id, status: 'paid',
+                amount_due: current.totalAmount,
+            };
+            const payload = format === 'staging'
+                ? { message: 'Invoice has been paid', data: { invoice: {
+                    ...invoice, total_amount: current.totalAmount,
+                    partner_id: '2d0e80ca-9a46-4e35-a951-a61987fb7c98',
+                    updated_at: '2025-06-18 05:21:16.529804427 +0700 WIB',
+                } } }
+                : { message: 'Invoice Paid', invoice: { ...invoice, amount: current.totalAmount },
+                    payment_info: {
+                        bank_transfer: { amount: 200000, paid_amount: 0, paid_at: '', status: 'PAID',
+                            created: '2021-08-09T11:23:50.550571+07:00',
+                            updated: '2021-08-09T11:23:53.011389+07:00' },
+                        channel: 'bni', method: 'bank_transfer',
+                    } };
+
+            const res = await callback(f, route, payload);
+            assert.equal(res.statusCode, 200);
+            assert.equal(res.body.status, 'OK');
+            assert.equal(booking(f, id).paymentStatus, 'PAID');
+            assert.equal(booking(f, id).amountPaid, current.totalAmount);
+            assert.equal(booking(f, id).emailSent, true);
+            assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'booked');
+            assert.equal(f.receipts()[0].status, 'processed');
+            assert.equal(f.receipts()[0].payload.invoice.id, current.invoiceId);
+            assert.equal(f.confirmations(id), 1);
+
+            await callback(f, route === 'dedicated' ? 'generic' : 'dedicated', payload);
+            assert.equal(f.receipts().length, 1);
+            assert.equal(f.confirmations(id), 1, 'Replaying through the other route does not resend');
+        });
+
+        test(`CALLBACK FORMAT: ${route} route rejects ${format} total mismatch despite matching amount_due`, async () => {
+            const f = fixture(); f.seat();
+            const { error, result } = await f.book(seatBooking);
+            assert.ifError(error);
+            const id = result.bookingId;
+            const current = booking(f, id);
+            const invoice = {
+                id: current.invoiceId, number: id, status: 'paid',
+                amount_due: current.totalAmount,
+                [format === 'staging' ? 'total_amount' : 'amount']: 1,
+            };
+            const payload = format === 'staging' ? { data: { invoice } } : { invoice };
+            const res = await callback(f, route, payload);
+            assert.equal(res.statusCode, 200, 'The receipt is stored even when fulfillment needs review');
+            assert.equal(res.body.status, 'RECEIVED_FOR_RECONCILIATION');
+            assert.equal(f.receipts()[0].status, 'needs_review');
+            assert.equal(f.receipts()[0].reason, 'payment_amount_mismatch');
+            assert.equal(booking(f, id).paymentStatus, 'pending');
+            assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'locked');
+            assert.equal(f.confirmations(id), 0);
+        });
+    }
+}
+
 test('REPAIR PAYMENT: both callback routes store a durable receipt when fulfillment fails, and recovery after restart pays once', async () => {
     const f = fixture(); f.seat();
     const { error, result } = await f.book(seatBooking);
