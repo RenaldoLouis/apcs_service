@@ -4,6 +4,16 @@ const isPaid = booking => ['PAID', 'paid'].includes(booking.paymentStatus);
 const ticketCount = booking => (booking.tickets || []).reduce((sum, ticket) => sum + Number(ticket.quantity || 0), 0);
 const fail = message => Object.assign(new Error(message), { statusCode: 409, isOperational: true });
 const validateKey = value => typeof value === 'string' && value.length > 0 && value.length < 200 && !value.includes('/');
+const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
+    && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+const timeRange = value => typeof value === 'string'
+    && /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/.test(value)
+    && value.slice(0, 5) < value.slice(6) ? value.split('-') : null;
+const overlaps = (left, right) => {
+    const a = timeRange(left), b = timeRange(right);
+    return a && b && a[0] < b[1] && b[0] < a[1];
+};
 const validateIdentity = (eventId, registrantId) => {
     if (!validateKey(eventId) || !validateKey(registrantId)) throw fail('Event and winner are required.');
 };
@@ -180,6 +190,24 @@ async function saveSession({ eventId, session, deleteSessionId }) {
         const retained = activeBookings.docs.map(doc => doc.data()).filter(booking =>
             isPaid(booking) || booking.paymentStatus === 'pending' || (booking.paymentStatus === 'failed' && booking.checkoutFailure?.cleanupStatus !== 'complete'));
         const hasAttendance = Number(old?.freeSeatingAssigned || 0) > 0 || Number(old?.complimentaryClaimed || 0) > 0;
+        const changedSlot = !old || old.venue !== session?.venue || old.date !== session?.date || old.time !== session?.time;
+        if (old && (deleteSessionId || changedSlot)) {
+            const [savedAssignments, legacyBookings, inventory, plannedGroups] = await Promise.all([
+                transaction.get(db.collection('orchestraAssignments').where('eventId', '==', eventId).where('sessionId', '==', id).limit(1)),
+                transaction.get(db.collection('publicBookings').where('eventId', '==', eventId).where('orchestraSessionId', '==', id)),
+                transaction.get(db.collection(`seats${eventId}`).where('venueId', '==', old.venue)
+                    .where('sessionId', '==', `${old.date}_${old.time}`).limit(1)),
+                deleteSessionId || old.venue !== session?.venue || old.date !== session?.date
+                    ? transaction.get(db.collection(`competitionSessionPlans/${eventId}/groups`).where('orchestraSessionId', '==', id).limit(1))
+                    : Promise.resolve({ docs: [] }),
+            ]);
+            if (savedAssignments.docs.length || inventory.docs.length || legacyBookings.docs.some(doc =>
+                isPaid(doc.data()) || doc.data().paymentStatus === 'pending'
+                || (doc.data().paymentStatus === 'failed' && doc.data().checkoutFailure?.cleanupStatus !== 'complete'))) {
+                throw fail('A session with saved assignments, active bookings or numbered inventory cannot be deleted or moved.');
+            }
+            if (plannedGroups.docs.length) throw fail('Clear the planned orchestra session from attendance groups before deleting it or changing its venue/date.');
+        }
         if (deleteSessionId) {
             if (!old) throw fail('Session no longer exists.');
             if (hasAttendance || retained.length) throw fail('A session with active bookings or attendance cannot be deleted.');
@@ -187,13 +215,36 @@ async function saveSession({ eventId, session, deleteSessionId }) {
             return;
         }
         const venue = (event.venues || []).find(item => item.id === session?.venue);
-        if (!venue || !(venue.sessions?.[session.date] || []).includes(session.time)) throw fail('Choose a configured venue date and time.');
+        if (!venue) throw fail('Choose an existing venue.');
+        if (!validDate(session.date) || !timeRange(session.time)) throw fail('Choose a valid date and a start/end time on the same date.');
         if (sessions.some(item => item.id !== id && item.venue === session.venue && item.date === session.date && item.time === session.time)) throw fail('This orchestra slot already exists.');
         if ((event.masterclassSessions || []).some(item => item.venue === session.venue && item.date === session.date && item.time === session.time)) throw fail('This slot belongs to a legacy Masterclass.');
-        const changedSlot = !old || old.venue !== session.venue || old.date !== session.date || old.time !== session.time;
         if (old && changedSlot && (retained.length || hasAttendance)) throw fail('A session with active attendance cannot move to a different venue or time.');
         const assignments = await transaction.get(db.collection('sessionAssignments').doc(eventId));
         if ((assignments.data()?.assignments?.[`${session.venue}_${session.date}_${session.time}`] || []).length) throw fail('This slot has assigned competition performers.');
+        if (changedSlot) {
+            const specialSessions = [...sessions, ...(event.masterclassSessions || [])];
+            if ([...sessions.filter(item => item.id !== id), ...(event.masterclassSessions || [])].some(item => item.venue === session.venue
+                && item.date === session.date && overlaps(session.time, item.time))) {
+                throw fail('This time overlaps another orchestra or legacy Masterclass session in the same venue.');
+            }
+            // Older venue timetables may include orchestra/Masterclass times. They are
+            // already checked above; only other timetable entries are competition times.
+            const competitionTimes = (venue.sessions?.[session.date] || []).filter(time =>
+                !specialSessions.some(item => item.venue === session.venue && item.date === session.date && item.time === time));
+            const assignmentPrefix = `${session.venue}_${session.date}_`;
+            const assignedTimes = Object.entries(assignments.data()?.assignments || {})
+                .filter(([key, members]) => key.startsWith(assignmentPrefix) && members?.length)
+                .map(([key]) => key.slice(assignmentPrefix.length));
+            if ([...competitionTimes, ...assignedTimes].some(time => overlaps(session.time, time))) {
+                throw fail('This time overlaps a competition session in the same venue.');
+            }
+            const plan = await transaction.get(db.collection('competitionSessionPlans').doc(eventId));
+            if ((plan.data()?.draftSlots || []).some(slot => slot.venueId === session.venue && slot.date === session.date
+                && slot.start && slot.end && overlaps(session.time, `${slot.start}-${slot.end}`))) {
+                throw fail('This time overlaps a draft competition session in the same venue.');
+            }
+        }
         const slotBookings = changedSlot ? await transaction.get(db.collection('publicBookings').where('eventId', '==', eventId)
             .where('venue', '==', session.venue).where('date', '==', session.date).where('session', '==', session.time)) : null;
         if (slotBookings?.docs.some(doc => isPaid(doc.data()) || doc.data().paymentStatus === 'pending'
