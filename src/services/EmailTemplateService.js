@@ -665,7 +665,7 @@ const templates = {
                                 <div class="info-row"><span class="info-label">Booking ID</span><span class="info-value">${data.bookingId}</span></div>
                                 <div class="info-row"><span class="info-label">Venue</span><span class="info-value">${data.venueName}</span></div>
                                 <div class="info-row"><span class="info-label">Date</span><span class="info-value">${data.date}</span></div>
-                                <div class="info-row"><span class="info-label">Session</span><span class="info-value">${data.session}</span></div>
+                                <div class="info-row"><span class="info-label">Session</span><span class="info-value">${data.session} WIB</span></div>
                                 <div class="info-row"><span class="info-label">Tickets</span><span class="info-value">${data.ticketSummary}</span></div>
                                 ${data.performanceSeatLabels ? `<div class="info-row"><span class="info-label">Competition Seats</span><span class="info-value">${data.performanceSeatLabels}</span></div>` : ''}
                                 ${data.orchestraSeatLabels ? `<div class="info-row"><span class="info-label">Orchestra Seats</span><span class="info-value">${data.orchestraSeatLabels}</span></div>` : ''}

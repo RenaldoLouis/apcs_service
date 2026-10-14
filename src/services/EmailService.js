@@ -2936,10 +2936,11 @@ async function sendManualTicketPaymentInstructions(booking) {
 }
 
 async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, date, session, paymentUrl, lockExpiresAt }) {
-    const deadline = new Date(lockExpiresAt).toLocaleString('id-ID', {
+    const deadline = new Date(lockExpiresAt).toLocaleString('en-GB', {
         timeZone: 'Asia/Jakarta',
         day: '2-digit', month: 'long', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
+        hourCycle: 'h23',
     }) + ' WIB (UTC+7)';
 
     const html = getTemplate('publicSeatHold', {

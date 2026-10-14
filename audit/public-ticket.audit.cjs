@@ -129,6 +129,7 @@ function fixture(options = {}) {
                 if (name.endsWith('/Logger')) return { logger };
                 if (name.endsWith('/PaperRepository')) return paper;
                 if (name.endsWith('/PublicTicketFailureRepository')) return load('src/repositories/PublicTicketFailureRepository.js');
+                if (name.endsWith('/ErrorHandlerMiddleware')) return load('src/middlewares/ErrorHandlerMiddleware.js');
                 if (name === 'jsonwebtoken') return {};
                 const extra = options.extraRequire && options.extraRequire(name, load);
                 if (extra) return extra;
@@ -563,7 +564,7 @@ test('REGRESSION: aliases for one physical chair cannot produce two paid booking
     assert.ifError(first.error);
     await f.repo.handlePublicTicketWebhookPaid(first.result.bookingId, paidInvoice(first.result.bookingId, 160000));
     const second = await f.book({ selectedSeatIds: ['canonical-a1'], addOnIds: ['seat_selection_performer'] });
-    assert.match(second.error.message, /physical seat/i);
+    assert.equal(second.error.code, 'SEAT_UNAVAILABLE');
 });
 
 test('REGRESSION: client masterclass flags cannot bypass competition-seat capacity', async () => {

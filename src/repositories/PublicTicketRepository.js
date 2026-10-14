@@ -3,11 +3,17 @@ const { logger } = require('../utils/Logger');
 const jwt = require('jsonwebtoken');
 const PaperRepository = require('./PaperRepository');
 const { failPublicTicketBooking, expirePublicTicketBooking } = require('./PublicTicketFailureRepository');
+const { AppError } = require('../middlewares/ErrorHandlerMiddleware');
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const LOCK_DURATION_MS = 30 * 60 * 1000; // 30 minutes in milliseconds
 const SEAT_OWNERSHIP_COLLECTION = 'ticketSeatOwnership';
 const CAPACITY_COLLECTION = 'ticketCapacity';
+
+const seatUnavailableError = seatLabel => Object.assign(new AppError(
+    `The selected seat${seatLabel ? ` (${seatLabel})` : ''} is no longer available. It may have been booked or blocked. Please go back to seat selection and choose another seat.`,
+    409,
+), { code: 'SEAT_UNAVAILABLE' });
 
 const normalizeSeatPart = value => String(value ?? '').trim().toUpperCase();
 const safeDocumentId = value => encodeURIComponent(String(value ?? '')).replace(/%/g, '_');
@@ -551,7 +557,10 @@ const createPublicTicketBooking = async (body, callback) => {
                 Object.entries(ticketQuantities).forEach(([tierId, quantity]) => {
                     const capacity = (capacityCounts[tierId] || 0) - Number(blockedByTier[tierId] || 0);
                     if (quantity + (reservedByTier[tierId] || 0) > capacity) {
-                        throw new Error(`Not enough ${tierId} capacity remains for this session.`);
+                        throw Object.assign(new AppError(
+                            `Not enough ${tierId} capacity remains for this session. Please go back to ticket selection and choose a different ticket quantity or category.`,
+                            409,
+                        ), { code: 'TICKET_CAPACITY_UNAVAILABLE' });
                     }
                 });
             }
@@ -566,18 +575,18 @@ const createPublicTicketBooking = async (body, callback) => {
                 const seatData = seatDoc.data();
 
                 if (seatData.status !== 'available') {
-                    throw new Error(`Seat ${seatData.seatLabel} is no longer available. Please go back and re-select.`);
+                    throw seatUnavailableError(seatData.seatLabel);
                 }
                 const ownershipDoc = ownershipDocs[i];
                 if (ownershipDoc?.exists && ownershipDoc.data().active !== false
                     && ownershipDoc.data().bookingId !== bookingId) {
-                    throw new Error(`Physical seat ${seatData.seatLabel} is already held by another booking.`);
+                    throw seatUnavailableError(seatData.seatLabel);
                 }
                 const occupiedAlias = (physicalAliases[i]?.docs || []).find(alias => alias.id !== seatDoc.id
                     && ['locked', 'booked', 'reserved', 'blocked'].includes(String(alias.data().status || '').toLowerCase())
                     && alias.data().lockedByBookingId !== bookingId && alias.data().bookingId !== bookingId);
                 if (occupiedAlias) {
-                    throw new Error(`Physical seat ${seatData.seatLabel} is already occupied by an existing seat record.`);
+                    throw seatUnavailableError(seatData.seatLabel);
                 }
                 if (i < seatRefs.length) {
                     const tierId = String(seatData.areaType || '').toLowerCase();
