@@ -223,7 +223,7 @@ const confirmSeatSelection = async (req, callback) => {
                     throw new Error(`Sorry, physical seat ${seatDoc.data().seatLabel} is already held.`);
                 }
                 const occupiedAlias = (aliasSnapshots[index].docs || []).find(alias => alias.id !== seatDoc.id
-                    && ['locked', 'booked', 'reserved'].includes(String(alias.data().status || '').toLowerCase())
+                    && ['locked', 'booked', 'reserved', 'blocked'].includes(String(alias.data().status || '').toLowerCase())
                     && alias.data().lockedByBookingId !== bookingId && alias.data().bookingId !== bookingId);
                 if (occupiedAlias) {
                     throw new Error(`Sorry, physical seat ${seatDoc.data().seatLabel} is already occupied.`);

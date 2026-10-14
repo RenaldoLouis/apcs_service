@@ -25,6 +25,7 @@ router.post('/registrant-attendance/preview', requireTicketingAdmin, RegistrantA
 router.post('/registrant-attendance/apply', requireTicketingAdmin, RegistrantAttendanceController.apply);
 const VenueController = require('../controllers/VenueController');
 router.post('/venue-settings/:eventId/:venueId/metadata', requireTicketingAdmin, VenueController.updateMetadata);
+router.post('/venue-settings/:eventId/:venueId/layout', requireTicketingAdmin, VenueController.updateLayout);
 
 router.post('/createPayment', paymentValidation, paymentController.createPayment)
 
@@ -97,6 +98,7 @@ router.post('/public-ticket/admin/mark-manual-paid', requireTicketingAdmin, Publ
 router.post('/public-ticket/admin/resend-manual-instructions', requireTicketingAdmin, PublicTicketController.resendManualPaymentInstructions);
 router.post('/public-ticket/admin/assign-seats', requireTicketingAdmin, PublicTicketController.assignPaidBookingSeats);
 router.post('/public-ticket/admin/seats/generate', requireTicketingAdmin, PublicTicketController.generateSeatLayout);
+router.post('/public-ticket/admin/seats/block', requireTicketingAdmin, PublicTicketController.setSeatBlock);
 
 const TicketRedemptionController = require('../controllers/TicketRedemptionController');
 const { redemptionLimiter } = require('../middlewares/TicketRedemptionTraffic');

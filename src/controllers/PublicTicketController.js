@@ -303,6 +303,18 @@ async function generateSeatLayout(req, res, next) {
     }
 }
 
+/** POST /api/v1/apcs/public-ticket/admin/seats/block */
+async function setSeatBlock(req, res, next) {
+    try {
+        const { eventId, venueId, sessionId, seatId, action, reason, expectedRevision } = req.body || {};
+        const result = await TicketSeatAdminRepository.setSeatBlock(
+            { eventId, venueId, sessionId, seatId, action, reason, expectedRevision }, req.ticketingAdmin);
+        return res.status(200).json(result);
+    } catch (error) {
+        return next(error);
+    }
+}
+
 module.exports = {
     getPublicTicketEventData,
     createPublicTicketBooking,
@@ -316,4 +328,5 @@ module.exports = {
     resendManualPaymentInstructions,
     assignPaidBookingSeats,
     generateSeatLayout,
+    setSeatBlock,
 };

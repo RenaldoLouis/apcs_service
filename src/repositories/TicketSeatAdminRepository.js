@@ -1,5 +1,8 @@
 const { db, admin } = require('../configs/firebase-init');
-const { physicalSeatKey, safeDocumentId, SEAT_OWNERSHIP_COLLECTION } = require('./PublicTicketRepository');
+const {
+    physicalSeatKey, safeDocumentId, SEAT_OWNERSHIP_COLLECTION,
+    capacityDocumentId, getPaidCapacityByTier, getReservedCapacityByTier,
+} = require('./PublicTicketRepository');
 
 // Staff seat writes run in Admin SDK transactions so they serialize with checkout, payment and each other.
 const GENERATION_CHUNK_SIZE = 150;
@@ -7,7 +10,7 @@ const fail = (message, statusCode = 409) => Object.assign(new Error(message), { 
 const validKey = value => typeof value === 'string' && value.length > 0 && value.length < 300 && !value.includes('/');
 const isPaid = booking => booking.paymentStatus === 'PAID' || booking.paymentStatus === 'paid';
 const isMasterclassTicket = ticket => ['master_class', 'masterclass'].includes(String(ticket.id || '').toLowerCase());
-const occupiedStatus = status => ['locked', 'booked', 'reserved'].includes(String(status || '').toLowerCase());
+const occupiedStatus = status => ['locked', 'booked', 'reserved', 'blocked'].includes(String(status || '').toLowerCase());
 const ownershipRef = key => db.collection(SEAT_OWNERSHIP_COLLECTION).doc(safeDocumentId(key));
 
 const seatTemplatesFor = venue => (venue?.seatConfig || []).flatMap(config =>
@@ -52,6 +55,16 @@ async function generateSeatLayout({ eventId, venueId, sessionIds }) {
         for (let start = 0; start < templates.length; start += GENERATION_CHUNK_SIZE) {
             const chunk = templates.slice(start, start + GENERATION_CHUNK_SIZE);
             const counts = await db.runTransaction(async transaction => {
+                // Serialize the first seat writes with venue-layout edits on the event document.
+                const currentEventSnap = await transaction.get(eventRef);
+                const currentEvent = currentEventSnap.data();
+                const currentVenue = (currentEvent?.venues || []).find(item => item.id === venueId);
+                if (!currentEventSnap.exists || currentEvent.competitionScheduleState?.status === 'draft'
+                    || JSON.stringify(currentVenue?.seatConfig) !== JSON.stringify(venue.seatConfig)
+                    || !(currentVenue?.sessions?.[sessionId.slice(0, sessionId.indexOf('_'))] || [])
+                        .includes(sessionId.slice(sessionId.indexOf('_') + 1))) {
+                    throw fail('Venue layout or schedule changed. Refresh before generating seats.');
+                }
                 const seatRefs = chunk.flatMap(template => [
                     seats.doc(`${venueId}-${template.areaType}-${template.seatLabel}_${eventId}_${sessionId}`),
                     seats.doc(`${template.areaType}-${template.seatLabel}_${eventId}_${sessionId}`),
@@ -71,9 +84,21 @@ async function generateSeatLayout({ eventId, venueId, sessionIds }) {
                         return;
                     }
                     const target = legacy.exists ? legacy : current;
-                    transaction.set(target.ref, { eventId, venueId, sessionId, status: 'available', ...template });
+                    // Available-chair refreshes must retain block revisions so an old admin
+                    // dialog cannot match a newer block after regeneration (an ABA conflict).
+                    const blockRevision = Math.max(...[current, legacy, ownership]
+                        .map(record => record.data()?.seatBlockRevision || 0));
+                    const lastSeatBlock = target.data()?.lastSeatBlock;
+                    transaction.set(target.ref, {
+                        eventId, venueId, sessionId, status: 'available', ...template,
+                        ...(blockRevision ? { seatBlockRevision: blockRevision } : {}),
+                        ...(lastSeatBlock ? { lastSeatBlock } : {}),
+                    });
                     chunkCounts[target.exists ? 'refreshed' : 'created']++;
                 });
+                // Write the unchanged snapshot to serialize with edits, without marking
+                // a partially generated session complete. Flags are set after all chunks.
+                transaction.update(eventRef, { venues: currentEvent.venues });
                 return chunkCounts;
             });
             Object.keys(totals).forEach(key => { totals[key] += counts[key]; });
@@ -189,4 +214,126 @@ async function assignPaidBookingSeats({ bookingId, seatIds }, actor = {}) {
     });
 }
 
-module.exports = { generateSeatLayout, assignPaidBookingSeats };
+/** Keep an unused competition chair out of sale, including tickets sold without seat selection. */
+async function setSeatBlock({ eventId, venueId, sessionId, seatId, action, reason, expectedRevision }, actor = {}) {
+    if (![eventId, venueId, sessionId, seatId].every(validKey)
+        || !['block', 'unblock'].includes(action)
+        || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+        throw fail('A seat, session, action and current block revision are required.', 400);
+    }
+    const note = typeof reason === 'string' ? reason.trim() : '';
+    if (action === 'block' && (!note || note.length > 500)) {
+        throw fail('Enter a reason for the block (up to 500 characters).', 400);
+    }
+    if (!actor.uid || !actor.email) throw fail('Admin authentication is required.', 401);
+    const separator = sessionId.indexOf('_');
+    const date = sessionId.slice(0, separator);
+    const session = sessionId.slice(separator + 1);
+    const eventRef = db.collection('events').doc(eventId);
+    const seats = db.collection(`seats${eventId}`);
+    const seatRef = seats.doc(seatId);
+    const capacityRef = db.collection('ticketCapacity').doc(capacityDocumentId(eventId, venueId, date, session));
+
+    return db.runTransaction(async transaction => {
+        const [eventSnap, seatSnap, capacitySnap] = await transaction.getAll(eventRef, seatRef, capacityRef);
+        if (!eventSnap.exists || !seatSnap.exists) throw fail('The event or seat no longer exists.', 404);
+        const event = eventSnap.data();
+        const venue = (event.venues || []).find(item => item.id === venueId);
+        const seat = seatSnap.data();
+        if (separator < 0 || !(venue?.sessions?.[date] || []).includes(session)
+            || [...(event.orchestraSessions || []), ...(event.masterclassSessions || [])]
+                .some(item => item.venue === venueId && item.date === date && item.time === session)
+            || seat.eventId !== eventId || seat.venueId !== venueId || seat.sessionId !== sessionId) {
+            throw fail('Select a numbered seat in the current competition session.');
+        }
+        const tierId = String(seat.areaType || '').toLowerCase();
+        if (!(venue.seatConfig || []).some(row => row.row === seat.row
+            && String(row.areaType || '').toLowerCase() === tierId
+            && Number.isInteger(seat.number) && seat.number > 0 && seat.number <= Number(row.seatCount))) {
+            throw fail('This seat no longer matches the venue layout.');
+        }
+        if ((seat.seatBlockRevision || 0) !== expectedRevision) {
+            throw fail('The seat block changed. Refresh the layout before trying again.');
+        }
+        const key = physicalSeatKey(eventId, seat);
+        const ownerRef = ownershipRef(key);
+        const ownerSnap = await transaction.get(ownerRef);
+        const aliases = await transaction.get(seats.where('venueId', '==', venueId).where('sessionId', '==', sessionId)
+            .where('row', '==', seat.row).where('number', '==', seat.number));
+        const blockedSeats = await transaction.get(seats.where('venueId', '==', venueId)
+            .where('sessionId', '==', sessionId).where('status', '==', 'blocked'));
+        const sessionBookings = !capacitySnap.exists
+            ? await transaction.get(db.collection('publicBookings').where('eventId', '==', eventId)
+                .where('venue', '==', venueId).where('date', '==', date).where('session', '==', session))
+            : { docs: [] };
+
+        const isBlocking = action === 'block';
+        const expectedStatus = isBlocking ? 'available' : 'blocked';
+        if (!aliases.docs.length || aliases.docs.some(alias => {
+            const data = alias.data();
+            return data.status !== expectedStatus || data.bookingId || data.lockedByBookingId
+                || data.eventId !== eventId || data.areaType !== seat.areaType
+                || !Number.isSafeInteger(data.seatBlockRevision || 0) || (data.seatBlockRevision || 0) < 0
+                || (!isBlocking && (!data.seatBlock || data.seatBlockRevision !== expectedRevision));
+        })) {
+            throw fail('This chair is booked, held, or changed. Refresh the layout before trying again.');
+        }
+        const owner = ownerSnap.data();
+        if (isBlocking ? (ownerSnap.exists && owner.active !== false)
+            : (!ownerSnap.exists || owner.active !== true || owner.status !== 'blocked'
+                || owner.bookingId || owner.seatBlockRevision !== expectedRevision)) {
+            throw fail('The physical chair ownership changed. Refresh or reconcile it before trying again.');
+        }
+        const blockedByTier = {};
+        const blockedKeys = new Set();
+        blockedSeats.docs.forEach(record => {
+            const data = record.data();
+            const physicalKey = physicalSeatKey(eventId, data);
+            if (blockedKeys.has(physicalKey)) return;
+            blockedKeys.add(physicalKey);
+            const tier = String(data.areaType || '').toLowerCase();
+            blockedByTier[tier] = (blockedByTier[tier] || 0) + 1;
+        });
+        const savedBlocked = capacitySnap.data()?.blockedByTier || {};
+        if (capacitySnap.exists && [...new Set([...Object.keys(savedBlocked), ...Object.keys(blockedByTier)])]
+            .some(tier => Number(savedBlocked[tier] || 0) !== (blockedByTier[tier] || 0))) {
+            throw fail('Seat block capacity needs reconciliation before changing this block.');
+        }
+        const reservedByTier = capacitySnap.exists ? capacitySnap.data().reservedByTier || {}
+            : getReservedCapacityByTier(sessionBookings.docs.map(record => record.data()));
+        const capacityByTier = getPaidCapacityByTier(venue);
+        blockedByTier[tierId] = (blockedByTier[tierId] || 0) + (isBlocking ? 1 : -1);
+        const reserved = Number(reservedByTier[tierId] || 0);
+        if (!Number.isSafeInteger(reserved) || reserved < 0 || blockedByTier[tierId] < 0) {
+            throw fail('Session capacity needs reconciliation before changing this block.');
+        }
+        if (isBlocking && reserved + blockedByTier[tierId] > (capacityByTier[tierId] || 0)) {
+            throw fail(`This chair is needed for existing paid or held ${tierId} tickets. There is no spare capacity to block it.`);
+        }
+
+        const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+        const revision = Math.max(...aliases.docs.map(alias => alias.data().seatBlockRevision || 0)) + 1;
+        const block = { reason: note, blockedByUid: actor.uid, blockedByEmail: actor.email, blockedAt: updatedAt };
+        const lastSeatBlock = !isBlocking ? {
+            ...seat.seatBlock, unblockedByUid: actor.uid, unblockedByEmail: actor.email, unblockedAt: updatedAt,
+        } : null;
+        aliases.docs.forEach(alias => transaction.update(alias.ref, {
+            status: isBlocking ? 'blocked' : 'available', seatBlockRevision: revision,
+            seatBlock: isBlocking ? block : admin.firestore.FieldValue.delete(),
+            ...(!isBlocking ? { lastSeatBlock } : {}),
+        }));
+        transaction.set(ownerRef, {
+            eventId, physicalSeatKey: key, seatId, status: isBlocking ? 'blocked' : 'available',
+            active: isBlocking, seatBlockRevision: revision, updatedAt,
+        });
+        const capacityData = {
+            eventId, venue: venueId, date, session, pool: 'paid', capacityByTier,
+            capacityPolicy: 'numbered_layout', reservedByTier, blockedByTier, updatedAt,
+        };
+        if (capacitySnap.exists) transaction.update(capacityRef, capacityData);
+        else transaction.set(capacityRef, capacityData);
+        return { seatId, status: isBlocking ? 'blocked' : 'available', revision };
+    });
+}
+
+module.exports = { generateSeatLayout, assignPaidBookingSeats, setSeatBlock };

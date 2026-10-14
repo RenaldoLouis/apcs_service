@@ -76,6 +76,18 @@ const getPaidCapacityByTier = venue => {
     }, {});
 };
 
+// Shared by checkout and operational seat blocking when a legacy session has no counter yet.
+const getReservedCapacityByTier = bookings => bookings.filter(booking => !booking.isMasterclass
+    && (['pending', 'PAID', 'paid'].includes(booking.paymentStatus)
+        || (booking.paymentStatus === 'failed' && booking.checkoutFailure?.cleanupStatus !== 'complete')))
+    .reduce((counts, booking) => {
+        (booking.tickets || []).forEach(ticket => {
+            const tierId = String(ticket.id || '').toLowerCase();
+            counts[tierId] = (counts[tierId] || 0) + Number(ticket.quantity || 0);
+        });
+        return counts;
+    }, {});
+
 const getCurrentEventId = async () => {
     const docRef = db.collection('systemSettings').doc('global');
     const docSnap = await docRef.get();
@@ -187,6 +199,8 @@ const getPublicTicketSeats = async (query, callback) => {
             delete data.assignedTo;
             delete data.bookingId;
             delete data.lockedByBookingId;
+            delete data.seatBlock;
+            delete data.lastSeatBlock;
             
             return { id: doc.id, ...data };
         });
@@ -529,25 +543,13 @@ const createPublicTicketBooking = async (body, callback) => {
             }
             // Orchestra admission capacity is staff-managed: the numbered competition layout is not its ceiling.
             const capacityCounts = isAuthoritativeOrchestra ? null : getPaidCapacityByTier(currentVenue);
-            const retainsCapacity = booking => booking.paymentStatus === 'pending'
-                || booking.paymentStatus === 'PAID'
-                || booking.paymentStatus === 'paid'
-                || (booking.paymentStatus === 'failed' && booking.checkoutFailure?.cleanupStatus !== 'complete');
-            const activeSessionBookings = sessionBookingsSnap.docs
-                .map(doc => doc.data())
-                .filter(booking => retainsCapacity(booking) && !booking.isMasterclass);
-            const migratedReservedByTier = activeSessionBookings.reduce((counts, booking) => {
-                (booking.tickets || []).forEach(ticket => {
-                    const tierId = String(ticket.id || '').toLowerCase();
-                    counts[tierId] = (counts[tierId] || 0) + Number(ticket.quantity || 0);
-                });
-                return counts;
-            }, {});
+            const migratedReservedByTier = getReservedCapacityByTier(sessionBookingsSnap.docs.map(doc => doc.data()));
             const reservedByTier = capacitySnap?.exists
                 ? (capacitySnap.data().reservedByTier || {}) : migratedReservedByTier;
+            const blockedByTier = capacitySnap?.data()?.blockedByTier || {};
             if (capacityCounts) {
                 Object.entries(ticketQuantities).forEach(([tierId, quantity]) => {
-                    const capacity = capacityCounts[tierId] || 0;
+                    const capacity = (capacityCounts[tierId] || 0) - Number(blockedByTier[tierId] || 0);
                     if (quantity + (reservedByTier[tierId] || 0) > capacity) {
                         throw new Error(`Not enough ${tierId} capacity remains for this session.`);
                     }
@@ -572,7 +574,7 @@ const createPublicTicketBooking = async (body, callback) => {
                     throw new Error(`Physical seat ${seatData.seatLabel} is already held by another booking.`);
                 }
                 const occupiedAlias = (physicalAliases[i]?.docs || []).find(alias => alias.id !== seatDoc.id
-                    && ['locked', 'booked', 'reserved'].includes(String(alias.data().status || '').toLowerCase())
+                    && ['locked', 'booked', 'reserved', 'blocked'].includes(String(alias.data().status || '').toLowerCase())
                     && alias.data().lockedByBookingId !== bookingId && alias.data().bookingId !== bookingId);
                 if (occupiedAlias) {
                     throw new Error(`Physical seat ${seatData.seatLabel} is already occupied by an existing seat record.`);
@@ -1066,4 +1068,7 @@ module.exports = {
     physicalSeatKey,
     safeDocumentId,
     SEAT_OWNERSHIP_COLLECTION,
+    capacityDocumentId,
+    getPaidCapacityByTier,
+    getReservedCapacityByTier,
 };
