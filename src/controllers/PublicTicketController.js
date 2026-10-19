@@ -9,6 +9,19 @@ const { logger } = require('../utils/Logger');
 
 const isBookingReference = value => typeof value === 'string' && value.length > 0 && value.length < 200 && !value.includes('/');
 
+// Accept one plain mailbox, never display names, address lists or mail headers.
+const isSingleRecipientEmail = value => {
+    if (typeof value !== 'string' || value.length > 254) return false;
+    const parts = value.split('@');
+    if (parts.length !== 2) return false;
+    const [local, domain] = parts;
+    if (!local || local.length > 64 || local.startsWith('.') || local.endsWith('.') || local.includes('..')
+        || !/^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.\-]+$/.test(local)) return false;
+    const labels = domain.split('.');
+    return labels.length >= 2 && labels.every(label => label.length <= 63
+        && /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label));
+};
+
 /** GET /api/v1/apcs/public-ticket/event-data */
 async function getPublicTicketEventData(req, res, next) {
     try {
@@ -262,6 +275,38 @@ async function resendPublicTicketEmail(req, res, next) {
     }
 }
 
+/** POST /api/v1/apcs/public-ticket/admin/send-email-to-address */
+async function sendPublicTicketEmailToAddress(req, res, next) {
+    try {
+        const { bookingId, recipientEmail } = req.body || {};
+        if (!isBookingReference(bookingId)) {
+            return res.status(400).json({ message: 'A valid bookingId is required.' });
+        }
+        const recipient = typeof recipientEmail === 'string' ? recipientEmail.trim() : '';
+        if (!isSingleRecipientEmail(recipient)) {
+            return res.status(400).json({ message: 'Enter one valid email address.' });
+        }
+
+        const bookingSnap = await db.collection('publicBookings').doc(bookingId).get();
+        if (!bookingSnap.exists) return res.status(404).json({ message: 'Booking not found.' });
+        const booking = bookingSnap.data();
+        if (booking.paymentStatus !== 'PAID' && booking.paymentStatus !== 'paid') {
+            return res.status(409).json({ message: 'Confirmation emails can only be sent for paid bookings.' });
+        }
+
+        try {
+            // A one-time recipient override: do not change saved contact or delivery status.
+            await emailService.sendPublicBookingConfirmationEmail({ ...booking, id: bookingSnap.id, userEmail: recipient });
+        } catch (error) {
+            logger.error(`Alternate confirmation email failed for booking ${bookingId}: ${error.message}`);
+            return res.status(502).json({ message: 'The email service could not confirm sending. Check delivery before retrying.' });
+        }
+        return res.status(200).json({ bookingId, sent: true, recipientEmail: recipient });
+    } catch (error) {
+        return next(error);
+    }
+}
+
 /** POST /api/v1/apcs/public-ticket/admin/release-booking */
 async function releasePublicTicketBooking(req, res, next) {
     try {
@@ -323,6 +368,7 @@ module.exports = {
     getEligibleWinners,
     getBookingStatus,
     resendPublicTicketEmail,
+    sendPublicTicketEmailToAddress,
     releasePublicTicketBooking,
     markManualBookingPaid,
     resendManualPaymentInstructions,

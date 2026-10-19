@@ -267,6 +267,76 @@ async function saveDraft(eventId, expectedRevision, proposedGroups) {
   });
 }
 
+// Published edits may change only the order of existing competition members.
+// Keep the planning source and buyer-facing assignment projection in one transaction.
+async function reorderPublished(eventId, expectedRevision, proposedGroups) {
+  if (!validKey(eventId) || !Number.isInteger(expectedRevision) || expectedRevision < 0
+    || !Array.isArray(proposedGroups) || !proposedGroups.length || proposedGroups.length > 100
+    || proposedGroups.some(group => !group || !validKey(group.groupId)
+      || Object.keys(group).some(key => !['groupId', 'registrantIds'].includes(key))
+      || !Array.isArray(group.registrantIds) || group.registrantIds.some(id => !validKey(id)))
+    || new Set(proposedGroups.map(group => group.groupId)).size !== proposedGroups.length) {
+    throw fail('Invalid performance order.');
+  }
+  return db.runTransaction(async transaction => {
+    const eventRef = db.collection('events').doc(eventId);
+    const planRef = db.collection('competitionSessionPlans').doc(eventId);
+    const assignmentRef = db.collection('sessionAssignments').doc(eventId);
+    const [eventSnap, planSnap, groupsSnap, assignmentSnap] = await Promise.all([
+      transaction.get(eventRef), transaction.get(planRef), transaction.get(groupCollection(eventId)),
+      transaction.get(assignmentRef),
+    ]);
+    const event = eventSnap.data();
+    const state = event && stateOf(event);
+    if (!eventSnap.exists || !planSnap.exists || !assignmentSnap.exists
+      || !['published', 'ready'].includes(state?.status) || state.resetInProgress
+      || planSnap.data().status !== state.status || state.revision !== expectedRevision
+      || planSnap.data().revision !== expectedRevision) {
+      throw fail('Schedule changed. Refresh before saving the performance order.');
+    }
+    const groups = new Map(groupsSnap.docs.map(doc => [doc.id, doc]));
+    const assignments = { ...(assignmentSnap.data().assignments || {}) };
+    const changes = [];
+    const usedKeys = new Set();
+    for (const proposed of proposedGroups) {
+      const snapshot = groups.get(proposed.groupId);
+      const group = snapshot?.data();
+      if (!group || isAttendanceGroup(group)) throw fail('Only existing performance groups can be reordered.');
+      const current = group.registrantIds;
+      const next = proposed.registrantIds;
+      if (!Array.isArray(current) || new Set(current).size !== current.length
+        || next.length !== current.length || new Set(next).size !== next.length
+        || next.some(id => !current.includes(id))) {
+        throw fail('Reordering must keep exactly the same registrants in each group.');
+      }
+      const time = `${group.start}-${group.end}`;
+      const key = `${group.venueId}_${group.date}_${time}`;
+      const venue = (event.venues || []).find(item => item.id === group.venueId);
+      const slot = (planSnap.data().draftSlots || []).find(item => item.slotId === group.slotId);
+      const entries = assignments[key];
+      if (!slot || slot.venueId !== group.venueId || slot.date !== group.date
+        || slot.start !== group.start || slot.end !== group.end
+        || !(venue?.sessions?.[group.date] || []).includes(time) || usedKeys.has(key)
+        || groupsSnap.docs.some(doc => doc.id !== snapshot.id && !isAttendanceGroup(doc.data())
+          && `${doc.data().venueId}_${doc.data().date}_${doc.data().start}-${doc.data().end}` === key)
+        || !Array.isArray(entries) || entries.length !== current.length
+        || entries.some((entry, index) => entry.registrantId !== current[index] || entry.order !== index)) {
+        throw fail('Published assignments differ from the plan. Refresh and reconcile before reordering.');
+      }
+      usedKeys.add(key);
+      const byId = new Map(entries.map(entry => [entry.registrantId, entry]));
+      assignments[key] = next.map((id, order) => ({ ...byId.get(id), order }));
+      changes.push({ ref: snapshot.ref, registrantIds: next });
+    }
+    const revision = expectedRevision + 1;
+    changes.forEach(change => transaction.update(change.ref, { registrantIds: change.registrantIds, updatedAt: stamp() }));
+    transaction.update(assignmentRef, { assignments, updatedAt: stamp() });
+    transaction.update(planRef, { revision, updatedAt: stamp() });
+    transaction.update(eventRef, { 'competitionScheduleState.revision': revision });
+    return { eventId, status: state.status, revision };
+  });
+}
+
 async function deleteGroup(eventId, groupId) {
   if (!validKey(eventId) || !validKey(groupId)) throw fail('Invalid group.');
   return db.runTransaction(async transaction => {
@@ -478,4 +548,4 @@ async function markReady(eventId, actor) {
   });
 }
 
-module.exports = { groupIdFor, getGroups, getPlanningState, saveGroup, saveDraft, deleteGroup, saveSlot, deleteSlot, previewPublication, publish, markReady };
+module.exports = { groupIdFor, getGroups, getPlanningState, saveGroup, saveDraft, reorderPublished, deleteGroup, saveSlot, deleteSlot, previewPublication, publish, markReady };

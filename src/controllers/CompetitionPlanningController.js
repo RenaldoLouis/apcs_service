@@ -32,6 +32,15 @@ async function saveDraft(req, res, next) {
   }
 }
 
+async function reorderPublished(req, res, next) {
+  try {
+    const result = await repository.reorderPublished(req.params.eventId, req.body.expectedRevision, req.body.groups);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function deleteGroup(req, res, next) {
   try {
     const { eventId, groupId } = req.params;
@@ -95,6 +104,7 @@ module.exports = {
   getPlanningState,
   saveGroup,
   saveDraft,
+  reorderPublished,
   deleteGroup,
   saveSlot,
   deleteSlot,

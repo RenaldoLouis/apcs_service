@@ -20,6 +20,10 @@ const SystemSettingsController = require("../controllers/SystemSettingsControlle
 const { paymentValidation } = require('../utils/ValidationUtil');
 const { multipartUploadValidation, partUploadValidation, completeUploadValidation, abortUploadValidation } = require('../middlewares/ValidationMiddleware');
 const { requireTicketingAdmin } = require('../middlewares/TicketingAdminMiddleware');
+const GroupAnnouncementEmailController = require('../controllers/GroupAnnouncementEmailController');
+for (const operation of ['preview', 'test', 'send', 'status']) {
+    router.post(`/group-announcement-emails/${operation}`, requireTicketingAdmin, GroupAnnouncementEmailController[operation]);
+}
 const RegistrantAttendanceController = require('../controllers/RegistrantAttendanceController');
 router.post('/registrant-attendance/preview', requireTicketingAdmin, RegistrantAttendanceController.preview);
 router.post('/registrant-attendance/apply', requireTicketingAdmin, RegistrantAttendanceController.apply);
@@ -93,6 +97,7 @@ router.get('/public-ticket/booking-status/:bookingId', PublicTicketController.ge
 router.post('/public-ticket/booking',         PublicTicketController.createPublicTicketBooking);
 router.post('/public-ticket/webhook',         PublicTicketController.handlePublicTicketWebhook);
 router.post('/public-ticket/resend-email',    PublicTicketController.resendPublicTicketEmail);
+router.post('/public-ticket/admin/send-email-to-address', requireTicketingAdmin, PublicTicketController.sendPublicTicketEmailToAddress);
 router.post('/public-ticket/admin/release-booking', requireTicketingAdmin, PublicTicketController.releasePublicTicketBooking);
 router.post('/public-ticket/admin/mark-manual-paid', requireTicketingAdmin, PublicTicketController.markManualBookingPaid);
 router.post('/public-ticket/admin/resend-manual-instructions', requireTicketingAdmin, PublicTicketController.resendManualPaymentInstructions);
@@ -123,6 +128,7 @@ router.post('/public-ticket/admin/orchestra/sessions', requireTicketingAdmin, Or
 const CompetitionPlanningController = require('../controllers/CompetitionPlanningController');
 router.post('/competition-planning/:eventId/groups', requireTicketingAdmin, CompetitionPlanningController.saveGroup);
 router.post('/competition-planning/:eventId/draft', requireTicketingAdmin, CompetitionPlanningController.saveDraft);
+router.post('/competition-planning/:eventId/reorder', requireTicketingAdmin, CompetitionPlanningController.reorderPublished);
 router.delete('/competition-planning/:eventId/groups/:groupId', requireTicketingAdmin, CompetitionPlanningController.deleteGroup);
 router.post('/competition-planning/:eventId/slots', requireTicketingAdmin, CompetitionPlanningController.saveSlot);
 router.post('/competition-planning/:eventId/slots/:slotId/delete', requireTicketingAdmin, CompetitionPlanningController.deleteSlot);

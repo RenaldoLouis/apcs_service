@@ -13,6 +13,7 @@ const wasteRoute = require('./src/routes/WasteRoutes.js')
 const { startPublicTicketSweeper } = require('./src/jobs/PublicTicketSweeper.js')
 const { startPublicTicketPaymentRecovery } = require('./src/jobs/PublicTicketPaymentRecoveryJob.js')
 const { startJuryDeadlineReminder } = require('./src/jobs/JuryDeadlineReminder.js')
+const { startGroupAnnouncementEmailWorker } = require('./src/jobs/GroupAnnouncementEmailWorker')
 
 app.use(cors())
 app.set('trust proxy', 1) // Required for express-rate-limit when behind reverse proxies (like cPanel)
@@ -51,6 +52,7 @@ app.use(errorHandler)
 startPublicTicketSweeper()
 startPublicTicketPaymentRecovery()
 startJuryDeadlineReminder()
+startGroupAnnouncementEmailWorker()
 
 app.listen(port, () => {
     console.log(`App running on port ${port}.`)

@@ -530,3 +530,110 @@ test('GUEST PRESERVATION: add, move, remove and publish preserve existing member
   assertProtected();
   assert.equal(JSON.stringify(f.records.get('competitionSessionPlans/APCS2026').draftSlots), JSON.stringify(initial.draftSlots));
 });
+
+// Exercise the real published-order transaction with paid inventory present.
+function publishedOrderFixture(status = 'published') {
+  const f = fixture();
+  const state = { status, revision: 7, publishedAt: 'published', ...(status === 'ready' ? { readyAt: 'ready' } : {}) };
+  const event = f.records.get('events/E1');
+  event.competitionScheduleState = state;
+  event.venues[0].sessions['2026-11-01'].push('09:00-10:00');
+  f.records.set('competitionSessionPlans/E1', { ...state, draftSlots: [
+    { slotId: 'S1', venueId: 'V1', date: '2026-11-01', start: '09:00', end: '10:00' },
+  ] });
+  f.records.set('competitionSessionPlans/E1/groups/P1', { groupId: 'P1', purpose: 'competition',
+    venueId: 'V1', date: '2026-11-01', start: '09:00', end: '10:00', slotId: 'S1',
+    ordinal: 1, label: 'Group 1', registrantIds: ['R1', 'R2', 'R3'] });
+  f.records.set('competitionSessionPlans/E1/groups/A1', { groupId: 'A1', purpose: 'orchestra_attendance', registrantIds: ['R1', 'R2'] });
+  f.records.set('sessionAssignments/E1', { eventId: 'E1', attendanceOnlyRegistrantIds: ['A2'], otherMetadata: true,
+    assignments: { 'V1_2026-11-01_09:00-10:00': ['R1', 'R2', 'R3'].map((registrantId, order) =>
+      ({ registrantId, order, sourceEventId: 'E1', extraMetadata: registrantId })),
+    unrelated: [{ registrantId: 'R4', order: 0 }] } });
+  for (const key of ['publicBookings/paid', 'seatsE1/seat', 'ticketCapacity/cap', 'ticketSeatOwnership/seat',
+    'ticketRedemptions/claim', 'orchestraAssignments/assignment']) {
+    f.records.set(key, { eventId: 'E1', paymentStatus: 'PAID', immutable: key });
+  }
+  return f;
+}
+const orderRequest = () => [{ groupId: 'P1', registrantIds: ['R3', 'R1', 'R2'] }];
+
+for (const status of ['published', 'ready']) {
+  test(`PUBLISHED ORDER: ${status} synchronizes order and preserves tickets, metadata and lifecycle`, async () => {
+    const f = publishedOrderFixture(status);
+    const before = new Map([...f.records].map(([key, value]) => [key, JSON.stringify(value)]));
+    const result = await f.repo.reorderPublished('E1', 7, orderRequest());
+    assert.equal(result.status, status);
+    assert.equal(result.revision, 8);
+    assert.equal(f.records.get('events/E1').competitionScheduleState.revision, 8);
+    assert.equal(f.records.get('competitionSessionPlans/E1').revision, 8);
+    assert.equal(f.records.get('competitionSessionPlans/E1/groups/P1').registrantIds.join(','), 'R3,R1,R2');
+    const projection = f.records.get('sessionAssignments/E1');
+    assert.equal(projection.attendanceOnlyRegistrantIds.join(','), 'A2');
+    assert.equal(projection.otherMetadata, true);
+    assert.equal(projection.assignments.unrelated[0].registrantId, 'R4');
+    projection.assignments['V1_2026-11-01_09:00-10:00'].forEach((entry, order) => {
+      assert.equal(entry.order, order);
+      assert.equal(entry.extraMetadata, entry.registrantId);
+      assert.equal(entry.sourceEventId, 'E1');
+    });
+    for (const [key, value] of before) {
+      if (!['events/E1', 'competitionSessionPlans/E1', 'competitionSessionPlans/E1/groups/P1', 'sessionAssignments/E1'].includes(key)) {
+        assert.equal(JSON.stringify(f.records.get(key)), value, `${key} unchanged`);
+      }
+    }
+    assert.equal(JSON.stringify(f.records.get('events/E1').venues), JSON.stringify(JSON.parse(before.get('events/E1')).venues));
+    assert.equal(f.records.get('events/E1').competitionScheduleState.publishedAt, 'published');
+    if (status === 'ready') assert.equal(f.records.get('events/E1').competitionScheduleState.readyAt, 'ready');
+    const after = JSON.stringify([...f.records]);
+    await assert.rejects(f.repo.reorderPublished('E1', 7, orderRequest()), /Schedule changed/);
+    assert.equal(JSON.stringify([...f.records]), after, 'Stale concurrent save cannot overwrite');
+    await assert.rejects(f.repo.saveDraft('E1', 8, []), /Published groups cannot be edited/);
+  });
+}
+
+for (const ids of [['R1', 'R2'], ['R1', 'R2', 'R4'], ['R1', 'R1', 'R3'], ['R1', 'R2', 'R3', 'R4']]) {
+  test(`PUBLISHED ORDER: rejects membership change ${ids}`, async () => {
+    const f = publishedOrderFixture();
+    const before = JSON.stringify([...f.records]);
+    await assert.rejects(f.repo.reorderPublished('E1', 7, [{ groupId: 'P1', registrantIds: ids }]), /exactly the same/);
+    assert.equal(JSON.stringify([...f.records]), before);
+  });
+}
+
+for (const groups of [[], [{ groupId: 'missing', registrantIds: [] }],
+  [{ groupId: 'A1', registrantIds: ['R2', 'R1'] }], [...orderRequest(), ...orderRequest()],
+  [{ ...orderRequest()[0], venueId: 'V2' }], [{ ...orderRequest()[0], start: '08:00' }]]) {
+  test(`PUBLISHED ORDER: rejects invalid scope ${JSON.stringify(groups)}`, async () => {
+    const f = publishedOrderFixture();
+    const before = JSON.stringify([...f.records]);
+    await assert.rejects(f.repo.reorderPublished('E1', 7, groups));
+    assert.equal(JSON.stringify([...f.records]), before);
+  });
+}
+
+for (const corrupt of [
+  f => { f.records.get('events/E1').competitionScheduleState.status = 'draft'; },
+  f => { f.records.get('events/E1').competitionScheduleState.resetInProgress = true; },
+  f => { f.records.get('competitionSessionPlans/E1').revision = 8; },
+  f => { f.records.get('competitionSessionPlans/E1').status = 'ready'; },
+  f => { f.records.get('sessionAssignments/E1').assignments['V1_2026-11-01_09:00-10:00'].reverse(); },
+  f => { f.records.get('sessionAssignments/E1').assignments['V1_2026-11-01_09:00-10:00'][0].order = 9; },
+  f => { f.records.get('competitionSessionPlans/E1').draftSlots[0].start = '08:00'; },
+  f => { f.records.get('events/E1').venues[0].sessions['2026-11-01'] = []; },
+  f => { f.records.delete('sessionAssignments/E1'); },
+]) {
+  test(`PUBLISHED ORDER: inconsistent state rejects without writes (${corrupt.toString()})`, async () => {
+    const f = publishedOrderFixture();
+    corrupt(f);
+    const before = JSON.stringify([...f.records]);
+    await assert.rejects(f.repo.reorderPublished('E1', 7, orderRequest()));
+    assert.equal(JSON.stringify([...f.records]), before);
+  });
+}
+
+test('PUBLISHED ORDER: a bad second group rejects the entire multi-group save', async () => {
+  const f = publishedOrderFixture();
+  const before = JSON.stringify([...f.records]);
+  await assert.rejects(f.repo.reorderPublished('E1', 7, [...orderRequest(), { groupId: 'A1', registrantIds: ['R2', 'R1'] }]));
+  assert.equal(JSON.stringify([...f.records]), before);
+});
