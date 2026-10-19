@@ -330,10 +330,10 @@ test('ORCHESTRA: actual payment email resolves the booking event and preserves i
     const f = fixture(); f.seed('events/APCS2027', { venues: [{ id: 'V1', label: 'Wrong venue' }] });
     f.seed('systemSettings/global', { currentEventId: 'APCS2027' });
     const source = fs.readFileSync(path.join(__dirname, '../src/services/EmailService.js'), 'utf8');
-    const start = source.indexOf('async function sendPublicBookingConfirmationEmail(');
+    const start = source.indexOf('async function getTicketDisplayDetails(');
     const end = source.indexOf('async function sendJuryDeadlineReminderEmail(', start);
     const details = require('../src/services/OrchestraEmailDetails'); let templateData;
-    const emailContext = { require: () => ({ db: f.db }), Intl, escapeTicketHtml: details.escapeHtml, attendanceHtml: details.attendanceHtml,
+    const emailContext = { require: name => name.endsWith('/competitionDisplayTime') ? require('../src/utils/competitionDisplayTime') : ({ db: f.db }), Intl, escapeTicketHtml: details.escapeHtml, attendanceHtml: details.attendanceHtml,
         getTemplate: (_, data) => { templateData = data; return 'html'; }, transporter: { sendMail: async () => {} }, logger: { info: () => {} } };
     vm.runInNewContext(source.slice(start, end), emailContext);
     const booking = { id: 'email-test', eventId: 'APCS2026', venue: 'V1', tickets: [{ name: 'Presto', quantity: 1 }], totalAmount: 150000 };

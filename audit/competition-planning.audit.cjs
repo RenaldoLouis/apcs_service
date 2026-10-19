@@ -67,6 +67,7 @@ function fixture() {
   const context = {
     module: { exports: {} },
     require: name => name === 'crypto' ? { randomUUID: () => `id-${++uuidCounter}` }
+      : name.endsWith('/competitionDisplayTime') ? require('../src/utils/competitionDisplayTime')
       : name.endsWith('firebase-init') ? { db, admin: { firestore: { FieldValue: { serverTimestamp: () => 'now' } } } }
         : (() => { throw new Error('Unexpected dependency ' + name); })(),
   };

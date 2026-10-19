@@ -131,6 +131,7 @@ function fixture(options = {}) {
                 if (name.endsWith('/PublicTicketFailureRepository')) return load('src/repositories/PublicTicketFailureRepository.js');
                 if (name.endsWith('/ErrorHandlerMiddleware')) return load('src/middlewares/ErrorHandlerMiddleware.js');
                 if (name === 'jsonwebtoken') return {};
+                if (name.endsWith('/competitionDisplayTime')) return load('src/utils/competitionDisplayTime.js');
                 const extra = options.extraRequire && options.extraRequire(name, load);
                 if (extra) return extra;
                 throw new Error(`Unmocked dependency: ${name}`);

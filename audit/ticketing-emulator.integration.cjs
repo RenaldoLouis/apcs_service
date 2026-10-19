@@ -96,6 +96,7 @@ async function fixture(options = {}) {
         const mod = new Module(filename, module);
         mod.filename = filename;
         mod.require = name => {
+            if (name.endsWith('/competitionDisplayTime')) return require('../src/utils/competitionDisplayTime');
             assert.ok(Object.hasOwn(dependencies, name), `Unexpected dependency ${name}; external calls are forbidden`);
             const dependency = dependencies[name];
             return typeof dependency === 'function' ? dependency() : dependency;

@@ -60,11 +60,23 @@ async function redeem(f, bookingId, channel, quantities, requestId) {
   return repo.claim({ eventId: 'APCS2026', bookingId, channel, quantities, requestId,
     expectedRevision: allowance.revision, sessionKey: allowance.sessionKey }, actor);
 }
+async function reviseTime(f, expectedRevision, displayTime) {
+  const before = new Map([...f.records].map(([key, value]) => [key, JSON.stringify(value)]));
+  await f.load('src/repositories/CompetitionPlanningRepository.js').saveDisplayTime('APCS2026', {
+    groupId: 'P1', expectedRevision, displayTime,
+  });
+  for (const [key, value] of before) if (key !== 'events/APCS2026') {
+    assert.equal(JSON.stringify(f.records.get(key)), value, `${key} unchanged by display revision`);
+  }
+  assert.equal(f.records.get('events/APCS2026').competitionScheduleState.revision,
+    JSON.parse(before.get('events/APCS2026')).competitionScheduleState.revision);
+}
 for (const manualPayment of [false, true]) {
   for (const bookingType of ['winner', 'public_competition']) {
-    test(`ORDER CROSS-FLOW: ${bookingType}/${manualPayment ? 'manual' : 'Paper.id'} keeps discovery, pending checkout, payment, seats and redemption`, async () => {
+    test(`ORDER/DISPLAY CROSS-FLOW: ${bookingType}/${manualPayment ? 'manual' : 'Paper.id'} keeps discovery, pending checkout, payment, seats and redemption`, async () => {
       const f = setup();
       const beforeDiscovery = await eligible(f, bookingType === 'winner' ? 'winner' : 'public');
+      await reviseTime(f, 0, '09:05-10:05');
       const input = { bookingType, registrantId: 'winner', manualPayment,
         idempotencyKey: 'reorder-checkout', tickets: [{ id: 'presto', name: 'Presto', quantity: 1 }],
         selectedSeatIds: ['seat-1'], addOnIds: ['seat_selection_performer'] };
@@ -74,6 +86,7 @@ for (const manualPayment of [false, true]) {
       const pendingBooking = f.records.get(`publicBookings/${bookingId}`);
       assert.equal(pendingBooking.paymentStatus, 'pending');
       await reorder(f, 7, ['second', 'winner']);
+      await reviseTime(f, 1, '09:10-10:10');
       assert.equal(await eligible(f, bookingType === 'winner' ? 'winner' : 'public'), beforeDiscovery);
       const replay = await f.book(input);
       assert.ifError(replay.error);
@@ -84,6 +97,7 @@ for (const manualPayment of [false, true]) {
         { invoice: { id: pendingBooking.invoiceId, total_amount: pendingBooking.totalAmount } });
       const paid = f.records.get(`publicBookings/${bookingId}`);
       assert.equal(paid.paymentStatus, 'PAID');
+      assert.equal(paid.session, '09:00-10:00');
       assert.equal(f.records.get('seatsAPCS2026/seat-1').status, 'booked');
       const orchestra = f.load('src/repositories/OrchestraAssignmentRepository.js');
       const assignment = await orchestra.assignGroup({ eventId: 'APCS2026', registrantId: 'winner', sessionId: 'orch' }, actor);
@@ -96,6 +110,7 @@ for (const manualPayment of [false, true]) {
         assert.equal((await redeem(f, bookingId, 'performers', { performers: 1 }, 'performer')).redeemed.performers, 1);
       }
       await reorder(f, 8, ['winner', 'second']);
+      await reviseTime(f, 2, '');
       await assert.rejects(redeem(f, bookingId, 'performance', { presto: 1 }, 'excess-performance'));
       // New buyers can still buy the same performance after a ready-group reorder.
       assert.ifError((await f.book({ bookingType, registrantId: 'winner', manualPayment,

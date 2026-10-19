@@ -1,5 +1,6 @@
 const { randomUUID } = require('crypto');
 const { db, admin } = require('../configs/firebase-init');
+const { isDisplayTime } = require('../utils/competitionDisplayTime');
 
 const stamp = () => admin.firestore.FieldValue.serverTimestamp();
 const fail = message => Object.assign(new Error(message), { statusCode: 409, isOperational: true });
@@ -152,7 +153,62 @@ async function getPlanningState(eventId) {
   if (!eventSnap.exists) throw fail('Event not found.');
   const state = stateOf(eventSnap.data()) || { status: 'legacy', revision: 0 };
   const planSnap = await db.collection('competitionSessionPlans').doc(eventId).get();
-  return { eventId, ...state, draftSlots: planSnap.data()?.draftSlots || [], groups };
+  return { eventId, ...state, draftSlots: planSnap.data()?.draftSlots || [], groups,
+    competitionTimeDisplay: eventSnap.data().competitionTimeDisplay || { revision: 0, times: {} } };
+}
+
+// A narrow published-copy exception. The timetable, plan and assignment projection are read only.
+async function saveDisplayTime(eventId, data) {
+  if (!validKey(eventId) || !data || !validKey(data.groupId)
+    || !Number.isInteger(data.expectedRevision) || data.expectedRevision < 0
+    || typeof data.displayTime !== 'string' || data.displayTime.length > 30
+    || Object.keys(data).some(key => !['groupId', 'expectedRevision', 'displayTime'].includes(key))) {
+    throw fail('Invalid display time revision.');
+  }
+  const displayTime = data.displayTime.trim().replace(/\s*[–—-]\s*/g, '-');
+  if (displayTime && !isDisplayTime(displayTime)) throw fail('Enter a time range such as 11:10-13:30, with the end after the start.');
+  return db.runTransaction(async transaction => {
+    const eventRef = db.collection('events').doc(eventId);
+    const [eventSnap, planSnap, groupsSnap, assignmentSnap] = await Promise.all([
+      transaction.get(eventRef), transaction.get(db.collection('competitionSessionPlans').doc(eventId)),
+      transaction.get(groupCollection(eventId)), transaction.get(db.collection('sessionAssignments').doc(eventId)),
+    ]);
+    const event = eventSnap.data();
+    const state = event && stateOf(event);
+    const plan = planSnap.data();
+    if (!eventSnap.exists || !planSnap.exists || !assignmentSnap.exists
+      || !['published', 'ready'].includes(state?.status) || state.resetInProgress
+      || plan.status !== state.status || plan.revision !== state.revision) {
+      throw fail('Only published competition groups can have a display time revision. Refresh the board.');
+    }
+    const saved = event.competitionTimeDisplay || { revision: 0, times: {} };
+    if (saved.revision !== data.expectedRevision) throw fail('Display times changed. Close this dialog and refresh the board before trying again.');
+    const group = groupsSnap.docs.find(doc => doc.id === data.groupId)?.data();
+    if (!group || isAttendanceGroup(group)) throw fail('Select an existing competition performance group.');
+    const time = `${group.start}-${group.end}`;
+    const key = `${group.venueId}_${group.date}_${time}`;
+    const slot = (plan.draftSlots || []).find(item => item.slotId === group.slotId);
+    const entries = assignmentSnap.data()?.assignments?.[key];
+    const venue = (event.venues || []).find(item => item.id === group.venueId);
+    const special = [...(event.orchestraSessions || []), ...(event.masterclassSessions || [])]
+      .some(item => item.venue === group.venueId && item.date === group.date && item.time === time);
+    if (!isDisplayTime(time) || !slot || slot.venueId !== group.venueId || slot.date !== group.date
+      || slot.start !== group.start || slot.end !== group.end || special
+      || !(venue?.sessions?.[group.date] || []).includes(time)
+      || groupsSnap.docs.some(doc => doc.id !== data.groupId && !isAttendanceGroup(doc.data())
+        && `${doc.data().venueId}_${doc.data().date}_${doc.data().start}-${doc.data().end}` === key)
+      || !Array.isArray(group.registrantIds) || !Array.isArray(entries)
+      || entries.length !== group.registrantIds.length
+      || entries.some((entry, index) => entry.registrantId !== group.registrantIds[index])) {
+      throw fail('Published session details differ from the plan. Refresh and reconcile before changing display text.');
+    }
+    const times = { ...saved.times };
+    if (displayTime && displayTime !== time) times[key] = displayTime;
+    else delete times[key];
+    const competitionTimeDisplay = { revision: saved.revision + 1, times };
+    transaction.update(eventRef, { competitionTimeDisplay });
+    return { eventId, competitionTimeDisplay };
+  });
 }
 
 async function saveGroup(eventId, data) {
@@ -548,4 +604,4 @@ async function markReady(eventId, actor) {
   });
 }
 
-module.exports = { groupIdFor, getGroups, getPlanningState, saveGroup, saveDraft, reorderPublished, deleteGroup, saveSlot, deleteSlot, previewPublication, publish, markReady };
+module.exports = { groupIdFor, getGroups, getPlanningState, saveGroup, saveDraft, reorderPublished, saveDisplayTime, deleteGroup, saveSlot, deleteSlot, previewPublication, publish, markReady };

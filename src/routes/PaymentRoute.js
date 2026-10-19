@@ -100,6 +100,7 @@ router.post('/public-ticket/resend-email',    PublicTicketController.resendPubli
 router.post('/public-ticket/admin/send-email-to-address', requireTicketingAdmin, PublicTicketController.sendPublicTicketEmailToAddress);
 router.post('/public-ticket/admin/release-booking', requireTicketingAdmin, PublicTicketController.releasePublicTicketBooking);
 router.post('/public-ticket/admin/mark-manual-paid', requireTicketingAdmin, PublicTicketController.markManualBookingPaid);
+router.post('/public-ticket/admin/reconcile-expired-payment', requireTicketingAdmin, PublicTicketController.reconcileExpiredPayment);
 router.post('/public-ticket/admin/resend-manual-instructions', requireTicketingAdmin, PublicTicketController.resendManualPaymentInstructions);
 router.post('/public-ticket/admin/assign-seats', requireTicketingAdmin, PublicTicketController.assignPaidBookingSeats);
 router.post('/public-ticket/admin/seats/generate', requireTicketingAdmin, PublicTicketController.generateSeatLayout);
@@ -129,6 +130,7 @@ const CompetitionPlanningController = require('../controllers/CompetitionPlannin
 router.post('/competition-planning/:eventId/groups', requireTicketingAdmin, CompetitionPlanningController.saveGroup);
 router.post('/competition-planning/:eventId/draft', requireTicketingAdmin, CompetitionPlanningController.saveDraft);
 router.post('/competition-planning/:eventId/reorder', requireTicketingAdmin, CompetitionPlanningController.reorderPublished);
+router.post('/competition-planning/:eventId/display-time', requireTicketingAdmin, CompetitionPlanningController.saveDisplayTime);
 router.delete('/competition-planning/:eventId/groups/:groupId', requireTicketingAdmin, CompetitionPlanningController.deleteGroup);
 router.post('/competition-planning/:eventId/slots', requireTicketingAdmin, CompetitionPlanningController.saveSlot);
 router.post('/competition-planning/:eventId/slots/:slotId/delete', requireTicketingAdmin, CompetitionPlanningController.deleteSlot);

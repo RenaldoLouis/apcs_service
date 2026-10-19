@@ -2914,7 +2914,21 @@ module.exports = {
     sendJuryDeadlineReminderEmail
 };
 
+async function getTicketDisplayDetails(booking) {
+    const { db } = require('../configs/firebase-init');
+    const { getCompetitionDisplayTime } = require('../utils/competitionDisplayTime');
+    // Resolve at send time, including resends of older bookings, using that booking's event.
+    const event = booking.eventId
+        ? (await db.collection('events').doc(booking.eventId).get()).data() : null;
+    return {
+        venueName: booking.venueName || (event?.venues || []).find(venue => venue.id === booking.venue)?.label || booking.venue,
+        session: booking.isOrchestra || booking.isMasterclass || booking.bookingType === 'public_orchestra'
+            ? booking.session : getCompetitionDisplayTime(event, booking.venue, booking.date, booking.session),
+    };
+}
+
 async function sendManualTicketPaymentInstructions(booking) {
+    const display = await getTicketDisplayDetails(booking);
     const ticketSummary = (booking.tickets || [])
         .map(ticket => `${Number(ticket.quantity || 0)}x ${ticket.name || ticket.id}`).join(', ');
     const amount = new Intl.NumberFormat('id-ID', {
@@ -2924,7 +2938,7 @@ async function sendManualTicketPaymentInstructions(booking) {
         ticketBooking: true,
         name: escapeTicketHtml(booking.buyerName || booking.userName || ''),
         price: escapeTicketHtml(amount),
-        competitionCategory: escapeTicketHtml(`${ticketSummary} — ${booking.venueName || booking.venue} | ${booking.date} ${booking.session}`),
+        competitionCategory: escapeTicketHtml(`${ticketSummary} — ${display.venueName} | ${booking.date} ${display.session}`),
         paymentReferenceOverride: escapeTicketHtml(booking.id),
     });
     await transporter.sendMail({
@@ -2935,7 +2949,8 @@ async function sendManualTicketPaymentInstructions(booking) {
     });
 }
 
-async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, date, session, paymentUrl, lockExpiresAt }) {
+async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, date, session, paymentUrl, lockExpiresAt, eventId, venue, bookingType, isOrchestra, isMasterclass }) {
+    const display = await getTicketDisplayDetails({ eventId, venue, venueName, date, session, bookingType, isOrchestra, isMasterclass });
     const deadline = new Date(lockExpiresAt).toLocaleString('en-GB', {
         timeZone: 'Asia/Jakarta',
         day: '2-digit', month: 'long', year: 'numeric',
@@ -2948,7 +2963,7 @@ async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, da
         registrantName,
         venueName,
         date,
-        session,
+        session: display.session,
         paymentUrl,
         deadline
     });
@@ -2966,18 +2981,13 @@ async function sendPublicSeatHoldEmail({ to, name, registrantName, venueName, da
 
 async function sendPublicBookingConfirmationEmail(bookingData) {
     const { db } = require('../configs/firebase-init');
-    // Always use the booking event, never the currently active sale event.
-    let venueName = bookingData.venueName || bookingData.venue;
-    if (!bookingData.venueName && bookingData.eventId) {
-        const eventSnap = await db.collection('events').doc(bookingData.eventId).get();
-        venueName = (eventSnap.data()?.venues || []).find(venue => venue.id === bookingData.venue)?.label || venueName;
-    }
+    const { venueName, session } = await getTicketDisplayDetails(bookingData);
     let assignment = null;
     if (bookingData.ticketingVersion === 2 && bookingData.registrantId) {
         const snapshot = await db.collection('orchestraAssignments').doc(encodeURIComponent(`${bookingData.eventId}|${bookingData.registrantId}`)).get();
         assignment = snapshot.exists ? snapshot.data() : null;
     }
-    const { userEmail, userName, buyerName, registrantName, date, session, selectedSeatIds, tickets, totalAmount, id: bookingId } = bookingData;
+    const { userEmail, userName, buyerName, registrantName, date, selectedSeatIds, tickets, totalAmount, id: bookingId } = bookingData;
 
     const formatSeatIds = (seatIds) => {
         if (!seatIds || seatIds.length === 0) return '';

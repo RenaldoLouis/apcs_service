@@ -115,6 +115,11 @@ async function createPublicTicketBooking(req, res, next) {
                 venueName: booking.venueName || booking.venue,
                 date: booking.date,
                 session: booking.session,
+                eventId: booking.eventId,
+                venue: booking.venue,
+                bookingType: booking.bookingType,
+                isOrchestra: booking.isOrchestra,
+                isMasterclass: booking.isMasterclass,
                 paymentUrl: data.paymentUrl,
                 lockExpiresAt: data.lockExpiresAt,
                 totalAmount: booking.totalAmount,
@@ -127,6 +132,35 @@ async function createPublicTicketBooking(req, res, next) {
         res.status(201).json(data);
     } catch (err) {
         next(err);
+    }
+}
+
+/** Staff verified the full Paper.id payment for an expired competition booking. */
+async function reconcileExpiredPayment(req, res, next) {
+    try {
+        const { reconcileVerifiedExpiredBooking } = require('../repositories/PublicTicketReconciliationRepository');
+        const booking = await reconcileVerifiedExpiredBooking(req.body, req.ticketingAdmin);
+        let emailSent = typeof booking.emailSent === 'boolean' ? booking.emailSent : null;
+        if (!booking.alreadyPaid) {
+            try {
+                await emailService.sendPublicBookingConfirmationEmail(booking);
+                emailSent = true;
+            } catch (emailError) {
+                logger.error(`Recovered payment confirmation email failed for ${booking.id}: ${emailError.message}`);
+                emailSent = false;
+            }
+            // Payment stays committed if email delivery or its status update fails.
+            try {
+                await db.collection('publicBookings').doc(booking.id).update({ emailSent });
+            } catch (updateError) {
+                logger.error(`Could not record recovered booking email status for ${booking.id}: ${updateError.message}`);
+                emailSent = null;
+            }
+        }
+        return res.status(200).json({ bookingId: booking.id, paymentStatus: 'PAID',
+            alreadyPaid: booking.alreadyPaid, emailSent });
+    } catch (error) {
+        return next(error);
     }
 }
 
@@ -375,4 +409,5 @@ module.exports = {
     assignPaidBookingSeats,
     generateSeatLayout,
     setSeatBlock,
+    reconcileExpiredPayment,
 };

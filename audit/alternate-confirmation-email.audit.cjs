@@ -186,11 +186,12 @@ for (const acknowledgement of [undefined, { sent: false },
 
 test('ALTERNATE EMAIL: real confirmation sender targets only the override and preserves booking content', async () => {
     const source = fs.readFileSync(path.join(__dirname, '../src/services/EmailService.js'), 'utf8');
-    const start = source.indexOf('async function sendPublicBookingConfirmationEmail(');
+    const start = source.indexOf('async function getTicketDisplayDetails(');
     const end = source.indexOf('async function sendJuryDeadlineReminderEmail(', start);
     const details = require('../src/services/OrchestraEmailDetails');
     let mail, template;
-    const context = { require: () => ({ db: { collection() { throw new Error('Unexpected database read'); } } }),
+    const context = { require: name => name.endsWith('/competitionDisplayTime') ? require('../src/utils/competitionDisplayTime')
+        : ({ db: { collection() { throw new Error('Unexpected database read'); } } }),
         Intl, escapeTicketHtml: details.escapeHtml, attendanceHtml: details.attendanceHtml,
         getTemplate: (name, data) => { template = { name, data }; return 'real-template-input'; },
         transporter: { sendMail: async options => { mail = options; } }, logger: { info() {} } };
