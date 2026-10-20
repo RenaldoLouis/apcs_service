@@ -173,6 +173,114 @@ test('LATE PAYMENT: missing seats or changed session/layout refuse atomically', 
 test('LATE PAYMENT: unexplained capacity drift refuses instead of silently overwriting other demand', async () => {
     const f = await fixture(); f.capacity().reservedByTier.presto = 4; await refusesWithoutWrites(f, {}, /counter differs/);
 });
+
+function seedRetainedExpiredHold(f) {
+    const seatIds = ['retained-7', 'retained-8'];
+    seatIds.forEach((id, index) => {
+        // Legacy expiry made aliases available but left canonical ownership active.
+        f.seat(id, { number: index + 7, seatLabel: `A${index + 7}`, status: 'available' });
+        const key = f.repo.physicalSeatKey('APCS2026', f.records.get(`seatsAPCS2026/${id}`));
+        f.seed('ticketSeatOwnership/' + f.repo.safeDocumentId(key), {
+            eventId: 'APCS2026', physicalSeatKey: key, bookingId: 'other-expired', seatId: id,
+            active: true, status: 'locked',
+        });
+    });
+    const booking = { eventId: 'APCS2026', venue: 'V1', date: '2026-11-01', session: '09:00-10:00',
+        paymentStatus: 'expired', expiry: { invoiceCancellationStatus: 'failed' },
+        selectedSeatIds: seatIds, physicalSeatKeys: seatIds.map(id =>
+            f.repo.physicalSeatKey('APCS2026', f.records.get(`seatsAPCS2026/${id}`))),
+        tickets: [{ id: 'presto', quantity: 2 }],
+        capacityReservation: { capacityId: f.booking().capacityReservation.capacityId, byTier: { presto: 2 } } };
+    f.seed('publicBookings/other-expired', booking);
+    return { booking: () => f.records.get('publicBookings/other-expired'), seatIds,
+        owners: () => booking.physicalSeatKeys.map(key => f.records.get('ticketSeatOwnership/' + f.repo.safeDocumentId(key))) };
+}
+
+for (const released of [true, false]) {
+    test(`LATE PAYMENT: no-seat recovery preserves another expired two-chair hold; target released=${released}`, async () => {
+        const f = await fixture({ released, selected: false, bookingType: 'public_competition' });
+        const hold = seedRetainedExpiredHold(f);
+        f.capacity().reservedByTier.presto = released ? 2 : 3;
+        const before = new Map([...f.records].map(([key, value]) => [key, JSON.stringify(value)]));
+        await f.recover();
+        assert.equal(f.booking().paymentStatus, 'PAID');
+        assert.equal(f.capacity().reservedByTier.presto, 3);
+        assert.equal(f.booking().selectedSeatIds.length, 0);
+        for (const [key, value] of before) if (![ `publicBookings/${f.id}`, f.receiptKey,
+            `ticketCapacity/${f.booking().capacityReservation.capacityId}` ].includes(key)) {
+            assert.equal(JSON.stringify(f.records.get(key)), value, `${key} is preserved`);
+        }
+        assert.equal(hold.booking().paymentStatus, 'expired');
+        assert.ok(hold.owners().every(owner => owner.active && owner.bookingId === 'other-expired'));
+        const once = snapshot(f); await f.recover(); assert.equal(snapshot(f), once);
+    });
+}
+
+test('LATE PAYMENT: retained expired holds still count toward the layout ceiling', async () => {
+    const f = await fixture({ released: true, selected: false }); seedRetainedExpiredHold(f);
+    f.records.get('events/APCS2026').venues[0].seatConfig[0].seatCount = 8;
+    f.seed('publicBookings/other-paid', { eventId: 'APCS2026', venue: 'V1', date: '2026-11-01', session: '09:00-10:00',
+        paymentStatus: 'PAID', tickets: [{ id: 'presto', quantity: 6 }] });
+    f.capacity().reservedByTier.presto = 8;
+    await refusesWithoutWrites(f, {}, /insufficient valid capacity/);
+});
+
+test('LATE PAYMENT: expired reservations with released ownership are not counted again', async () => {
+    const f = await fixture({ released: true, selected: false }); const hold = seedRetainedExpiredHold(f);
+    hold.owners().forEach(owner => { owner.active = false; owner.status = 'released'; });
+    f.capacity().reservedByTier.presto = 0;
+    await f.recover(); assert.equal(f.capacity().reservedByTier.presto, 1);
+});
+
+test('LATE PAYMENT: reassigned chairs count only their current active booking', async () => {
+    const f = await fixture({ released: true, selected: false }); const hold = seedRetainedExpiredHold(f);
+    hold.owners().forEach(owner => { owner.bookingId = 'current-buyer'; });
+    f.seed('publicBookings/current-buyer', { ...hold.booking(), paymentStatus: 'PAID' });
+    f.capacity().reservedByTier.presto = 2;
+    const owners = JSON.stringify(hold.owners());
+    await f.recover();
+    assert.equal(f.capacity().reservedByTier.presto, 3);
+    assert.equal(JSON.stringify(hold.owners()), owners);
+});
+
+for (const [name, change] of [
+    ['partial ownership', (f, hold) => { hold.owners()[1].active = false; }],
+    ['wrong capacity scope', (f, hold) => { hold.booking().capacityReservation.capacityId = 'other-session'; }],
+    ['wrong reservation quantities', (f, hold) => { hold.booking().capacityReservation.byTier.presto = 1; }],
+    ['unselected remainder', (f, hold) => { hold.booking().tickets[0].quantity = 3; hold.booking().capacityReservation.byTier.presto = 3; }],
+    ['mismatched chair', (f, hold) => { f.records.get(`seatsAPCS2026/${hold.seatIds[0]}`).number = 9; }],
+    ['invalid ticket quantity', (f, hold) => { hold.booking().tickets[0].quantity = -1; }],
+    ['foreign owner event', (f, hold) => { hold.owners()[0].eventId = 'other-event'; }],
+    ['unknown owner state', (f, hold) => { hold.owners()[0].status = 'released'; }],
+    ['missing original chair', (f, hold) => { f.records.delete(`seatsAPCS2026/${hold.seatIds[0]}`); }],
+    ['duplicate selected chair', (f, hold) => { hold.booking().selectedSeatIds[1] = hold.seatIds[0]; }],
+]) {
+    test(`LATE PAYMENT: ${name} cannot justify another expired reservation`, async () => {
+        const f = await fixture({ released: true, selected: false }); const hold = seedRetainedExpiredHold(f);
+        f.capacity().reservedByTier.presto = 2; change(f, hold);
+        await refusesWithoutWrites(f);
+    });
+}
+
+test('LATE PAYMENT: an unproven no-seat expired hold does not explain counter drift', async () => {
+    const f = await fixture({ released: true, selected: false }); const hold = seedRetainedExpiredHold(f);
+    Object.assign(hold.booking(), { selectedSeatIds: [], physicalSeatKeys: [] });
+    f.capacity().reservedByTier.presto = 2;
+    await refusesWithoutWrites(f, {}, /counter differs/);
+});
+
+test('LATE PAYMENT: verified holds do not excuse additional unexplained drift', async () => {
+    const f = await fixture({ released: true, selected: false }); seedRetainedExpiredHold(f);
+    f.capacity().reservedByTier.presto = 4;
+    await refusesWithoutWrites(f, {}, /counter differs/);
+});
+
+test('LATE PAYMENT: retained-hold reads are bounded before any inventory write', async () => {
+    const f = await fixture({ released: true, selected: false }); const hold = seedRetainedExpiredHold(f);
+    hold.booking().physicalSeatKeys = Array.from({ length: 401 }, (_, index) => `original-chair-${index}`);
+    await refusesWithoutWrites(f, {}, /Other expired booking inventory/);
+});
+
 test('LATE PAYMENT: existing customers and operational blocks retain capacity', async () => {
     const f = await fixture({ released: true });
     const other = await f.book({ bookingType: 'public_competition', registrantId: 'winner', tickets: [{ id: 'presto', quantity: 2 }] });

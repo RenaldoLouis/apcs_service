@@ -212,9 +212,10 @@ test('background scan only processes explicitly runnable campaigns and maintains
 });
 
 test('known 2025 PDF cannot be relabelled as an approved client attachment even with its correct hash', () => {
-    assert.equal(resolveArtifact().approvedForBulk, false);
+    const configuredAttachment = config.clientAttachment;
+    assert.equal(resolveArtifact().approvedForBulk, true);
     try {
         config.clientAttachment = { filename: 'Program Notes - Fixed.pdf', sha256: TEST_ONLY_SHA256 };
         assert.throws(resolveArtifact, /test-only 2025 document/);
-    } finally { config.clientAttachment = null; }
+    } finally { config.clientAttachment = configuredAttachment; }
 });

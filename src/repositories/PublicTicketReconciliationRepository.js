@@ -24,6 +24,64 @@ const quantities = tickets => {
     return counts;
 };
 
+// Some historical expiry writers released seat aliases but retained canonical ownership
+// and the full capacity reservation. Prove those holds before including their demand.
+async function readRetainedExpiredHolds(transaction, bookingDocs, eventId, capacityId, seats, sessionId, venue) {
+    const candidates = bookingDocs.filter(doc => {
+        const item = doc.data();
+        return item.paymentStatus === 'expired' && !item.isMasterclass && !item.isOrchestra
+            && Array.isArray(item.physicalSeatKeys) && item.physicalSeatKeys.length;
+    });
+    const allKeys = [...new Set(candidates.flatMap(doc => doc.data().physicalSeatKeys))];
+    if (allKeys.length > 400 || allKeys.some(key => !validId(key))) {
+        throw fail('Other expired booking inventory needs separate staff review.');
+    }
+    const ownership = allKeys.length ? await transaction.getAll(...allKeys.map(key =>
+        db.collection('ticketSeatOwnership').doc(safeDocumentId(key)))) : [];
+    const ownersByKey = new Map(allKeys.map((key, index) => [key, ownership[index].data()]));
+    const held = [];
+    for (const doc of candidates) {
+        const item = doc.data();
+        const keys = item.physicalSeatKeys;
+        const owned = keys.filter(key => {
+            const owner = ownersByKey.get(key);
+            return owner && owner.bookingId === doc.id && owner.active !== false;
+        });
+        if (!owned.length) continue; // Fully released or now owned by another booking.
+        const byTier = quantities(item.tickets);
+        const ids = item.selectedSeatIds;
+        if (!sameSet(keys, keys) || owned.length !== keys.length
+            || keys.length !== Object.values(byTier).reduce((sum, count) => sum + count, 0)
+            || !sameSet(ids, ids) || ids.length !== keys.length || ids.some(id => !validId(id))
+            || item.capacityReservation?.capacityId !== capacityId
+            || !sameCounts(item.capacityReservation.byTier || {}, byTier)
+            || owned.some(key => ownersByKey.get(key).eventId !== eventId
+                || !['locked', 'booked'].includes(ownersByKey.get(key).status))) {
+            throw fail('Other expired booking inventory needs separate staff review.');
+        }
+        const originals = await transaction.getAll(...ids.map(id => seats.doc(id)));
+        const selectedByTier = {};
+        for (const original of originals) {
+            const chair = original.data();
+            const tier = String(chair?.areaType || '').toLowerCase();
+            if (!original.exists || chair.eventId !== eventId || chair.venueId !== venue.id
+                || chair.sessionId !== sessionId || !keys.includes(physicalSeatKey(eventId, chair))
+                || !(venue.seatConfig || []).some(row => row.row === chair.row
+                    && String(row.areaType || '').toLowerCase() === tier && Number.isInteger(chair.number)
+                    && chair.number > 0 && chair.number <= Number(row.seatCount))) {
+                throw fail('Other expired booking inventory needs separate staff review.');
+            }
+            selectedByTier[tier] = (selectedByTier[tier] || 0) + 1;
+        }
+        if (!sameSet(originals.map(doc => physicalSeatKey(eventId, doc.data())), keys)
+            || !sameCounts(selectedByTier, byTier)) {
+            throw fail('Other expired booking inventory needs separate staff review.');
+        }
+        held.push({ booking: item, byTier });
+    }
+    return held;
+}
+
 // Promise-returning and caught by the controller. No provider calls, emails or writes outside
 // the transaction: a conflict must leave the entire booking and inventory unchanged.
 async function reconcileVerifiedExpiredBooking(input = {}, actor = {}) {
@@ -159,11 +217,14 @@ async function reconcileVerifiedExpiredBooking(input = {}, actor = {}) {
         });
         if (aliasWrites.size + ownerRefs.length > 450) throw fail('This booking requires separate staff review.');
 
-        const otherBookings = sessionBookings.docs.filter(doc => doc.id !== bookingId).map(doc => doc.data());
+        const otherBookingDocs = sessionBookings.docs.filter(doc => doc.id !== bookingId);
+        const otherBookings = otherBookingDocs.map(doc => doc.data());
         const activeBookings = otherBookings.filter(item => !item.isMasterclass
             && (['pending', 'PAID', 'paid'].includes(item.paymentStatus)
                 || (item.paymentStatus === 'failed' && item.checkoutFailure?.cleanupStatus !== 'complete')));
-        activeBookings.forEach(item => {
+        const retainedExpired = await readRetainedExpiredHolds(transaction, otherBookingDocs,
+            eventId, capacityId, seats, sessionId, venue);
+        [...activeBookings, ...retainedExpired.map(hold => hold.booking)].forEach(item => {
             quantities(item.tickets);
             if ((item.physicalSeatKeys || []).some(key => keys.includes(key))
                 || (item.selectedSeatIds || []).some(id => aliasWrites.has(`seats${eventId}/${id}`))) {
@@ -171,6 +232,11 @@ async function reconcileVerifiedExpiredBooking(input = {}, actor = {}) {
             }
         });
         const baseline = getReservedCapacityByTier(activeBookings);
+        // The shared checkout helper intentionally excludes expired records. Add only
+        // the fully verified retained reservations here; never count all expired sales.
+        retainedExpired.forEach(hold => Object.entries(hold.byTier).forEach(([tier, count]) => {
+            baseline[tier] = (baseline[tier] || 0) + count;
+        }));
         const restored = { ...baseline };
         Object.entries(byTier).forEach(([tier, count]) => { restored[tier] = (restored[tier] || 0) + count; });
         const before = capacity.reservedByTier || {};

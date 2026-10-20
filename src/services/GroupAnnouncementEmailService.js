@@ -15,6 +15,13 @@ const validEmail = value => typeof value === 'string' && value.length <= 254
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,199}$/.test(value);
 const performerName = performer => String(performer?.fullName
     || `${performer?.firstName || ''} ${performer?.lastName || ''}`.trim()).trim();
+const emptyAttendanceSummary = () => ({ total: 0, attending: 0, notAttending: 0, notImported: 0, unavailable: 0 });
+const countAttendance = (summary, registration) => {
+    summary.total += 1;
+    const key = !registration ? 'unavailable' : registration.willAttend === true ? 'attending'
+        : registration.willAttend === false ? 'notAttending' : 'notImported';
+    summary[key] += 1;
+};
 
 function announcementMessage(name) {
     const subject = 'APCS The Sound of Asia 2026 – Finale Orchestra Rundown';
@@ -24,7 +31,14 @@ function announcementMessage(name) {
         'Best regards,\nAPCS Team'];
     return { subject, text: paragraphs.join('\n\n'), html: getTemplate('brandedMessage', {
         title: escapeHtml(subject),
-        content: paragraphs.map(value => `<p>${escapeHtml(value).replace(/\n/g, '<br>')}</p>`).join(''),
+        content: `<p>Dear <strong>${escapeHtml(name)}</strong>,</p>`
+            + paragraphs.slice(1).map(value => {
+                const html = escapeHtml(value).replace(/\n/g, '<br>')
+                    .replace('14–15 November 2026', '<strong>14–15 November 2026</strong>')
+                    .replace('Titan Center, Bintaro', '<strong>Titan Center, Bintaro</strong>')
+                    .replace('APCS Team', '<strong>APCS Team</strong>');
+                return `<p>${html}</p>`;
+            }).join(''),
     }) };
 }
 
@@ -63,6 +77,7 @@ function createService({ db, sendMail, resolveArtifact: artifactResolver = resol
         const status = state?.status || 'legacy';
         const recipients = [];
         const skipped = [];
+        const attendanceSummary = emptyAttendanceSummary();
         // Only persisted public performance assignments qualify. Draft/attendance membership never does.
         if ((!state || ['published', 'ready'].includes(status)) && !state?.resetInProgress) {
             const saved = await db.collection('sessionAssignments').doc(eventId).get();
@@ -91,6 +106,7 @@ function createService({ db, sendMail, resolveArtifact: artifactResolver = resol
                     const source = registration?.eventId || 'APCS2025';
                     const allowed = source === eventId || (eventId === 'APCS2026' && source === 'APCS2025'
                         && member.entries.every(entry => entry.sourceEventId === source));
+                    countAttendance(attendanceSummary, snapshot.exists && allowed ? registration : null);
                     if (!snapshot.exists || !allowed) return { skipped: [{ registrantId, reason: 'Missing registration or source event mismatch.' }] };
                     const contacts = new Map();
                     const invalid = [];
@@ -113,7 +129,24 @@ function createService({ db, sendMail, resolveArtifact: artifactResolver = resol
                 for (const row of rows) { recipients.push(...(row.recipients || [])); skipped.push(...(row.skipped || [])); }
             }
         }
-        return { eventId, status, recipients, skipped };
+        return { eventId, status, recipients, skipped, attendanceSummary };
+    }
+
+    async function currentAttendanceForSnapshot(eventId, recipients) {
+        const summary = emptyAttendanceSummary();
+        const ids = [...new Set(recipients.map(recipient => recipient.registrantId))];
+        for (let index = 0; index < ids.length; index += 6) {
+            const registrations = await Promise.all(ids.slice(index, index + 6).map(async id => {
+                if (!validId(id)) return null;
+                const snapshot = await db.collection('Registrants2025').doc(id).get();
+                const registration = snapshot.data();
+                const source = registration?.eventId || 'APCS2025';
+                return snapshot.exists && (source === eventId || (eventId === 'APCS2026' && source === 'APCS2025'))
+                    ? registration : null;
+            }));
+            registrations.forEach(registration => countAttendance(summary, registration));
+        }
+        return summary;
     }
 
     const campaigns = createCampaignService({ db, sendMail, resolveArtifact: artifactResolver, readRecipients,
@@ -127,6 +160,7 @@ function createService({ db, sendMail, resolveArtifact: artifactResolver = resol
         const latest = await campaigns.latest(eventId);
         const source = current.total ? { eventId, status: 'saved campaign',
             recipients: await campaigns.snapshotRecipients(current.id), skipped: [] } : await readRecipients({ eventId });
+        if (current.total) source.attendanceSummary = await currentAttendanceForSnapshot(eventId, source.recipients);
         const dummyAccepted = current.dummyTest?.revision === artifact.revision;
         const otherActive = latest && latest.id !== current.id && latest.total > latest.processed;
         const bulkEnabled = workerEnabled && artifact.approvedForBulk && dummyAccepted && !otherActive

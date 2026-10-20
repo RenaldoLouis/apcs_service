@@ -44,6 +44,44 @@ test('preview uses saved published membership and current performer contacts, wi
     assert.equal(f.messages.length, 0);
 });
 
+test('attendance totals count each grouped registration once, without filtering recipients or changing data', async () => {
+    const f = fixture();
+    f.records.get('Registrants2025/R1').willAttend = false;
+    f.records.get('Registrants2025/R2').willAttend = true;
+    const before = structuredClone(f.records);
+    const result = await f.service.preview({ eventId: 'APCS2026' });
+    assert.deepEqual(result.attendanceSummary, { total: 2, attending: 1, notAttending: 1, notImported: 0, unavailable: 0 });
+    assert.equal(result.recipients.length, 3);
+    assert.equal(f.reads.filter(key => key === 'Registrants2025/R1').length, 1);
+    assert.deepEqual(f.records, before);
+    f.records.get('Registrants2025/R1').willAttend = true;
+    const refreshed = await f.service.preview({ eventId: 'APCS2026' });
+    assert.equal(refreshed.attendanceSummary.notAttending, 0);
+    assert.equal(refreshed.recipientsHash, result.recipientsHash);
+});
+
+test('unknown attendance and unavailable registrations are separate from explicitly not attending', async () => {
+    const f = fixture();
+    f.records.get('Registrants2025/R1').willAttend = 'false';
+    let result = await f.service.preview({ eventId: 'APCS2026' });
+    assert.deepEqual(result.attendanceSummary, { total: 2, attending: 0, notAttending: 0, notImported: 2, unavailable: 0 });
+    f.records.delete('Registrants2025/R2');
+    result = await f.service.preview({ eventId: 'APCS2026' });
+    assert.deepEqual(result.attendanceSummary, { total: 2, attending: 0, notAttending: 0, notImported: 1, unavailable: 1 });
+});
+
+test('attendance includes valid invited guests, with unsupported sources marked unavailable', async () => {
+    const f = fixture();
+    f.records.get('Registrants2025/R2').eventId = 'APCS2025';
+    f.records.get('Registrants2025/R2').willAttend = false;
+    f.records.get('sessionAssignments/APCS2026').assignments[f.slot][2].sourceEventId = 'APCS2025';
+    assert.equal((await f.service.preview({ eventId: 'APCS2026' })).attendanceSummary.notAttending, 1);
+    f.records.get('Registrants2025/R2').eventId = 'OTHER';
+    const result = await f.service.preview({ eventId: 'APCS2026' });
+    assert.equal(result.attendanceSummary.unavailable, 1);
+    assert.equal(result.attendanceSummary.notAttending, 0);
+});
+
 for (const status of ['draft', 'resetting', 'unknown']) test(`${status} schedule has no eligible published recipients`, async () => {
     const f = fixture(status);
     const result = await f.service.preview({ eventId: 'APCS2026' });
@@ -100,15 +138,15 @@ test('dummy uses only the fixed owner mailbox, ignores injected recipients and a
     const mail = f.messages[0];
     assert.equal(mail.to, 'renaldolouis555@gmail.com');
     assert.equal(response.recipientEmail, DUMMY_EMAIL);
-    assert.match(mail.html, /Dear Alex Example/);
+    assert.match(mail.html, /Dear <strong>Alex Example<\/strong>,/);
     assert.match(mail.html, /apcs_logo_white_background_black/);
     assert.match(mail.html, /class="footer"/);
     assert.equal(mail.subject, 'APCS The Sound of Asia 2026 – Finale Orchestra Rundown');
     assert.equal(mail.attachments.length, 1);
     assert.equal(mail.attachments[0].content.subarray(0, 5).toString(), '%PDF-');
-    assert.equal(mail.attachments[0].filename, 'Program Notes - Fixed.pdf');
+    assert.equal(mail.attachments[0].filename, 'RUNDOWN APCS THE SOUND OF ASIA 2026 - FINALE ORCHESTRA.pdf');
     assert.deepEqual(mail.attachments[0].content,
-        fs.readFileSync(path.join(__dirname, '../src/services/attachments/Program Notes - Fixed.pdf')));
+        fs.readFileSync(path.join(__dirname, '../src/services/attachments/RUNDOWN APCS THE SOUND OF ASIA 2026 - FINALE ORCHESTRA.pdf')));
 });
 
 test('invalid or wrong-year events and SMTP rejection do not report successful delivery', async () => {
@@ -124,18 +162,30 @@ test('invalid or wrong-year events and SMTP rejection do not report successful d
     await assert.rejects(failed.service.test({ eventId: 'APCS2026', recipientEmail: 'staff@example.com' }), /SMTP failure/);
 });
 
-test('bulk delivery cannot be enabled through a forged request', async () => {
+test('the new approved rundown still requires its own dummy receipt despite forged client approval fields', async () => {
     const f = fixture('published', null, { workerEnabled: true });
+    const { hash } = require('../src/services/GroupAnnouncementCampaignService');
+    const { TEST_ONLY_SHA256 } = require('../src/services/GroupAnnouncementEmailService');
+    const oldRevision = hash({ template: announcementMessage('[Performer Name]'), filename: 'Program Notes - Fixed.pdf',
+        sha256: TEST_ONLY_SHA256, approvedForBulk: false });
+    await f.service.campaigns.recordDummy('APCS2026', { revision: oldRevision, approvedForBulk: false }, { uid: 'staff' });
+    const preview = await f.service.preview({ eventId: 'APCS2026' });
+    assert.notEqual(preview.revision, oldRevision);
+    assert.equal(preview.attachment.testOnly, false);
+    assert.equal(preview.dummyAccepted, false);
+    assert.equal(preview.bulkEnabled, false);
     await assert.rejects(f.service.send({ eventId: 'APCS2026', confirmed: true, bulkEnabled: true,
-        approvedForBulk: true, dummyAccepted: true }, { uid: 'staff' }), /dummy testing only/);
+        revision: preview.revision, expectedRecipientsHash: preview.recipientsHash,
+        approvedForBulk: true, dummyAccepted: true }, { uid: 'staff' }), /successful dummy/);
     assert.equal(f.messages.length, 0);
-    assert.equal(f.reads.length, 0);
 });
 
 test('template preserves exact requested text and APCS branding while escaping personalization', () => {
     const message = announcementMessage('[Performer Name]');
     assert.equal(message.text, 'Dear [Performer Name],\n\nThank you for confirming your participation in the APCS Stage!\n\nPlease find attached the rundown for APCS The Sound of Asia 2026 – Finale Orchestra, taking place on 14–15 November 2026 at Titan Center, Bintaro.\n\nWe look forward to welcoming you and celebrating your achievements at the APCS Gala Concert 2026!\n\nBest regards,\nAPCS Team');
-    assert.match(announcementMessage('<script>').html, /Dear &lt;script&gt;/);
+    assert.match(announcementMessage('<script>').html, /Dear <strong>&lt;script&gt;<\/strong>,/);
+    assert.ok(message.html.includes('<strong>14–15 November 2026</strong> at <strong>Titan Center, Bintaro</strong>.'));
+    assert.ok(message.html.includes('Best regards,<br><strong>APCS Team</strong>'));
     assert.match(message.html, /apcs_logo_white_background_black/);
     assert.match(message.html, /class="footer"/);
 });
@@ -168,7 +218,24 @@ test('full service unlocks only after a saved same-version dummy and enqueues wi
     const reopened = await f.service.preview({ eventId: 'APCS2026' });
     assert.equal(reopened.recipientSource, 'saved_campaign');
     assert.equal(reopened.recipients.length, 3);
-    assert.ok(f.reads.every(key => !key.startsWith('Registrants2025/')));
+    assert.deepEqual(reopened.attendanceSummary, { total: 2, attending: 0, notAttending: 0, notImported: 1, unavailable: 1 });
+    assert.equal(f.reads.filter(key => key.startsWith('Registrants2025/')).length, 2);
+});
+
+test('saved campaign attendance refreshes current flags without changing frozen recipients or delivery state', async () => {
+    const f = approvedFixture();
+    await f.service.test({ eventId: 'APCS2026' }, { uid: 'staff' });
+    const preview = await f.service.preview({ eventId: 'APCS2026' });
+    await f.service.send({ eventId: 'APCS2026', revision: preview.revision,
+        expectedRecipientsHash: preview.recipientsHash, confirmed: true }, { uid: 'staff' });
+    f.records.get('Registrants2025/R1').willAttend = false;
+    f.records.get('Registrants2025/R1').performers[0].email = 'changed@example.com';
+    f.records.get('Registrants2025/R2').willAttend = true;
+    const before = structuredClone(f.records);
+    const reopened = await f.service.preview({ eventId: 'APCS2026' });
+    assert.deepEqual(reopened.attendanceSummary, { total: 2, attending: 1, notAttending: 1, notImported: 0, unavailable: 0 });
+    assert.deepEqual(reopened.recipients, [...preview.recipients].sort((a, b) => a.key.localeCompare(b.key)));
+    assert.deepEqual(f.records, before);
 });
 
 test('SMTP acceptance without a durable dummy receipt cannot unlock bulk or cause an automatic dummy resend', async () => {
