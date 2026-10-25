@@ -98,6 +98,7 @@ router.post('/public-ticket/booking',         PublicTicketController.createPubli
 router.post('/public-ticket/webhook',         PublicTicketController.handlePublicTicketWebhook);
 router.post('/public-ticket/resend-email',    PublicTicketController.resendPublicTicketEmail);
 router.post('/public-ticket/admin/send-email-to-address', requireTicketingAdmin, PublicTicketController.sendPublicTicketEmailToAddress);
+router.post('/public-ticket/admin/update-buyer-contact', requireTicketingAdmin, PublicTicketController.updatePendingBuyerContact);
 router.post('/public-ticket/admin/release-booking', requireTicketingAdmin, PublicTicketController.releasePublicTicketBooking);
 router.post('/public-ticket/admin/mark-manual-paid', requireTicketingAdmin, PublicTicketController.markManualBookingPaid);
 router.post('/public-ticket/admin/reconcile-expired-payment', requireTicketingAdmin, PublicTicketController.reconcileExpiredPayment);

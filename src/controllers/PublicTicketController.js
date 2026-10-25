@@ -341,6 +341,17 @@ async function sendPublicTicketEmailToAddress(req, res, next) {
     }
 }
 
+/** POST /api/v1/apcs/public-ticket/admin/update-buyer-contact */
+async function updatePendingBuyerContact(req, res, next) {
+    try {
+        const repository = require('../repositories/PublicTicketContactRepository');
+        const result = await repository.updatePendingBuyerContact(req.body, req.ticketingAdmin);
+        return res.status(200).json(result);
+    } catch (error) {
+        return next(error);
+    }
+}
+
 /** POST /api/v1/apcs/public-ticket/admin/release-booking */
 async function releasePublicTicketBooking(req, res, next) {
     try {
@@ -403,6 +414,7 @@ module.exports = {
     getBookingStatus,
     resendPublicTicketEmail,
     sendPublicTicketEmailToAddress,
+    updatePendingBuyerContact,
     releasePublicTicketBooking,
     markManualBookingPaid,
     resendManualPaymentInstructions,
