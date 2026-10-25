@@ -8,6 +8,17 @@ const hash = value => createHash('sha256').update(JSON.stringify(value)).digest(
 const campaignId = (eventId, revision) => hash([eventId, revision]);
 const recipientsHash = recipients => hash([...recipients].sort((a, b) => a.key.localeCompare(b.key)));
 const ordinalId = value => String(value).padStart(6, '0');
+const isSingleRecipientEmail = value => {
+    if (typeof value !== 'string' || value.length > 254) return false;
+    const parts = value.split('@');
+    if (parts.length !== 2) return false;
+    const [local, domain] = parts;
+    if (!local || local.length > 64 || local.startsWith('.') || local.endsWith('.') || local.includes('..')
+        || !/^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~.\-]+$/.test(local)) return false;
+    const labels = domain.split('.');
+    return labels.length >= 2 && labels.every(label => label.length <= 63
+        && /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/.test(label));
+};
 
 function createCampaignService({ db, resolveArtifact, readRecipients, renderMessage, sendMail,
     workerEnabled = false, now = Date.now, uuid = randomUUID, pause = ms => new Promise(resolve => setTimeout(resolve, ms)) }) {
@@ -123,6 +134,76 @@ function createCampaignService({ db, resolveArtifact, readRecipients, renderMess
         });
     }
 
+    async function resend({ eventId, revision, recipientKey, requestId, confirmed, recipientEmail }, actor) {
+        if (!actor?.uid || eventId !== 'APCS2026' || confirmed !== true
+            || !/^[a-f0-9]{64}$/.test(revision || '') || typeof recipientKey !== 'string'
+            || !/^[a-f0-9-]{36}$/i.test(requestId || '')) {
+            throw new AppError('Confirm one saved recipient as signed-in staff.', 400);
+        }
+        if (!workerEnabled) throw new AppError('Client email delivery is not enabled on this server.', 409);
+        const artifact = resolveArtifact();
+        if (!artifact.approvedForBulk || artifact.revision !== revision) {
+            throw new AppError('The approved email/PDF changed. Refresh before resending.', 409);
+        }
+        const id = campaignId(eventId, revision);
+        const ref = refFor(id);
+        // The saved row supplies identity/personalization; an optional address applies to this send only.
+        const recipient = (await snapshotRecipients(id)).find(row => row.key === recipientKey);
+        if (!recipient) throw new AppError('Select a recipient from the saved campaign.', 404);
+        const targetEmail = recipientEmail === undefined ? recipient.email
+            : typeof recipientEmail === 'string' ? recipientEmail.trim() : '';
+        if (!isSingleRecipientEmail(targetEmail)) throw new AppError('Enter one valid email address.', 400);
+        const recipientEmailHash = hash(targetEmail.toLowerCase());
+        const attemptRef = ref.collection('resends').doc(requestId);
+        const lockRef = ref.collection('resends').doc(`recipient_${hash(recipientKey)}`);
+        const resultView = data => ({ eventId, revision, recipientKey, requestId, recipientEmail: targetEmail,
+            status: data.status, accepted: data.status === 'accepted' });
+        const claim = await db.runTransaction(async transaction => {
+            const campaign = (await transaction.get(ref)).data();
+            const existing = (await transaction.get(attemptRef)).data();
+            const lock = (await transaction.get(lockRef)).data();
+            if (existing) {
+                if (existing.recipientKey !== recipientKey) throw new AppError('This resend request belongs to another recipient.', 409);
+                if ((existing.recipientEmailHash || hash(recipient.email.toLowerCase())) !== recipientEmailHash) {
+                    throw new AppError('This resend request belongs to a different email address. Check its delivery before starting another resend.', 409);
+                }
+                return { existing };
+            }
+            if (!campaign?.total || campaign.cursor !== campaign.total || campaign.inFlight || campaign.runnable
+                || !['completed', 'completed_with_issues'].includes(campaign.status)) {
+                throw new AppError('Wait for the saved campaign to finish before resending individually.', 409);
+            }
+            if (campaign.dummyTest?.revision !== revision || campaign.dummyTest.approvedForBulk !== true) {
+                throw new AppError('A successful dummy test of this exact client email/PDF is required.', 409);
+            }
+            if (lock?.leaseUntil > now()) {
+                throw new AppError('A resend was recently started for this recipient. Check delivery and wait three minutes before another resend.', 409);
+            }
+            const attempt = { recipientKey, requestId, registrantId: recipient.registrantId, name: recipient.name,
+                email: recipient.email, recipientEmailHash, status: 'sending', actorUid: actor.uid, startedAt: now(),
+                attachment: { filename: artifact.attachment.filename, sha256: artifact.sha256 } };
+            transaction.set(attemptRef, attempt);
+            transaction.set(lockRef, { recipientKey, requestId, leaseUntil: now() + LEASE_MS });
+            return { attempt };
+        });
+        // A repeated HTTP request can only read its original outcome, even after a server restart.
+        if (claim.existing) return resultView(claim.existing);
+        let outcome = 'uncertain';
+        try {
+            const result = await sendMail({ from: '"APCS Music" <hello@apcsmusic.com>', to: targetEmail,
+                ...renderMessage(recipient.name), attachments: [artifact.attachment],
+                messageId: `<apcs-group-resend-${id}-${requestId}@apcsmusic.com>` });
+            if (result?.accepted?.some(email => String(email).toLowerCase() === targetEmail.toLowerCase())
+                && !result.rejected?.length) outcome = 'accepted';
+            else if (result?.rejected?.length && !result.accepted?.length) outcome = 'failed';
+        } catch (_) { /* SMTP may have accepted the message. Never automatically retry. */ }
+        await db.runTransaction(async transaction => {
+            const current = (await transaction.get(attemptRef)).data();
+            if (current?.status === 'sending') transaction.update(attemptRef, { status: outcome, finishedAt: now() });
+        });
+        return resultView({ status: outcome });
+    }
+
     async function processOne(id) {
         if (!workerEnabled) return { idle: true };
         const ref = refFor(id);
@@ -206,7 +287,7 @@ function createCampaignService({ db, resolveArtifact, readRecipients, renderMess
             }
         }
     }
-    return { status, latest, snapshotRecipients, recordDummy, start, processOne, processDue, workerEnabled };
+    return { status, latest, snapshotRecipients, recordDummy, start, resend, processOne, processDue, workerEnabled };
 }
 
 module.exports = { createCampaignService, recipientsHash, campaignId, hash, LEASE_MS };

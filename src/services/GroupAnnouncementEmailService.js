@@ -165,7 +165,7 @@ function createService({ db, sendMail, resolveArtifact: artifactResolver = resol
         const otherActive = latest && latest.id !== current.id && latest.total > latest.processed;
         const bulkEnabled = workerEnabled && artifact.approvedForBulk && dummyAccepted && !otherActive
             && (!current.total || current.status === 'blocked') && source.recipients.length > 0 && !source.skipped.length;
-        return { ...source, draft: false, bulkEnabled, workerEnabled, dummyAccepted, revision: artifact.revision,
+        return { ...source, draft: false, bulkEnabled, workerEnabled, dummyAccepted, resendRecipientOverrideEnabled: true, revision: artifact.revision,
             recipientsHash: recipientsHash(source.recipients), campaign: latest || current, currentCampaign: current,
             recipientSource: current.total ? 'saved_campaign' : 'published_assignments', dummyEmail: DUMMY_EMAIL,
             message: announcementMessage('Alex Example'),
@@ -187,7 +187,7 @@ function createService({ db, sendMail, resolveArtifact: artifactResolver = resol
         return { eventId, recipientEmail: DUMMY_EMAIL, accepted: true, revision: artifact.revision, campaign };
     }
 
-    return { preview, test, send: campaigns.start, status: campaigns.status, processDue: campaigns.processDue, campaigns };
+    return { preview, test, send: campaigns.start, resend: campaigns.resend, status: campaigns.status, processDue: campaigns.processDue, campaigns };
 }
 
 module.exports = { createService, announcementMessage, resolveArtifact, DUMMY_EMAIL, TEST_ONLY_SHA256 };

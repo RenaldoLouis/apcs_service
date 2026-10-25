@@ -34,6 +34,7 @@ function fixture(status = 'published', send, options = {}) {
 test('preview uses saved published membership and current performer contacts, without sending or writes', async () => {
     const f = fixture();
     const result = await f.service.preview({ eventId: 'APCS2026', recipients: [{ email: 'injected@example.com' }] });
+    assert.equal(result.resendRecipientOverrideEnabled, true);
     assert.equal(result.recipients.length, 3);
     assert.equal(result.recipients[0].name, 'Alice, Bob');
     assert.equal(result.recipients[2].name, 'Dan');

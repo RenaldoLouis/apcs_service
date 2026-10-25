@@ -21,7 +21,7 @@ const { paymentValidation } = require('../utils/ValidationUtil');
 const { multipartUploadValidation, partUploadValidation, completeUploadValidation, abortUploadValidation } = require('../middlewares/ValidationMiddleware');
 const { requireTicketingAdmin } = require('../middlewares/TicketingAdminMiddleware');
 const GroupAnnouncementEmailController = require('../controllers/GroupAnnouncementEmailController');
-for (const operation of ['preview', 'test', 'send', 'status']) {
+for (const operation of ['preview', 'test', 'send', 'status', 'resend']) {
     router.post(`/group-announcement-emails/${operation}`, requireTicketingAdmin, GroupAnnouncementEmailController[operation]);
 }
 const RegistrantAttendanceController = require('../controllers/RegistrantAttendanceController');

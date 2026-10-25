@@ -25,6 +25,184 @@ function fixture(count = 2, transport) {
     return { ...memory, service, options, input, start, actor, artifact, source, messages, advance: ms => { clock += ms; } };
 }
 
+async function completedFixture(transport) {
+    const f = fixture(2);
+    const campaign = await f.start();
+    await f.service.processOne(campaign.id);
+    f.advance(1100);
+    await f.service.processOne(campaign.id);
+    f.messages.length = 0;
+    if (transport) f.service = createCampaignService({ ...f.options, sendMail: async mail => {
+        f.messages.push(mail); return transport(mail);
+    } });
+    f.resendInput = { eventId: 'APCS2026', revision: f.artifact.revision,
+        recipientKey: f.source.recipients[0].key, requestId: '12345678-1234-4123-8123-123456789abc', confirmed: true };
+    f.campaign = campaign;
+    return f;
+}
+
+test('individual resend sends only the selected saved contact and preserves the original campaign and deliveries', async () => {
+    const f = await completedFixture();
+    const original = structuredClone(f.records);
+    f.source.recipients[0].email = 'later-edit@example.com';
+    const result = await f.service.resend({ ...f.resendInput, email: 'injected@example.com', recipients: f.source.recipients }, f.actor);
+    assert.equal(result.accepted, true);
+    assert.equal(result.recipientEmail, 'person0@example.com');
+    assert.equal(f.messages.length, 1);
+    assert.equal(f.messages[0].to, 'person0@example.com');
+    assert.match(f.messages[0].text, /Dear Performer 0,/);
+    assert.equal(f.messages[0].attachments[0].filename, f.artifact.attachment.filename);
+    for (const [key, data] of original) assert.deepEqual(f.records.get(key), data);
+    assert.equal([...f.records.keys()].filter(key => !original.has(key)).length, 2);
+});
+
+test('one-time address override sends one personalized copy without persisting the entered address', async () => {
+    const f = await completedFixture();
+    const original = structuredClone(f.records);
+    const result = await f.service.resend({ ...f.resendInput, recipientEmail: '  alternate@example.com  ' }, f.actor);
+    assert.equal(result.accepted, true);
+    assert.equal(result.recipientEmail, 'alternate@example.com');
+    assert.equal(f.messages.length, 1);
+    assert.equal(f.messages[0].to, 'alternate@example.com');
+    assert.match(f.messages[0].text, /Dear Performer 0,/);
+    assert.equal(f.messages[0].attachments[0].filename, f.artifact.attachment.filename);
+    for (const [key, data] of original) assert.deepEqual(f.records.get(key), data);
+    assert.ok(!JSON.stringify([...f.records]).includes('alternate@example.com'));
+    const attempt = f.records.get(`groupAnnouncementCampaigns/${f.campaign.id}/resends/${f.resendInput.requestId}`);
+    assert.equal(attempt.email, 'person0@example.com');
+    assert.equal(attempt.recipientEmailHash, hash('alternate@example.com'));
+});
+
+test('alternate address validation rejects lists, headers, malformed addresses and nonstrings before writes or SMTP', async () => {
+    const f = await completedFixture();
+    const before = structuredClone(f.records);
+    for (const recipientEmail of ['', ' ', 'bad', 'a@example.com,b@example.com', 'a@example.com;b@example.com',
+        'Person <a@example.com>', 'a@example.com\r\nBcc: b@example.com', 'a\u0000@example.com', 'a..b@example.com',
+        'a@-example.com', 'a@example..com', `${'a'.repeat(65)}@example.com`, ['a@example.com'], null, 1]) {
+        await assert.rejects(f.service.resend({ ...f.resendInput, recipientEmail }, f.actor), /one valid email/);
+    }
+    assert.deepEqual(f.records, before);
+    assert.equal(f.messages.length, 0);
+});
+
+test('alternate resend request IDs bind the entered address and retain the row cooldown across address changes', async () => {
+    const f = await completedFixture();
+    const input = { ...f.resendInput, recipientEmail: 'alternate@example.com' };
+    await f.service.resend(input, f.actor);
+    await createCampaignService(f.options).resend(input, f.actor);
+    assert.equal(f.messages.length, 1);
+    await assert.rejects(f.service.resend({ ...input, recipientEmail: 'other@example.com' }, f.actor), /different email address/);
+    await assert.rejects(f.service.resend(f.resendInput, f.actor), /different email address/);
+    await assert.rejects(f.service.resend({ ...input, requestId: '42345678-1234-4123-8123-123456789abc',
+        recipientEmail: 'other@example.com' }, f.actor), /three minutes/);
+    assert.equal(f.messages.length, 1);
+});
+
+test('existing resend receipts without an email fingerprint cannot be replayed as an alternate-address success', async () => {
+    const f = await completedFixture();
+    await f.service.resend(f.resendInput, f.actor);
+    delete f.records.get(`groupAnnouncementCampaigns/${f.campaign.id}/resends/${f.resendInput.requestId}`).recipientEmailHash;
+    assert.equal((await f.service.resend(f.resendInput, f.actor)).accepted, true);
+    await assert.rejects(f.service.resend({ ...f.resendInput, recipientEmail: 'alternate@example.com' }, f.actor), /different email address/);
+    assert.equal(f.messages.length, 1);
+});
+
+test('an alternate send with a wrong-address acknowledgement or transport error stays uncertain without retry', async () => {
+    for (const transport of [async () => ({ accepted: ['person0@example.com'], rejected: [] }),
+        async () => { throw new Error('Connection lost'); }]) {
+        const f = await completedFixture(transport);
+        const input = { ...f.resendInput, recipientEmail: 'alternate@example.com' };
+        assert.equal((await f.service.resend(input, f.actor)).status, 'uncertain');
+        f.advance(LEASE_MS + 1);
+        assert.equal((await createCampaignService(f.options).resend(input, f.actor)).status, 'uncertain');
+        assert.equal(f.messages.length, 1);
+        assert.ok(!JSON.stringify([...f.records]).includes('alternate@example.com'));
+    }
+});
+
+test('resend requires explicit staff confirmation, valid event/version, an enabled runtime and saved recipient', async () => {
+    const f = await completedFixture();
+    for (const input of [{ ...f.resendInput, confirmed: false }, { ...f.resendInput, eventId: 'APCS2025' },
+        { ...f.resendInput, requestId: 'bad' }, { ...f.resendInput, revision: 'bad' }]) {
+        await assert.rejects(f.service.resend(input, f.actor), /Confirm one/);
+    }
+    await assert.rejects(f.service.resend(f.resendInput, null), /signed-in staff/);
+    await assert.rejects(createCampaignService({ ...f.options, workerEnabled: false }).resend(f.resendInput, f.actor), /not enabled/);
+    await assert.rejects(f.service.resend({ ...f.resendInput, recipientKey: 'not-in-snapshot' }, f.actor), /saved campaign/);
+    f.artifact.approvedForBulk = false;
+    await assert.rejects(f.service.resend(f.resendInput, f.actor), /approved email\/PDF changed/);
+    f.artifact.approvedForBulk = true;
+    await assert.rejects(f.service.resend({ ...f.resendInput, revision: hash('another-version') }, f.actor), /changed/);
+    assert.equal(f.messages.length, 0);
+});
+
+test('resend refuses unfinished campaigns and missing exact-version dummy approval', async () => {
+    const f = await completedFixture();
+    const ref = `groupAnnouncementCampaigns/${f.campaign.id}`;
+    const original = structuredClone(f.records.get(ref));
+    for (const change of [{ status: 'running' }, { cursor: 1 }, { runnable: true }, { inFlight: {} }]) {
+        f.records.set(ref, { ...original, ...change });
+        await assert.rejects(f.service.resend(f.resendInput, f.actor), /finish before resending/);
+    }
+    f.records.set(ref, { ...original, dummyTest: null });
+    await assert.rejects(f.service.resend(f.resendInput, f.actor), /successful dummy/);
+    assert.equal(f.messages.length, 0);
+});
+
+test('duplicate resend requests including after restart never issue another SMTP send', async () => {
+    const f = await completedFixture();
+    const results = await Promise.all([f.service.resend(f.resendInput, f.actor), f.service.resend(f.resendInput, f.actor)]);
+    assert.ok(results.every(result => ['sending', 'accepted'].includes(result.status)));
+    f.advance(LEASE_MS + 1);
+    const result = await createCampaignService(f.options).resend(f.resendInput, f.actor);
+    assert.equal(result.status, 'accepted');
+    assert.equal(f.messages.length, 1);
+    await assert.rejects(f.service.resend({ ...f.resendInput, recipientKey: f.source.recipients[1].key }, f.actor), /another recipient/);
+});
+
+test('another staff request for the same row is blocked during the cooldown but a different row is independent', async () => {
+    const f = await completedFixture();
+    await f.service.resend(f.resendInput, f.actor);
+    const other = { ...f.resendInput, requestId: '22345678-1234-4123-8123-123456789abc' };
+    await assert.rejects(createCampaignService(f.options).resend(other, { uid: 'other-staff' }), /three minutes/);
+    await f.service.resend({ ...other, requestId: '32345678-1234-4123-8123-123456789abc', recipientKey: f.source.recipients[1].key }, f.actor);
+    assert.deepEqual(f.messages.map(mail => mail.to), ['person0@example.com', 'person1@example.com']);
+    f.advance(LEASE_MS + 1);
+    await f.service.resend(other, f.actor);
+    assert.equal(f.messages.length, 3);
+    await f.service.resend(f.resendInput, f.actor);
+    assert.equal(f.messages.length, 3, 'Even an older request stays idempotent after a newer manual resend');
+});
+
+test('rejected and ambiguous individual resends are recorded without retrying or requeuing the bulk campaign', async () => {
+    for (const [transport, expected] of [[async mail => ({ accepted: [], rejected: [mail.to] }), 'failed'],
+        [async () => { throw new Error('Connection lost after acceptance'); }, 'uncertain']]) {
+        const f = await completedFixture(transport);
+        assert.equal((await f.service.resend(f.resendInput, f.actor)).status, expected);
+        f.advance(LEASE_MS + 1);
+        assert.equal((await f.service.resend(f.resendInput, f.actor)).status, expected);
+        await f.service.processDue();
+        assert.equal(f.messages.length, 1);
+        assert.equal((await f.service.status(f.resendInput)).accepted, 2);
+    }
+});
+
+test('a failed reservation sends nothing; a failed result save never repeats an uncertain SMTP attempt', async () => {
+    const f = await completedFixture();
+    f.db.commitHook = () => { throw new Error('Reservation unavailable'); };
+    await assert.rejects(f.service.resend(f.resendInput, f.actor), /Reservation unavailable/);
+    assert.equal(f.messages.length, 0);
+    f.db.commitHook = writes => {
+        if (writes.some(write => write.data.status === 'accepted')) throw new Error('Result save unavailable');
+    };
+    await assert.rejects(f.service.resend(f.resendInput, f.actor), /Result save unavailable/);
+    assert.equal(f.messages.length, 1);
+    f.db.commitHook = null;
+    f.advance(LEASE_MS + 1);
+    assert.equal((await createCampaignService(f.options).resend(f.resendInput, f.actor)).status, 'sending');
+    assert.equal(f.messages.length, 1);
+});
+
 test('bulk requires staff confirmation, an enabled worker, an approved artifact and an exact successful dummy receipt', async () => {
     const f = fixture();
     await assert.rejects(f.service.start(f.input(), null), /signed-in staff/);
