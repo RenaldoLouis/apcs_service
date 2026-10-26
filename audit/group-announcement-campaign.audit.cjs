@@ -397,3 +397,100 @@ test('known 2025 PDF cannot be relabelled as an approved client attachment even 
         assert.throws(resolveArtifact, /test-only 2025 document/);
     } finally { config.clientAttachment = configuredAttachment; }
 });
+
+test('general rundown sends without selecting or starting a registrant campaign and keeps only destination hash', async () => {
+    const f = fixture();
+    await f.service.recordDummy('APCS2026', f.artifact, f.actor);
+    const before = structuredClone(f.records);
+    const input = { eventId: 'APCS2026', revision: f.artifact.revision, confirmed: true,
+        requestId: '12345678-1234-4123-8123-123456789abc', recipientEmail: '  guest@example.com  ',
+        recipientKey: f.source.recipients[0].key, name: 'Injected Name' };
+    const [result, duplicate] = await Promise.all([f.service.sendToAddress(input, f.actor), f.service.sendToAddress(input, f.actor)]);
+    assert.equal(result.accepted, true);
+    assert.ok(['sending', 'accepted'].includes(duplicate.status));
+    assert.equal(result.recipientEmail, 'guest@example.com');
+    assert.equal(f.messages.length, 1);
+    assert.equal(f.messages[0].to, 'guest@example.com');
+    assert.match(f.messages[0].text, /^Hello,\n\n/);
+    assert.match(f.messages[0].html, /<p>Hello,<\/p>/);
+    assert.ok(!f.messages[0].text.includes('Injected Name'));
+    assert.deepEqual(f.messages[0].attachments, [f.artifact.attachment]);
+    for (const [key, data] of before) assert.deepEqual(f.records.get(key), data);
+    assert.equal([...f.records.keys()].filter(key => !before.has(key)).length, 2);
+    assert.ok(!JSON.stringify([...f.records]).includes('guest@example.com'));
+    assert.ok(!f.reads.some(key => key.startsWith('Registrants2025/') || key.startsWith('sessionAssignments/')));
+    const recreated = createCampaignService(f.options);
+    assert.equal((await recreated.sendToAddress(input, f.actor)).accepted, true);
+    assert.equal(f.messages.length, 1);
+    await assert.rejects(recreated.sendToAddress({ ...input, recipientEmail: 'other@example.com' }, f.actor));
+    await assert.rejects(recreated.sendToAddress({ ...input, requestId: '22345678-1234-4123-8123-123456789abc' }, f.actor), /three minutes/);
+});
+
+test('general send works after bulk completion while preserving the frozen roster and counts', async () => {
+    const f = await completedFixture();
+    const before = structuredClone(f.records);
+    await f.service.sendToAddress({ ...f.resendInput, recipientEmail: 'guest@example.com' }, f.actor);
+    assert.match(f.messages[0].text, /^Hello,/);
+    for (const [key, data] of before) assert.deepEqual(f.records.get(key), data);
+});
+
+test('general send rejects invalid destinations, missing confirmation, actor and wrong event before writes', async () => {
+    const f = fixture();
+    await f.service.recordDummy('APCS2026', f.artifact, f.actor);
+    const input = { ...f.input(), requestId: '12345678-1234-4123-8123-123456789abc', recipientEmail: 'guest@example.com' };
+    const before = structuredClone(f.records);
+    for (const recipientEmail of [undefined, null, '', 'invalid', 'a@example.com,b@example.com', 'Name <a@example.com>',
+        'a@example.com\r\nBcc: b@example.com', 'a..b@example.com', 'a@-example.com', ['a@example.com']]) {
+        await assert.rejects(f.service.sendToAddress({ ...input, recipientEmail }, f.actor), /one valid email/);
+    }
+    for (const patch of [{ confirmed: false }, { eventId: 'APCS2025' }, { requestId: 'invalid' }]) {
+        await assert.rejects(f.service.sendToAddress({ ...input, ...patch }, f.actor));
+    }
+    await assert.rejects(f.service.sendToAddress(input, null));
+    assert.deepEqual(f.records, before);
+    assert.equal(f.messages.length, 0);
+});
+
+test('general send enforces approved exact PDF, durable dummy and enabled delivery', async () => {
+    const f = fixture();
+    const input = { ...f.input(), requestId: '12345678-1234-4123-8123-123456789abc', recipientEmail: 'guest@example.com' };
+    await assert.rejects(f.service.sendToAddress(input, f.actor));
+    await f.service.recordDummy('APCS2026', f.artifact, f.actor);
+    for (const patch of [{ workerEnabled: false }, { resolveArtifact: () => ({ ...f.artifact, approvedForBulk: false }) },
+        { resolveArtifact: () => ({ ...f.artifact, revision: 'f'.repeat(64) }) }]) {
+        await assert.rejects(createCampaignService({ ...f.options, ...patch }).sendToAddress(input, f.actor));
+    }
+    const id = (await f.service.status(input)).id;
+    f.records.get(`groupAnnouncementCampaigns/${id}`).dummyTest.approvedForBulk = false;
+    await assert.rejects(f.service.sendToAddress(input, f.actor), /dummy/);
+    assert.equal(f.messages.length, 0);
+});
+
+test('general send blocks active same-version or other-version bulk campaigns', async () => {
+    const f = fixture();
+    await f.start();
+    const input = { ...f.input(), requestId: '12345678-1234-4123-8123-123456789abc', recipientEmail: 'guest@example.com' };
+    await assert.rejects(f.service.sendToAddress(input, f.actor), /finish/);
+    const id = (await f.service.status(input)).id;
+    f.records.get(`groupAnnouncementCampaigns/${id}`).status = 'completed';
+    f.records.get(`groupAnnouncementCampaigns/${id}`).runnable = false;
+    f.records.get(`groupAnnouncementCampaigns/${id}`).cursor = 2;
+    f.records.set('groupAnnouncementCampaigns/APCS2026', { latestCampaignId: 'other' });
+    f.records.set('groupAnnouncementCampaigns/other', { total: 2, cursor: 0, status: 'queued' });
+    await assert.rejects(f.service.sendToAddress(input, f.actor), /finish/);
+    assert.equal(f.messages.length, 0);
+});
+
+test('general send records rejection or uncertainty and never automatically sends a repeated request', async () => {
+    for (const [transport, expected] of [
+        [() => ({ accepted: [], rejected: ['guest@example.com'] }), 'failed'],
+        [() => { throw new Error('SMTP response lost'); }, 'uncertain'],
+        [() => ({ accepted: ['wrong@example.com'], rejected: [] }), 'uncertain'],
+    ]) {
+        const f = await completedFixture(transport);
+        const input = { ...f.resendInput, recipientEmail: 'guest@example.com' };
+        assert.equal((await f.service.sendToAddress(input, f.actor)).status, expected);
+        assert.equal((await f.service.sendToAddress(input, f.actor)).accepted, false);
+        assert.equal(f.messages.length, 1);
+    }
+});

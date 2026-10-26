@@ -134,11 +134,11 @@ function createCampaignService({ db, resolveArtifact, readRecipients, renderMess
         });
     }
 
-    async function resend({ eventId, revision, recipientKey, requestId, confirmed, recipientEmail }, actor) {
+    async function sendSingle({ eventId, revision, recipientKey, requestId, confirmed, recipientEmail }, actor, general = false) {
         if (!actor?.uid || eventId !== 'APCS2026' || confirmed !== true
-            || !/^[a-f0-9]{64}$/.test(revision || '') || typeof recipientKey !== 'string'
+            || !/^[a-f0-9]{64}$/.test(revision || '') || (!general && typeof recipientKey !== 'string')
             || !/^[a-f0-9-]{36}$/i.test(requestId || '')) {
-            throw new AppError('Confirm one saved recipient as signed-in staff.', 400);
+            throw new AppError('Confirm one email recipient as signed-in staff.', 400);
         }
         if (!workerEnabled) throw new AppError('Client email delivery is not enabled on this server.', 409);
         const artifact = resolveArtifact();
@@ -147,13 +147,14 @@ function createCampaignService({ db, resolveArtifact, readRecipients, renderMess
         }
         const id = campaignId(eventId, revision);
         const ref = refFor(id);
-        // The saved row supplies identity/personalization; an optional address applies to this send only.
-        const recipient = (await snapshotRecipients(id)).find(row => row.key === recipientKey);
-        if (!recipient) throw new AppError('Select a recipient from the saved campaign.', 404);
-        const targetEmail = recipientEmail === undefined ? recipient.email
+        // Personalized resends resolve the saved row. General sends require only one validated address.
+        const recipient = general ? null : (await snapshotRecipients(id)).find(row => row.key === recipientKey);
+        if (!general && !recipient) throw new AppError('Select a recipient from the saved campaign.', 404);
+        const targetEmail = !general && recipientEmail === undefined ? recipient.email
             : typeof recipientEmail === 'string' ? recipientEmail.trim() : '';
         if (!isSingleRecipientEmail(targetEmail)) throw new AppError('Enter one valid email address.', 400);
         const recipientEmailHash = hash(targetEmail.toLowerCase());
+        if (general) recipientKey = `general:${recipientEmailHash}`;
         const attemptRef = ref.collection('resends').doc(requestId);
         const lockRef = ref.collection('resends').doc(`recipient_${hash(recipientKey)}`);
         const resultView = data => ({ eventId, revision, recipientKey, requestId, recipientEmail: targetEmail,
@@ -162,15 +163,22 @@ function createCampaignService({ db, resolveArtifact, readRecipients, renderMess
             const campaign = (await transaction.get(ref)).data();
             const existing = (await transaction.get(attemptRef)).data();
             const lock = (await transaction.get(lockRef)).data();
+            const pointer = general ? (await transaction.get(refFor(eventId))).data() : null;
+            const otherCampaign = pointer?.latestCampaignId && pointer.latestCampaignId !== id
+                ? (await transaction.get(refFor(pointer.latestCampaignId))).data() : null;
             if (existing) {
                 if (existing.recipientKey !== recipientKey) throw new AppError('This resend request belongs to another recipient.', 409);
-                if ((existing.recipientEmailHash || hash(recipient.email.toLowerCase())) !== recipientEmailHash) {
+                if ((existing.recipientEmailHash || (recipient ? hash(recipient.email.toLowerCase()) : null)) !== recipientEmailHash) {
                     throw new AppError('This resend request belongs to a different email address. Check its delivery before starting another resend.', 409);
                 }
                 return { existing };
             }
-            if (!campaign?.total || campaign.cursor !== campaign.total || campaign.inFlight || campaign.runnable
-                || !['completed', 'completed_with_issues'].includes(campaign.status)) {
+            const campaignReady = general
+                ? ['tested', 'completed', 'completed_with_issues'].includes(campaign?.status)
+                    && !(otherCampaign?.total > (otherCampaign?.cursor || 0))
+                : campaign?.total > 0 && campaign.cursor === campaign.total
+                    && ['completed', 'completed_with_issues'].includes(campaign.status);
+            if (!campaignReady || campaign.inFlight || campaign.runnable) {
                 throw new AppError('Wait for the saved campaign to finish before resending individually.', 409);
             }
             if (campaign.dummyTest?.revision !== revision || campaign.dummyTest.approvedForBulk !== true) {
@@ -179,8 +187,9 @@ function createCampaignService({ db, resolveArtifact, readRecipients, renderMess
             if (lock?.leaseUntil > now()) {
                 throw new AppError('A resend was recently started for this recipient. Check delivery and wait three minutes before another resend.', 409);
             }
-            const attempt = { recipientKey, requestId, registrantId: recipient.registrantId, name: recipient.name,
-                email: recipient.email, recipientEmailHash, status: 'sending', actorUid: actor.uid, startedAt: now(),
+            const attempt = { recipientKey, requestId,
+                ...(general ? { kind: 'general' } : { registrantId: recipient.registrantId, name: recipient.name, email: recipient.email }),
+                recipientEmailHash, status: 'sending', actorUid: actor.uid, startedAt: now(),
                 attachment: { filename: artifact.attachment.filename, sha256: artifact.sha256 } };
             transaction.set(attemptRef, attempt);
             transaction.set(lockRef, { recipientKey, requestId, leaseUntil: now() + LEASE_MS });
@@ -191,7 +200,7 @@ function createCampaignService({ db, resolveArtifact, readRecipients, renderMess
         let outcome = 'uncertain';
         try {
             const result = await sendMail({ from: '"APCS Music" <hello@apcsmusic.com>', to: targetEmail,
-                ...renderMessage(recipient.name), attachments: [artifact.attachment],
+                ...renderMessage(general ? undefined : recipient.name), attachments: [artifact.attachment],
                 messageId: `<apcs-group-resend-${id}-${requestId}@apcsmusic.com>` });
             if (result?.accepted?.some(email => String(email).toLowerCase() === targetEmail.toLowerCase())
                 && !result.rejected?.length) outcome = 'accepted';
@@ -203,6 +212,9 @@ function createCampaignService({ db, resolveArtifact, readRecipients, renderMess
         });
         return resultView({ status: outcome });
     }
+
+    const resend = (input, actor) => sendSingle(input, actor);
+    const sendToAddress = (input, actor) => sendSingle(input, actor, true);
 
     async function processOne(id) {
         if (!workerEnabled) return { idle: true };
@@ -287,7 +299,7 @@ function createCampaignService({ db, resolveArtifact, readRecipients, renderMess
             }
         }
     }
-    return { status, latest, snapshotRecipients, recordDummy, start, resend, processOne, processDue, workerEnabled };
+    return { status, latest, snapshotRecipients, recordDummy, start, resend, sendToAddress, processOne, processDue, workerEnabled };
 }
 
 module.exports = { createCampaignService, recipientsHash, campaignId, hash, LEASE_MS };

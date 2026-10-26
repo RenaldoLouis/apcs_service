@@ -193,7 +193,27 @@ test('template preserves exact requested text and APCS branding while escaping p
 
 test('route requires existing staff authorization for every operation', () => {
     const route = fs.readFileSync(path.join(__dirname, '../src/routes/PaymentRoute.js'), 'utf8');
+    assert.match(route, /'resend', 'sendToAddress'/);
     assert.match(route, /router.post\(`\/group-announcement-emails\/\$\{operation\}`, requireTicketingAdmin, GroupAnnouncementEmailController\[operation\]\)/);
+});
+
+test('general preview and service send use Hello while personalized dummy and bulk content stay unchanged', async () => {
+    const f = approvedFixture();
+    const preview = await f.service.preview({ eventId: 'APCS2026' });
+    assert.equal(preview.sendToAddressEnabled, true);
+    assert.match(preview.generalMessage.text, /^Hello,\n\n/);
+    assert.match(preview.generalMessage.html, /<p>Hello,<\/p>/);
+    assert.match(preview.message.text, /^Dear Alex Example,/);
+    await f.service.test({ eventId: 'APCS2026' }, { uid: 'staff' });
+    const result = await f.service.sendToAddress({ eventId: 'APCS2026', revision: preview.revision,
+        recipientEmail: 'guest@example.com', requestId: '12345678-1234-4123-8123-123456789abc', confirmed: true }, { uid: 'staff' });
+    assert.equal(result.accepted, true);
+    assert.equal(f.messages.length, 2);
+    assert.equal(f.messages[1].html, preview.generalMessage.html);
+    assert.equal(f.messages[1].text, preview.generalMessage.text);
+    assert.deepEqual(f.messages[1].attachments, f.messages[0].attachments);
+    const current = await f.service.status({ eventId: 'APCS2026', revision: preview.revision });
+    assert.equal(current.total, 0);
 });
 
 function approvedFixture() {

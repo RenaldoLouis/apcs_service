@@ -21,7 +21,7 @@ const { paymentValidation } = require('../utils/ValidationUtil');
 const { multipartUploadValidation, partUploadValidation, completeUploadValidation, abortUploadValidation } = require('../middlewares/ValidationMiddleware');
 const { requireTicketingAdmin } = require('../middlewares/TicketingAdminMiddleware');
 const GroupAnnouncementEmailController = require('../controllers/GroupAnnouncementEmailController');
-for (const operation of ['preview', 'test', 'send', 'status', 'resend']) {
+for (const operation of ['preview', 'test', 'send', 'status', 'resend', 'sendToAddress']) {
     router.post(`/group-announcement-emails/${operation}`, requireTicketingAdmin, GroupAnnouncementEmailController[operation]);
 }
 const RegistrantAttendanceController = require('../controllers/RegistrantAttendanceController');
@@ -30,6 +30,7 @@ router.post('/registrant-attendance/apply', requireTicketingAdmin, RegistrantAtt
 const VenueController = require('../controllers/VenueController');
 router.post('/venue-settings/:eventId/:venueId/metadata', requireTicketingAdmin, VenueController.updateMetadata);
 router.post('/venue-settings/:eventId/:venueId/layout', requireTicketingAdmin, VenueController.updateLayout);
+router.get('/venue-settings/:eventId/:venueId/seat-map', requireTicketingAdmin, VenueController.getSeatMap);
 
 router.post('/createPayment', paymentValidation, paymentController.createPayment)
 

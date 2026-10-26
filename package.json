@@ -5,8 +5,15 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "jest --forceExit --detectOpenHandles",
+    "test": "jest --forceExit --detectOpenHandles && npm run test:scripts",
+    "test:scripts": "node --test scripts/*.test.cjs",
     "reset-test-occupancy": "node reset_test_occupancy.js"
+  },
+  "jest": {
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "<rootDir>/scripts/"
+    ]
   },
   "keywords": [],
   "author": "",
