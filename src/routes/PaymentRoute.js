@@ -100,11 +100,14 @@ router.post('/public-ticket/webhook',         PublicTicketController.handlePubli
 router.post('/public-ticket/resend-email',    PublicTicketController.resendPublicTicketEmail);
 router.post('/public-ticket/admin/send-email-to-address', requireTicketingAdmin, PublicTicketController.sendPublicTicketEmailToAddress);
 router.post('/public-ticket/admin/update-buyer-contact', requireTicketingAdmin, PublicTicketController.updatePendingBuyerContact);
+router.post('/public-ticket/admin/import-orchestra', requireTicketingAdmin,
+    require('../controllers/OrchestraImportController').importPaidOrchestraBookings);
 router.post('/public-ticket/admin/release-booking', requireTicketingAdmin, PublicTicketController.releasePublicTicketBooking);
 router.post('/public-ticket/admin/mark-manual-paid', requireTicketingAdmin, PublicTicketController.markManualBookingPaid);
 router.post('/public-ticket/admin/reconcile-expired-payment', requireTicketingAdmin, PublicTicketController.reconcileExpiredPayment);
 router.post('/public-ticket/admin/resend-manual-instructions', requireTicketingAdmin, PublicTicketController.resendManualPaymentInstructions);
 router.post('/public-ticket/admin/assign-seats', requireTicketingAdmin, PublicTicketController.assignPaidBookingSeats);
+router.post('/public-ticket/admin/reassign-seats', requireTicketingAdmin, PublicTicketController.reassignPaidBookingSeats);
 router.post('/public-ticket/admin/seats/generate', requireTicketingAdmin, PublicTicketController.generateSeatLayout);
 router.post('/public-ticket/admin/seats/block', requireTicketingAdmin, PublicTicketController.setSeatBlock);
 

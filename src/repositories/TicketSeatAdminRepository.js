@@ -214,6 +214,148 @@ async function assignPaidBookingSeats({ bookingId, seatIds }, actor = {}) {
     });
 }
 
+/** Replace staff-assigned competition chairs without changing paid capacity or entitlements. */
+async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds }, actor = {}) {
+    const validIds = ids => Array.isArray(ids) && ids.length > 0 && ids.length <= 100
+        && ids.every(validKey) && new Set(ids).size === ids.length;
+    if (!validKey(bookingId) || !validIds(seatIds) || !validIds(expectedSeatIds)) {
+        throw fail('The booking, replacement seats and original seat selection are required.', 400);
+    }
+    if (!actor.uid || !actor.email) throw fail('Admin authentication is required.', 401);
+    const sameIds = (a, b) => a.length === b.length && a.every(id => b.includes(id));
+    const bookingRef = db.collection('publicBookings').doc(bookingId);
+    return db.runTransaction(async transaction => {
+        const bookingSnap = await transaction.get(bookingRef);
+        if (!bookingSnap.exists) throw fail('Booking no longer exists.', 404);
+        const booking = bookingSnap.data();
+        if (!isPaid(booking) || booking.seatingMode === 'free' || booking.isOrchestra || booking.isMasterclass
+            || booking.bookingType === 'public_orchestra') {
+            throw fail('Only paid numbered competition bookings can have their seats changed.');
+        }
+        if (!Array.isArray(booking.addOnIds || []) || (booking.addOnIds || [])
+            .some(id => ['seat_selection', 'seat_selection_performer'].includes(String(id).toLowerCase()))) {
+            throw fail('Seats cannot be edited for a booking with a seat-selection add-on.');
+        }
+        const currentSeatIds = booking.selectedSeatIds || [];
+        if (!validIds(currentSeatIds) || !sameIds(currentSeatIds, expectedSeatIds)) {
+            throw fail('The assigned seats changed. Close this dialog and refresh the booking before trying again.');
+        }
+        if (seatIds.length !== currentSeatIds.length) throw fail('Keep the same number of assigned seats. Use Assign Missing Seats for additional seats.');
+        if (!validKey(booking.eventId)) throw fail('Booking has no valid event reference.');
+        const eventSnap = await transaction.get(db.collection('events').doc(booking.eventId));
+        const event = eventSnap.data();
+        const venue = (event?.venues || []).find(item => item.id === booking.venue);
+        const sessionId = `${booking.date}_${booking.session}`;
+        if (!eventSnap.exists || !(venue?.sessions?.[booking.date] || []).includes(booking.session)
+            || [...(event.orchestraSessions || []), ...(event.masterclassSessions || [])]
+                .some(item => item.venue === booking.venue && item.date === booking.date && item.time === booking.session)) {
+            throw fail('This booking no longer matches a configured competition session.');
+        }
+        const ticketQuantities = {};
+        for (const ticket of booking.tickets || []) {
+            if (isMasterclassTicket(ticket)) continue;
+            const tier = String(ticket.id || '').toLowerCase();
+            const quantity = Number(ticket.quantity);
+            if (!['presto', 'allegro', 'lento'].includes(tier) || !Number.isSafeInteger(quantity) || quantity < 0) {
+                throw fail('This booking has invalid ticket quantities. Reconcile it before editing seats.');
+            }
+            ticketQuantities[tier] = (ticketQuantities[tier] || 0) + quantity;
+        }
+        const seats = db.collection(`seats${booking.eventId}`);
+        const allIds = [...new Set([...currentSeatIds, ...seatIds])];
+        const seatDocs = await transaction.getAll(...allIds.map(id => seats.doc(id)));
+        const docsById = new Map(seatDocs.map(record => [record.id, record]));
+        const keys = seatDocs.map(record => {
+            if (!record.exists) throw fail(`Seat ${record.id} no longer exists.`);
+            const seat = record.data();
+            if (seat.eventId !== booking.eventId || seat.venueId !== booking.venue || seat.sessionId !== sessionId
+                || !(venue.seatConfig || []).some(row => row.row === seat.row
+                    && String(row.areaType || '').toLowerCase() === String(seat.areaType || '').toLowerCase()
+                    && Number.isInteger(seat.number) && seat.number > 0 && seat.number <= Number(row.seatCount))) {
+                throw fail(`Seat ${seat.seatLabel || record.id} does not match this booking's session and venue layout.`);
+            }
+            return physicalSeatKey(booking.eventId, seat);
+        });
+        // Do not let another document ID masquerade as a replacement for the same chair.
+        if (new Set(keys).size !== keys.length) throw fail('Select each physical seat only once. Refresh the seat map.');
+        const ownerRefs = keys.map(ownershipRef);
+        const owners = await transaction.getAll(...ownerRefs);
+        const aliases = await Promise.all(seatDocs.map(record => {
+            const seat = record.data();
+            return transaction.get(seats.where('venueId', '==', seat.venueId).where('sessionId', '==', seat.sessionId)
+                .where('row', '==', seat.row).where('number', '==', seat.number));
+        }));
+        const countsFor = ids => ids.reduce((counts, id) => {
+            const tier = String(docsById.get(id).data().areaType || '').toLowerCase();
+            counts[tier] = (counts[tier] || 0) + 1;
+            return counts;
+        }, {});
+        const oldCounts = countsFor(currentSeatIds), newCounts = countsFor(seatIds);
+        if (Object.keys({ ...oldCounts, ...newCounts }).some(tier => oldCounts[tier] !== newCounts[tier]
+            || oldCounts[tier] > (ticketQuantities[tier] || 0))) {
+            throw fail('Keep the same number of assigned seats in each purchased tier.');
+        }
+        seatDocs.forEach((record, index) => {
+            const seat = record.data(), owner = owners[index].data();
+            const existing = currentSeatIds.includes(record.id);
+            if (existing ? (seat.status !== 'booked' || seat.bookingId !== bookingId
+                || (seat.lockedByBookingId && seat.lockedByBookingId !== bookingId))
+                : (seat.status !== 'available' || seat.bookingId || seat.lockedByBookingId)) {
+                throw fail(`Seat ${seat.seatLabel || record.id} is no longer ${existing ? 'booked by this booking' : 'available'}. Refresh the booking.`);
+            }
+            if (owners[index].exists && owner.active !== false
+                && (!existing || owner.bookingId !== bookingId || owner.status !== 'booked')) {
+                throw fail(`Physical seat ${seat.seatLabel || record.id} has conflicting ownership.`);
+            }
+            if (aliases[index].docs.some(alias => {
+                const data = alias.data();
+                return data.eventId !== booking.eventId || data.areaType !== seat.areaType
+                    || (data.bookingId && data.bookingId !== bookingId)
+                    || (data.lockedByBookingId && data.lockedByBookingId !== bookingId)
+                    || (existing ? (data.status !== 'available' && !(data.status === 'booked' && data.bookingId === bookingId))
+                        : (data.status !== 'available' || data.bookingId || data.lockedByBookingId));
+            })) throw fail(`Physical seat ${seat.seatLabel || record.id} has a conflicting seat record.`);
+        });
+        if (sameIds(currentSeatIds, seatIds)) return { bookingId, seatIds: currentSeatIds, changed: false };
+        if (aliases.reduce((sum, snapshot) => sum + snapshot.docs.length + 1, 1) > 450) {
+            throw fail('Too many seat records to change safely. Ask staff to reconcile duplicate seat records.');
+        }
+        const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+        const buyerName = booking.buyerName || booking.userName || '';
+        seatDocs.forEach((record, index) => {
+            if (currentSeatIds.includes(record.id) && seatIds.includes(record.id)) return;
+            const booked = seatIds.includes(record.id);
+            aliases[index].docs.forEach(alias => transaction.update(alias.ref, {
+                status: booked ? 'booked' : 'available',
+                bookingId: booked ? bookingId : admin.firestore.FieldValue.delete(),
+                assignedTo: booked ? { userName: buyerName, registrantName: buyerName, userEmail: booking.userEmail || '' }
+                    : admin.firestore.FieldValue.delete(),
+                lockedAt: admin.firestore.FieldValue.delete(), lockedByBookingId: admin.firestore.FieldValue.delete(),
+            }));
+            transaction.set(ownerRefs[index], {
+                eventId: booking.eventId, physicalSeatKey: keys[index], seatId: record.id,
+                ...(booked ? { bookingId } : {}), status: booked ? 'booked' : 'available', active: booked, updatedAt,
+            });
+        });
+        const oldKeys = currentSeatIds.map(id => keys[allIds.indexOf(id)]);
+        const newKeys = seatIds.map(id => keys[allIds.indexOf(id)]);
+        const labelsFor = ids => ids.map(id => {
+            const seat = docsById.get(id).data();
+            return seat.seatLabel || `${seat.row}${seat.number}`;
+        });
+        const seatLabels = labelsFor(seatIds);
+        transaction.update(bookingRef, {
+            selectedSeatIds: seatIds, performanceSeatLabels: seatLabels, seatsSelected: true,
+            physicalSeatKeys: [...newKeys, ...(booking.physicalSeatKeys || []).filter(key => !oldKeys.includes(key))],
+            seatChanges: [...(booking.seatChanges || []), {
+                previousSeatIds: currentSeatIds, seatIds, previousSeatLabels: labelsFor(currentSeatIds), seatLabels,
+                changedByUid: actor.uid, changedByEmail: actor.email, changedAt: new Date().toISOString(),
+            }],
+        });
+        return { bookingId, seatIds, seatLabels, changed: true };
+    });
+}
+
 /** Keep an unused competition chair out of sale, including tickets sold without seat selection. */
 async function setSeatBlock({ eventId, venueId, sessionId, seatId, action, reason, expectedRevision }, actor = {}) {
     if (![eventId, venueId, sessionId, seatId].every(validKey)
@@ -336,4 +478,4 @@ async function setSeatBlock({ eventId, venueId, sessionId, seatId, action, reaso
     });
 }
 
-module.exports = { generateSeatLayout, assignPaidBookingSeats, setSeatBlock };
+module.exports = { generateSeatLayout, assignPaidBookingSeats, reassignPaidBookingSeats, setSeatBlock };

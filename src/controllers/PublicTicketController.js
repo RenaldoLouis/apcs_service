@@ -382,6 +382,17 @@ async function assignPaidBookingSeats(req, res, next) {
     }
 }
 
+/** POST /api/v1/apcs/public-ticket/admin/reassign-seats */
+async function reassignPaidBookingSeats(req, res, next) {
+    try {
+        const { bookingId, seatIds, expectedSeatIds } = req.body || {};
+        const result = await TicketSeatAdminRepository.reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds }, req.ticketingAdmin);
+        return res.status(200).json(result);
+    } catch (err) {
+        return next(err);
+    }
+}
+
 /** POST /api/v1/apcs/public-ticket/admin/seats/generate */
 async function generateSeatLayout(req, res, next) {
     try {
@@ -419,6 +430,7 @@ module.exports = {
     markManualBookingPaid,
     resendManualPaymentInstructions,
     assignPaidBookingSeats,
+    reassignPaidBookingSeats,
     generateSeatLayout,
     setSeatBlock,
     reconcileExpiredPayment,
