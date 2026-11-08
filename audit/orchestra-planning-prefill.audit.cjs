@@ -90,7 +90,7 @@ test('PLANNING PREFILL: confirmed assignment and later purchases remain separate
     assert.equal(JSON.stringify([...f.records]), before);
 });
 
-test('PLANNING PREFILL: a suggested session cannot redeem orchestra tickets before staff save the assignment', async () => {
+test('PLANNING PREFILL: paid tickets redeem without assignment while a suggestion grants no session', async () => {
     const f = fixture({ extraRequire: name => name.endsWith('ErrorHandlerMiddleware')
         ? { AppError: class extends Error {} } : null });
     seedPlan(f); const bookingId = await purchase(f);
@@ -99,11 +99,13 @@ test('PLANNING PREFILL: a suggested session cannot redeem orchestra tickets befo
     const model = f.load('src/services/TicketRedemptionModel.js');
     const booking = { ...f.records.get(`publicBookings/${bookingId}`), id: bookingId };
     const event = f.records.get('events/APCS2026');
-    const suggested = model.allowancesFor(booking, event, group.plannedSession);
-    assert.match(suggested.find(item => item.channel === 'orchestra').blockedReason, /Awaiting orchestra assignment/);
+    const suggested = model.allowancesFor(booking, event, group.plannedSession, model.performerCountFor([booking]));
+    assert.equal(suggested.find(item => item.channel === 'orchestra').blockedReason, null);
+    assert.equal(suggested.find(item => item.channel === 'orchestra').session, null);
+    assert.equal(suggested.find(item => item.channel === 'performers').quantities.performers, 1);
     assert.equal(suggested.find(item => item.channel === 'performance').blockedReason, null);
     const assigned = await repo.assignGroup({ ...request, sessionId: group.plannedSession.sessionId }, actor);
-    const confirmed = model.allowancesFor(booking, f.records.get('events/APCS2026'), assigned.assignment);
+    const confirmed = model.allowancesFor(booking, f.records.get('events/APCS2026'), assigned.assignment, model.performerCountFor([booking]));
     assert.equal(confirmed.find(item => item.channel === 'orchestra').blockedReason, null);
     assert.equal(confirmed.find(item => item.channel === 'performers').quantities.performers, 1);
 });

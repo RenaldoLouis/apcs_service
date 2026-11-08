@@ -23,7 +23,16 @@ function ticketBuckets(booking) {
     return buckets;
 }
 
-function allowancesFor(booking, event, assignment) {
+// A paid winner snapshot, rather than an optional schedule assignment, grants
+// the shared allowance. Never sum it across repeat purchases.
+const performerCountFor = bookings => Math.max(0, ...bookings.filter(booking =>
+    isPaid(booking) && booking.ticketingVersion === 2 && booking.bookingType === 'winner' &&
+    count(booking.orchestraAttendanceTickets) && booking.orchestraAttendanceTickets > 0 &&
+    count(booking.performerCount)).map(booking => booking.performerCount));
+const matchesClaimSession = (allowance, previousKey) => previousKey === allowance.sessionKey ||
+    (allowance.sessionOptional === true && previousKey === '');
+
+function allowancesFor(booking, event, assignment, performerCount = 0) {
     const main = { venue: booking.venue, venueName: booking.venueName ||
         (event.venues || []).find(venue => venue.id === booking.venue)?.label || booking.venue,
     date: booking.date, time: booking.session };
@@ -52,10 +61,10 @@ function allowancesFor(booking, event, assignment) {
         const session = covered ? (event.orchestraSessions || []).find(item => item.id === assignment.sessionId &&
             sessionKey(item) === sessionKey(assignment)) : null;
         const resolved = session ? { ...session, venueName: assignment.venueName || main.venueName } : null;
-        const reason = !covered || !resolved ? 'Awaiting orchestra assignment. Save this booking in Orchestra Assignments first.' : null;
-        allowances.push(make('orchestra', { orchestra: booking.orchestraAttendanceTickets }, resolved, reason));
-        if (covered && count(assignment.performerCount) && assignment.performerCount > 0) {
-            allowances.push(make('performers', { performers: assignment.performerCount }, resolved, reason));
+        const optional = (channel, quantities) => ({ ...make(channel, quantities, resolved), sessionOptional: true });
+        allowances.push(optional('orchestra', { orchestra: booking.orchestraAttendanceTickets }));
+        if (booking.registrantId && count(performerCount) && performerCount > 0) {
+            allowances.push(optional('performers', { performers: performerCount }));
         }
     } else if (!directOrchestra && booking.ticketingVersion !== 2 && Number(booking.complimentaryTickets || 0) > 0) {
         if (!count(booking.complimentaryTickets)) throw fail('The historical orchestra entitlement needs reconciliation.');
@@ -70,7 +79,7 @@ function withState(allowance, state) {
     const redeemed = state?.redeemed || {};
     let blockedReason = allowance.blockedReason;
     if (Object.entries(redeemed).some(([tier, quantity]) => !count(quantity) || quantity > (allowance.quantities[tier] || 0)) ||
-        (state && (!count(state.revision) || (total(redeemed) > 0 && state.sessionKey !== allowance.sessionKey)))) {
+        (state && (!count(state.revision) || (total(redeemed) > 0 && !matchesClaimSession(allowance, state.sessionKey))))) {
         blockedReason = 'The saved redemption and entitlement differ. Please review the claim history before continuing.';
     }
     return { ...allowance, redeemed, revision: state?.revision || 0, blockedReason,
@@ -78,4 +87,4 @@ function withState(allowance, state) {
             [tier, Math.max(0, quantity - (redeemed[tier] || 0))])) };
 }
 
-module.exports = { fail, isPaid, validateKey, redemptionId, sessionKey, count, total, ticketBuckets, allowancesFor, withState };
+module.exports = { fail, isPaid, validateKey, redemptionId, sessionKey, count, total, ticketBuckets, performerCountFor, matchesClaimSession, allowancesFor, withState };

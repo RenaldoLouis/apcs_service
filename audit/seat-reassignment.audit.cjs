@@ -12,8 +12,10 @@ vm.runInNewContext(source + '\nmodule.exports = fixture;', context, { filename: 
 const actor = { uid: 'staff', email: 'staff@example.invalid' };
 const plain = value => JSON.parse(JSON.stringify(value));
 function fixture(options) {
-    const f = context.module.exports({ ...options, extraRequire: (name, load) =>
-        name.endsWith('/PublicTicketRepository') ? load('src/repositories/PublicTicketRepository.js') : undefined });
+    const f = context.module.exports({ ...options, extraRequire: (name, load) => {
+        if (name.endsWith('/PublicTicketRepository')) return load('src/repositories/PublicTicketRepository.js');
+        if (name.endsWith('/TicketRedemptionModel')) return load('src/services/TicketRedemptionModel.js');
+    } });
     const repo = f.load('src/repositories/TicketSeatAdminRepository.js');
     f.seat('old', { status: 'booked', bookingId: 'paid', assignedTo: { userName: 'Buyer' } });
     f.seat('new', { number: 2, seatLabel: 'A2' });
@@ -30,7 +32,7 @@ function fixture(options) {
     const ownerKey = id => 'ticketSeatOwnership/' + f.repo.safeDocumentId(
         f.repo.physicalSeatKey('APCS2026', f.records.get(`seatsAPCS2026/${id}`)));
     f.seed(ownerKey('old'), { bookingId: 'paid', status: 'booked', active: true });
-    return { ...f, ownerKey, booking: () => f.records.get('publicBookings/paid'),
+    return { ...f, adminSeats: repo, ownerKey, booking: () => f.records.get('publicBookings/paid'),
         change: (overrides = {}, staff = actor) => repo.reassignPaidBookingSeats({
             bookingId: 'paid', seatIds: ['new'], expectedSeatIds: ['old'], ...overrides,
         }, staff) };
@@ -212,4 +214,59 @@ test('transaction revalidation catches a paid-state change just before the trans
     await assert.rejects(f.change(), /Only paid numbered competition/);
     assert.equal(f.records.get('seatsAPCS2026/old').status, 'booked');
     assert.equal(f.records.get('seatsAPCS2026/new').status, 'available');
+});
+
+test('FLOW: Assign Missing Seats still appends correctly after an edit and the booking remains editable', async () => {
+    const f = fixture();
+    await f.change();
+    await f.adminSeats.assignPaidBookingSeats({ bookingId: 'paid', seatIds: ['old'] }, actor);
+    assert.deepEqual(plain(f.booking().selectedSeatIds), ['new', 'old']);
+    assert.deepEqual(plain(f.booking().performanceSeatLabels), ['A2', 'A1']);
+    assert.equal(f.booking().seatAssignments.length, 2);
+    assert.equal(f.booking().seatChanges.length, 1);
+    assert.equal(f.records.get('ticketCapacity/capacity').reservedByTier.presto, 2);
+    f.seat('next', { number: 3, seatLabel: 'A3' });
+    await f.change({ expectedSeatIds: ['new', 'old'], seatIds: ['next', 'old'] });
+    assert.deepEqual(plain(f.booking().performanceSeatLabels), ['A3', 'A1']);
+    assert.equal(f.booking().seatChanges.length, 2);
+});
+
+test('FLOW: checkout can claim a released chair but cannot claim its booked replacement', async () => {
+    const f = fixture(); await f.change();
+    const rejected = await f.book({ selectedSeatIds: ['new'], addOnIds: ['seat_selection_performer'] });
+    assert.match(rejected.error.message, /no longer available/);
+    const created = await f.book({ selectedSeatIds: ['old'], addOnIds: ['seat_selection_performer'] });
+    assert.ifError(created.error);
+    assert.equal(f.records.get('seatsAPCS2026/old').lockedByBookingId, created.result.bookingId);
+    assert.equal(f.records.get(f.ownerKey('old')).bookingId, created.result.bookingId);
+    assert.equal(f.records.get('seatsAPCS2026/new').bookingId, 'paid');
+    assert.deepEqual(plain(f.booking().selectedSeatIds), ['new']);
+});
+
+test('FLOW: duplicate paid callback cannot restore the original chairs or mutate the edited booking', async () => {
+    const f = fixture(); f.booking().invoiceId = 'invoice-paid';
+    await f.change();
+    const before = plain([...f.records]);
+    const paid = await f.repo.handlePublicTicketWebhookPaid('paid', { invoice: { id: 'invoice-paid', total_amount: 300000 } });
+    assert.equal(paid.alreadyPaid, true);
+    assert.deepEqual(plain(paid.selectedSeatIds), ['new']);
+    assert.deepEqual(plain([...f.records]), before);
+});
+
+test('FLOW: redemption keeps the same entitlement and handed-over counts while displaying the new chairs', async () => {
+    const f = fixture();
+    const model = f.load('src/services/TicketRedemptionModel.js');
+    const redemption = f.load('src/repositories/TicketRedemptionRepository.js');
+    const input = { eventId: 'APCS2026', bookingId: 'paid' };
+    const initial = await redemption.detail(input);
+    f.seed('ticketRedemptions/' + model.redemptionId(input.eventId, input.bookingId, 'performance'), {
+        revision: 1, redeemed: { presto: 1 }, sessionKey: initial.allowances[0].sessionKey,
+    });
+    const before = await redemption.detail(input);
+    await f.change();
+    const after = await redemption.detail(input);
+    assert.deepEqual(plain(after.allowances), plain(before.allowances));
+    assert.equal(after.allowances[0].remaining.presto, 1);
+    assert.deepEqual(plain(after.booking.performanceSeatLabels), ['A2']);
+    assert.deepEqual(plain(before.booking.performanceSeatLabels), ['A1']);
 });

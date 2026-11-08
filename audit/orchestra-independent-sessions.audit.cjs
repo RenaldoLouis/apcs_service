@@ -106,7 +106,9 @@ test('INDEPENDENT ORCHESTRA: paid winner assignment, prefill, ticket and shared 
     const group = (await repo.listGroups({ eventId: 'APCS2026' })).groups[0];
     assert.equal(group.plannedSession.sessionId, saved.id);
     const pending = (await f.load('src/repositories/TicketRedemptionRepository.js').detail({ eventId: 'APCS2026', bookingId })).allowances;
-    assert.match(pending.find(item => item.channel === 'orchestra').blockedReason, /Awaiting orchestra assignment/);
+    assert.equal(pending.find(item => item.channel === 'orchestra').blockedReason, null);
+    assert.equal(pending.find(item => item.channel === 'orchestra').session, null);
+    assert.equal(pending.find(item => item.channel === 'performers').quantities.performers, 1);
     const assigned = await repo.assignGroup({ eventId: 'APCS2026', registrantId: 'winner', sessionId: saved.id }, actor);
     assert.equal(assigned.assignment.quantity, 3);
     assert.equal((await repo.assignGroup({ eventId: 'APCS2026', registrantId: 'winner', sessionId: saved.id }, actor)).assignment.revision, assigned.assignment.revision);

@@ -27,7 +27,13 @@ async function contextFor({ eventId, bookingId }, transaction) {
     const assignmentSnap = booking.registrantId
         ? await read(db.collection('orchestraAssignments').doc(assignmentId(eventId, booking.registrantId))) : null;
     const assignment = assignmentSnap?.exists ? assignmentSnap.data() : null;
-    const allowances = model.allowancesFor(booking, eventSnap.data(), assignment);
+    // Scope the shared performer source to this event/registration. Transaction
+    // reads serialize a handover with concurrent payment/entitlement changes.
+    const groupSnap = booking.registrantId && booking.ticketingVersion === 2 && booking.orchestraAttendanceTickets > 0
+        ? await read(db.collection('publicBookings').where('eventId', '==', eventId)
+            .where('registrantId', '==', booking.registrantId)) : null;
+    const performerCount = model.performerCountFor((groupSnap?.docs || []).map(doc => doc.data()));
+    const allowances = model.allowancesFor(booking, eventSnap.data(), assignment, performerCount);
     return { booking, assignment, allowances };
 }
 
@@ -120,7 +126,7 @@ async function claim(input, actor) {
                 if (previousClaim.data().undoneBy) throw model.fail('This claim has been undone. Refresh and review the correction before handing over tickets.');
                 const current = model.withState(allowance, stateSnap.exists ? stateSnap.data() : null);
                 if (current.blockedReason) throw model.fail(current.blockedReason);
-                if (current.sessionKey !== model.sessionKey(previousClaim.data().session)) throw model.fail('The original claim session changed. Review its history before handing over tickets.');
+                if (!model.matchesClaimSession(allowance, model.sessionKey(previousClaim.data().session))) throw model.fail('The original claim session changed. Review its history before handing over tickets.');
             }
             return { ...requestSnap.data().result, replayed: true };
         }
@@ -130,15 +136,6 @@ async function claim(input, actor) {
         if (action === 'redeem' && current.blockedReason) throw model.fail(current.blockedReason);
         if (!model.isPaid(context.booking)) throw model.fail('Payment is not confirmed.');
         if (action === 'redeem' && current.sessionKey !== sessionKey) throw model.fail('The assigned session changed. Refresh before handing over tickets.');
-        if (channel === 'performers') {
-            // Check the paid winner behind the assignment; an assignment by itself is not admission.
-            const snapshots = await Promise.all((context.assignment.bookingIds || []).map(id => transaction.get(db.collection('publicBookings').doc(id))));
-            if (!snapshots.some(snap => snap.exists && model.isPaid(snap.data()) && snap.data().eventId === eventId &&
-                snap.data().registrantId === context.booking.registrantId && snap.data().bookingType === 'winner' &&
-                snap.data().ticketingVersion === 2 && Number(snap.data().performerCount || 0) >= allowance.quantities.performers)) {
-                throw model.fail('The paid winner entitlement for performer places needs review.');
-            }
-        }
         let amounts = quantities, targetRef, target;
         if (action === 'undo') {
             targetRef = db.collection(`ticketRedemptions/${allowance.id}/claims`).doc(targetClaimId);

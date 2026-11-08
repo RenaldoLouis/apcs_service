@@ -184,12 +184,19 @@ test('REDEMPTION: pending, failed, expired, wrong event and archived bookings ca
     await assert.rejects(f.repo.detail(input), /not found/);
 });
 
-test('REDEMPTION: missing, uncovered and stale orchestra assignments block handover', async () => {
+test('REDEMPTION: missing, uncovered and stale orchestra assignments allow paid handover', async () => {
     for (const edit of [f => f.records.delete('orchestraAssignments/APCS2026%7Cwinner'),
         f => { f.records.get('orchestraAssignments/APCS2026%7Cwinner').bookingIds = []; },
         f => { f.records.get('orchestraAssignments/APCS2026%7Cwinner').time = 'wrong'; }]) {
         const f = setup(); edit(f);
-        await assert.rejects(f.repo.claim(await f.request('orchestra', { orchestra: 1 }), actor), /Awaiting orchestra/);
+        const before = businessState(f);
+        assert.equal((await f.allowance('orchestra')).session, null);
+        assert.equal((await f.allowance('orchestra')).sessionOptional, true);
+        await f.repo.claim(await f.request('orchestra', { orchestra: 1 }), actor);
+        await f.repo.claim(await f.request('performers', { performers: 1 }), actor);
+        assert.deepEqual(businessState(f), before);
+        assert.equal((await f.allowance('orchestra')).remaining.orchestra, 4);
+        assert.equal((await f.allowance('performers')).remaining.performers, 2);
         await f.repo.claim(await f.request('performance', { presto: 1 }), actor);
     }
 });
@@ -282,4 +289,83 @@ test('REDEMPTION: every API route uses admin middleware; fallback rules cannot a
     const rules = fs.readFileSync(path.join(__dirname, '../../apcs_web/firestore.rules'), 'utf8');
     assert.match(rules, /match \/ticketRedemptions\/\{document=\*\*\}[^}]*allow write: if false/);
     assert.ok(rules.includes("collection != 'ticketRedemptions'"));
+});
+
+
+test('REDEMPTION: without any configured orchestra sessions, shared places remain once per paid winner group', async () => {
+    const f = setup();
+    f.records.delete('orchestraAssignments/APCS2026%7Cwinner');
+    f.records.get('events/APCS2026').orchestraSessions = [];
+    f.seed('publicBookings/order-2', { ...f.records.get('publicBookings/order-1'), bookingType: 'public_competition', performerCount: 0 });
+    await f.repo.claim(await f.request('performers', { performers: 2 }), actor);
+    assert.equal((await f.allowance('performers', 'order-2')).remaining.performers, 1);
+    await f.repo.claim(await f.request('performers', { performers: 1 }, { bookingId: 'order-2' }), actor);
+    await assert.rejects(f.repo.claim(await f.request('performers', { performers: 1 }), actor), /exceeds/);
+    await f.repo.claim(await f.request('orchestra', { orchestra: 5 }), actor);
+    await assert.rejects(f.repo.claim(await f.request('orchestra', { orchestra: 1 }), actor), /exceeds/);
+});
+
+test('REDEMPTION: first assignment preserves sessionless claims, replay and corrections', async () => {
+    const f = setup();
+    f.records.delete('orchestraAssignments/APCS2026%7Cwinner');
+    f.records.get('events/APCS2026').orchestraSessions[0].freeSeatingAssigned = 0;
+    const request = await f.request('orchestra', { orchestra: 2 });
+    const original = await f.repo.claim(request, actor);
+    await f.repo.claim(await f.request('performers', { performers: 1 }), actor);
+    const before = JSON.stringify([...f.records].filter(([key]) => key.startsWith('ticketRedemptions/')));
+    const orchestra = f.load('src/repositories/OrchestraAssignmentRepository.js');
+    await orchestra.assignGroup({ eventId: input.eventId, registrantId: 'winner', sessionId: 'orch' }, actor);
+    assert.equal(JSON.stringify([...f.records].filter(([key]) => key.startsWith('ticketRedemptions/'))), before);
+    assert.equal((await f.allowance('orchestra')).remaining.orchestra, 3);
+    assert.equal((await f.allowance('performers')).remaining.performers, 2);
+    assert.equal((await f.repo.claim(request, actor)).replayed, true);
+    await f.repo.claim(await f.request('orchestra', { orchestra: 1 }), actor);
+    assert.equal((await f.repo.claim(request, actor)).replayed, true);
+    await f.repo.claim(await f.request('orchestra', null, { action: 'undo', targetClaimId: original.claimId, reason: 'Correct original handover' }), actor);
+    assert.equal((await f.allowance('orchestra')).remaining.orchestra, 4);
+    assert.equal((await f.allowance('orchestra')).history.find(item => item.id === original.claimId).session, null);
+    await assert.rejects(f.repo.claim(request, actor), /undone/);
+    f.records.get('events/APCS2026').orchestraSessions.push({ id: 'orch2', venue: 'V1', date: '2026-11-02', time: '18:00-19:00' });
+    await assert.rejects(orchestra.assignGroup({ eventId: input.eventId, registrantId: 'winner', sessionId: 'orch2' }, actor), /already been redeemed/);
+});
+
+test('REDEMPTION: public-only, unpaid winner and foreign winner cannot grant shared places via an assignment', async () => {
+    for (const edit of [booking => { booking.bookingType = 'public_competition'; },
+        booking => { booking.paymentStatus = 'pending'; }, booking => { booking.eventId = 'other'; }]) {
+        const f = setup();
+        f.seed('publicBookings/public-order', { ...f.records.get('publicBookings/order-1'), bookingType: 'public_competition', performerCount: 0 });
+        edit(f.records.get('publicBookings/order-1'));
+        assert.equal(await f.allowance('performers', 'public-order'), undefined);
+        await assert.rejects(f.repo.claim({ ...input, bookingId: 'public-order', channel: 'performers', requestId: 'forged',
+            expectedRevision: 0, sessionKey: '', quantities: { performers: 1 } }, actor), /no entitlement/);
+    }
+});
+
+test('REDEMPTION: unpaid optional allowances, direct and historical missing sessions remain protected', async () => {
+    for (const paymentStatus of ['pending', 'failed', 'expired']) {
+        const f = setup();
+        f.records.delete('orchestraAssignments/APCS2026%7Cwinner');
+        f.seed('publicBookings/paid-winner', { ...f.records.get('publicBookings/order-1') });
+        f.records.get('publicBookings/order-1').paymentStatus = paymentStatus;
+        for (const channel of ['orchestra', 'performers']) {
+            await assert.rejects(f.repo.claim(await f.request(channel, { [channel]: 1 }), actor), /Payment/);
+        }
+    }
+    for (const changes of [{ bookingType: 'public_orchestra', isOrchestra: true, session: 'unknown' },
+        { ticketingVersion: 1, complimentaryTickets: 2, orchestraSessionId: 'unknown' }]) {
+        const f = setup(); Object.assign(f.records.get('publicBookings/order-1'), changes);
+        const allowance = await f.allowance('orchestra');
+        await assert.rejects(f.repo.claim(await f.request('orchestra', { [Object.keys(allowance.quantities)[0]]: 1 }), actor), /review/);
+    }
+});
+
+test('REDEMPTION: assignment changes reject stale new submissions without resetting counts', async () => {
+    const f = setup();
+    f.records.delete('orchestraAssignments/APCS2026%7Cwinner');
+    const stale = await f.request('orchestra', { orchestra: 1 });
+    await f.load('src/repositories/OrchestraAssignmentRepository.js').assignGroup({ eventId: input.eventId, registrantId: 'winner', sessionId: 'orch' }, actor);
+    await assert.rejects(f.repo.claim(stale, actor), /session changed/);
+    await f.repo.claim(await f.request('orchestra', { orchestra: 1 }), actor);
+    f.records.get('orchestraAssignments/APCS2026%7Cwinner').time = 'changed';
+    assert.match((await f.allowance('orchestra')).blockedReason, /differ/);
 });
