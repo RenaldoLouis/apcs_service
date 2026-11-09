@@ -82,8 +82,8 @@ test('staff change releases old chairs and aliases, books replacements, and pres
 });
 
 for (const addOn of ['seat_selection_performer', 'seat_selection']) {
-    test(`seat-selection add-on ${addOn} is rejected even in a direct API request`, async () => {
-        const f = fixture(); f.booking().addOnIds = [addOn];
+    test(`buyer-selected chair with ${addOn} is rejected even in a direct API request`, async () => {
+        const f = fixture(); f.booking().addOnIds = [addOn]; f.booking().seatAssignments = [];
         await rejectsWithoutWrites(f, /seat-selection add-on/);
     });
 }
@@ -269,4 +269,250 @@ test('FLOW: redemption keeps the same entitlement and handed-over counts while d
     assert.equal(after.allowances[0].remaining.presto, 1);
     assert.deepEqual(plain(after.booking.performanceSeatLabels), ['A2']);
     assert.deepEqual(plain(before.booking.performanceSeatLabels), ['A1']);
+});
+
+function upgradeFixture(options) {
+    const f = fixture(options);
+    f.seat('old', { areaType: 'lento', row: 'B', status: 'booked', bookingId: 'paid', seatLabel: 'B1' });
+    f.booking().tickets = [{ id: 'lento', name: 'Lento', quantity: 2, priceEach: 75000 }];
+    f.booking().totalAmount = 150000;
+    f.booking().performanceSeatLabels = ['B1'];
+    f.booking().physicalSeatKeys = [f.repo.physicalSeatKey('APCS2026', f.records.get('seatsAPCS2026/old'))];
+    f.seed(f.ownerKey('old'), { bookingId: 'paid', status: 'booked', active: true });
+    const capacityId = f.repo.capacityDocumentId('APCS2026', 'V1', '2026-11-01', '09:00-10:00');
+    f.seed('ticketCapacity/' + capacityId, { reservedByTier: { lento: 2, presto: 0 }, blockedByTier: {} });
+    f.booking().capacityReservation = { capacityId, byTier: { lento: 2 } };
+    f.upgrade = (patch = {}, staff = actor) => f.adminSeats.upgradePaidBookingSeat({ bookingId: 'paid',
+        fromSeatId: 'old', toSeatId: 'new', expectedSeatIds: ['old'], expectedDifference: 75000, expectedRevision: 0, expectedBalance: 0, ...patch }, staff);
+    f.capacity = () => f.records.get('ticketCapacity/' + capacityId);
+    f.capacityId = capacityId;
+    f.resolve = (patch = {}) => f.adminSeats.resolveSeatUpgradePayment({ bookingId: 'paid', expectedRevision: 1,
+        expectedBalance: 75000, ...patch }, actor);
+    return f;
+}
+async function upgradeRejects(f, pattern, patch = {}) {
+    const before = plain([...f.records]);
+    await assert.rejects(f.upgrade(patch), pattern);
+    assert.deepEqual(plain([...f.records]), before);
+}
+test('UPGRADE: moves one ticket and capacity, records original price and outstanding balance, preserves original payment and other entitlements', async () => {
+    const f = upgradeFixture(), original = plain(f.booking());
+    const result = await f.upgrade();
+    assert.equal(result.difference, 75000);
+    assert.equal(f.booking().seatUpgradeBalance, 75000);
+    assert.equal(f.booking().seatUpgrades[0].status, 'pending');
+    assert.deepEqual(plain(f.booking().tickets), [
+        { id: 'lento', name: 'Lento', quantity: 1, priceEach: 75000 },
+        { id: 'presto', name: 'Presto', quantity: 1, priceEach: 150000 },
+    ]);
+    assert.deepEqual(plain(f.capacity().reservedByTier), { lento: 1, presto: 1 });
+    assert.deepEqual(plain(f.booking().capacityReservation.byTier), { lento: 1, presto: 1 });
+    for (const key of ['totalAmount', 'paymentStatus', 'orchestraAttendanceTickets', 'emailSent']) assert.deepEqual(f.booking()[key], original[key]);
+    assert.equal(f.records.get('seatsAPCS2026/old').status, 'available');
+    assert.equal(f.records.get('seatsAPCS2026/new').bookingId, 'paid');
+    assert.equal(f.booking().seatPriceSnapshots.new, 150000);
+    assert.equal(f.invoices.length, 0);
+});
+test('UPGRADE: same-tier chair change has no extra payment even after event prices change', async () => {
+    const f = upgradeFixture();
+    f.seat('new', { row: 'B', areaType: 'lento', number: 2, seatLabel: 'B2' });
+    f.records.get('events/APCS2026').ticketTiers[1].venuePrices.V1 = 90000;
+    await f.upgrade({ expectedDifference: 0 });
+    assert.equal(f.booking().seatUpgradeBalance, 0);
+    assert.equal(f.booking().seatUpgrades[0].status, 'not_required');
+    assert.equal(f.booking().seatPriceSnapshots.new, 75000);
+    assert.deepEqual(plain(f.capacity().reservedByTier), { lento: 2, presto: 0 });
+});
+test('UPGRADE: outside payment resolution records staff and leaves original payment/provider state unchanged', async () => {
+    const f = upgradeFixture(); await f.upgrade(); await f.resolve();
+    assert.equal(f.booking().seatUpgradeBalance, 0);
+    assert.equal(f.booking().seatUpgradeRevision, 2);
+    assert.equal(f.booking().seatUpgrades[0].paidByEmail, actor.email);
+    assert.equal(f.booking().seatUpgrades[0].paymentMethod, 'outside_system');
+    assert.equal(f.booking().totalAmount, 150000);
+    assert.equal(f.booking().paymentStatus, 'PAID');
+    const before = plain([...f.records]);
+    await assert.rejects(f.resolve(), /changed/);
+    assert.deepEqual(plain([...f.records]), before);
+});
+test('UPGRADE: stale quotes/revisions and inconsistent balances never write', async () => {
+    let f = upgradeFixture(); await upgradeRejects(f, /price changed/, { expectedDifference: 1 });
+    f = upgradeFixture(); await upgradeRejects(f, /upgrade changed/, { expectedRevision: 1 });
+    f = upgradeFixture(); f.booking().seatUpgradeBalance = 100;
+    await upgradeRejects(f, /balance needs reconciliation/);
+});
+test('UPGRADE: an empty chair cannot bypass tickets awaiting seats or operational blocks', async () => {
+    let f = upgradeFixture(); f.capacity().reservedByTier.presto = 10;
+    await upgradeRejects(f, /remaining capacity/);
+    f = upgradeFixture(); f.capacity().reservedByTier.presto = 9;
+    f.seat('block', { number: 3, seatLabel: 'A3', status: 'blocked' });
+    f.capacity().blockedByTier = { presto: 1 };
+    await upgradeRejects(f, /remaining capacity/);
+});
+test('UPGRADE: redeemed source tier cannot be reduced below existing handovers', async () => {
+    const f = upgradeFixture();
+    const id = encodeURIComponent(JSON.stringify(['APCS2026', 'performance', 'paid']));
+    f.seed('ticketRedemptions/' + id, { revision: 1, redeemed: { lento: 2 } });
+    await upgradeRejects(f, /already redeemed/);
+});
+test('UPGRADE: malformed/missing capacity or original prices reject without releasing seats', async () => {
+    let f = upgradeFixture(); f.booking().tickets[0].priceEach = undefined;
+    await upgradeRejects(f, /original ticket price/);
+    f = upgradeFixture(); f.records.delete('ticketCapacity/' + f.capacityId);
+    await upgradeRejects(f, /capacity reservation/);
+    f = upgradeFixture(); f.booking().capacityReservation.byTier.lento = 3;
+    await upgradeRejects(f, /capacity reservation/);
+});
+test('MIXED: one paid seat-selection chair stays protected while the staff-assigned chair can change', async () => {
+    const f = upgradeFixture();
+    f.seat('buyer', { row: 'B', areaType: 'lento', number: 3, seatLabel: 'B3', status: 'booked', bookingId: 'paid' });
+    f.booking().selectedSeatIds = ['buyer', 'old']; f.booking().addOnIds = ['seat_selection_performer'];
+    const options = await f.adminSeats.getSeatChangeOptions({ bookingId: 'paid' }, actor);
+    assert.deepEqual(plain(options.seats.map(item => item.id)), ['old']);
+    await upgradeRejects(f, /buyer-selected/, { fromSeatId: 'buyer', expectedSeatIds: ['buyer', 'old'] });
+    await f.upgrade({ expectedSeatIds: ['buyer', 'old'] });
+    assert.deepEqual(plain(f.booking().selectedSeatIds), ['buyer', 'new']);
+    assert.equal(f.records.get('seatsAPCS2026/buyer').bookingId, 'paid');
+    await f.resolve();
+    const next = await f.adminSeats.getSeatChangeOptions({ bookingId: 'paid' }, actor);
+    assert.deepEqual(plain(next.seats.map(item => item.id)), ['new']);
+    assert.equal(next.seats[0].price, 150000);
+});
+test('MIXED: original buyer seats remain protected when historical staff provenance is absent', async () => {
+    const f = upgradeFixture(); f.booking().addOnIds = ['seat_selection_performer']; f.booking().seatAssignments = [];
+    await upgradeRejects(f, /buyer-selected/);
+});
+test('UPGRADE: current tier price changes invalidate the reviewed quote', async () => {
+    const f = upgradeFixture(); f.records.get('events/APCS2026').ticketTiers[0].venuePrices.V1 = 170000;
+    await upgradeRejects(f, /price changed/);
+});
+test('UPGRADE: all new routes require ticketing admin middleware', () => {
+    const route = fs.readFileSync(path.join(__dirname, '../src/routes/PaymentRoute.js'), 'utf8');
+    for (const endpoint of ['seat-change-options', 'upgrade-seat', 'resolve-seat-upgrade']) {
+        assert.ok(route.includes(`router.post('/public-ticket/admin/${endpoint}', requireTicketingAdmin,`));
+    }
+});
+
+test('UPGRADE: several seat upgrades accumulate and one outside payment confirmation resolves the reviewed total', async () => {
+    const f = upgradeFixture();
+    f.seat('second', { areaType: 'lento', row: 'B', number: 2, seatLabel: 'B2', status: 'booked', bookingId: 'paid' });
+    f.seat('target2', { number: 4, seatLabel: 'A4' });
+    f.booking().selectedSeatIds = ['old', 'second'];
+    f.booking().seatAssignments[0].seatIds.push('second');
+    await f.upgrade({ expectedSeatIds: ['old', 'second'] });
+    const options = await f.adminSeats.getSeatChangeOptions({ bookingId: 'paid' }, actor);
+    assert.equal(options.balance, 75000);
+    assert.equal(options.seats.find(item => item.id === 'second').price, 75000);
+    await f.upgrade({ fromSeatId: 'second', toSeatId: 'target2', expectedSeatIds: ['new', 'second'], expectedRevision: 1, expectedBalance: 75000 });
+    assert.equal(f.booking().seatUpgradeBalance, 150000);
+    assert.equal(f.booking().tickets.length, 1);
+    assert.equal(f.booking().tickets[0].quantity, 2);
+    await assert.rejects(f.resolve(), /changed/);
+    await f.resolve({ expectedRevision: 2, expectedBalance: 150000 });
+    assert.equal(f.booking().seatUpgradeBalance, 0);
+    assert.ok(f.booking().seatUpgrades.every(item => item.status === 'paid'));
+});
+test('UPGRADE: serialized competing upgrades to different chairs cannot oversell the last tier slot', async () => {
+    const f = upgradeFixture();
+    f.capacity().reservedByTier = { lento: 4, presto: 9 };
+    f.seat('other-old', { areaType: 'lento', row: 'B', number: 4, seatLabel: 'B4', status: 'booked', bookingId: 'other' });
+    f.seat('other-target', { number: 4, seatLabel: 'A4' });
+    f.seed('publicBookings/other', { ...plain(f.booking()), selectedSeatIds: ['other-old'], seatAssignments: [], physicalSeatKeys: [] });
+    f.seed(f.ownerKey('other-old'), { bookingId: 'other', status: 'booked', active: true });
+    const run = f.db.runTransaction.bind(f.db); let queue = Promise.resolve();
+    f.db.runTransaction = callback => { const next = queue.then(() => run(callback)); queue = next.catch(() => {}); return next; };
+    const results = await Promise.allSettled([f.upgrade(), f.upgrade({ bookingId: 'other', fromSeatId: 'other-old',
+        toSeatId: 'other-target', expectedSeatIds: ['other-old'] })]);
+    assert.equal(results.filter(item => item.status === 'fulfilled').length, 1);
+    assert.equal(f.capacity().reservedByTier.presto, 10);
+    assert.equal(f.records.get('seatsAPCS2026/other-old').bookingId, 'other');
+});
+test('UPGRADE: missing seats can still be assigned afterwards and retain their original source-tier price', async () => {
+    const f = upgradeFixture(); await f.upgrade();
+    f.seat('later', { areaType: 'lento', row: 'B', number: 2, seatLabel: 'B2' });
+    await f.adminSeats.assignPaidBookingSeats({ bookingId: 'paid', seatIds: ['later'] }, actor);
+    const options = await f.adminSeats.getSeatChangeOptions({ bookingId: 'paid' }, actor);
+    assert.equal(options.seats.find(item => item.id === 'later').price, 75000);
+    assert.equal(options.seats.find(item => item.id === 'new').price, 150000);
+});
+test('UPGRADE: duplicate original paid callbacks preserve upgraded tickets, outstanding balance and reserved tiers', async () => {
+    const f = upgradeFixture(); f.booking().invoiceId = 'invoice-paid';
+    await f.upgrade(); const before = plain([...f.records]);
+    const result = await f.repo.handlePublicTicketWebhookPaid('paid', { invoice: { id: 'invoice-paid', total_amount: 150000 } });
+    assert.equal(result.alreadyPaid, true);
+    assert.deepEqual(plain([...f.records]), before);
+});
+test('UPGRADE: stale original seat snapshots, lower tiers and foreign-owned destinations reject without writes', async () => {
+    let f = upgradeFixture(); await upgradeRejects(f, /Select one original chair/, { expectedSeatIds: ['changed'] });
+    f = upgradeFixture(); f.records.get('seatsAPCS2026/new').status = 'booked'; f.records.get('seatsAPCS2026/new').bookingId = 'other';
+    await upgradeRejects(f, /no longer available/);
+    f = upgradeFixture();
+    f.records.get('seatsAPCS2026/old').areaType = 'presto'; f.records.get('seatsAPCS2026/old').row = 'A';
+    f.records.get('seatsAPCS2026/new').areaType = 'lento'; f.records.get('seatsAPCS2026/new').row = 'B';
+    f.booking().tickets = [{ id: 'presto', quantity: 2, priceEach: 150000 }];
+    await upgradeRejects(f, /Downgrades/);
+});
+
+test('INTERNAL ONLY: options, chair upgrade and outside-payment resolution never send email or contact Paper.id', async () => {
+    const f = upgradeFixture({
+        getInvoice: () => { throw new Error('Paper.id lookup is forbidden for seat upgrades'); },
+        onCancel: () => { throw new Error('Paper.id cancellation is forbidden for seat upgrades'); },
+    });
+    f.booking().invoiceId = 'existing-original-invoice';
+    f.booking().paymentUrl = 'https://example.invalid/original-payment';
+    const original = plain(f.booking());
+    let emailCalls = 0;
+    const email = new Proxy({}, { get: () => () => { emailCalls++; throw new Error('Email is forbidden for seat upgrades'); } });
+    const module = { exports: {} };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/controllers/PublicTicketController.js'), 'utf8'), {
+        module, require: name => name.endsWith('/TicketSeatAdminRepository') ? f.adminSeats : name.endsWith('/EmailService') ? email : {},
+    });
+    const call = async (method, body) => {
+        let result, status, failure;
+        const res = { status: value => { status = value; return res; }, json: value => { result = value; } };
+        await module.exports[method]({ body, ticketingAdmin: actor }, res, error => { failure = error; });
+        if (failure) throw failure;
+        assert.equal(status, 200);
+        return result;
+    };
+    const options = await call('getSeatChangeOptions', { bookingId: 'paid' });
+    await call('upgradePaidBookingSeat', { bookingId: 'paid', fromSeatId: 'old', toSeatId: 'new', expectedSeatIds: options.expectedSeatIds,
+        expectedRevision: options.revision, expectedBalance: options.balance, expectedDifference: 75000 });
+    await call('resolveSeatUpgradePayment', { bookingId: 'paid', expectedRevision: 1, expectedBalance: 75000 });
+    assert.equal(emailCalls, 0);
+    assert.equal(f.invoices.length, 0);
+    for (const field of ['invoiceId', 'paymentUrl', 'paymentStatus', 'totalAmount', 'emailSent']) assert.equal(f.booking()[field], original[field]);
+});
+
+test('REGRESSION: upgraded bookings retain orchestra assignments and expose the new performance tiers to redemption', async () => {
+    const f = upgradeFixture();
+    Object.assign(f.booking(), { ticketingVersion: 2, bookingType: 'winner', registrantId: 'winner', performerCount: 1 });
+    await f.upgrade();
+    const orchestra = f.load('src/repositories/OrchestraAssignmentRepository.js');
+    await orchestra.assignGroup({ eventId: 'APCS2026', registrantId: 'winner', sessionId: 'orch' }, actor);
+    const assignment = f.records.get('orchestraAssignments/' + encodeURIComponent('APCS2026|winner'));
+    assert.equal(assignment.quantity, 3);
+    const redemption = f.load('src/repositories/TicketRedemptionRepository.js');
+    const before = await redemption.detail({ eventId: 'APCS2026', bookingId: 'paid' });
+    assert.deepEqual(plain(before.allowances.find(item => item.channel === 'performance').quantities), { lento: 1, presto: 1 });
+    assert.deepEqual(plain(before.allowances.find(item => item.channel === 'orchestra').quantities), { orchestra: 2 });
+    assert.deepEqual(plain(before.allowances.find(item => item.channel === 'performers').quantities), { performers: 1 });
+    await f.resolve();
+    const after = await redemption.detail({ eventId: 'APCS2026', bookingId: 'paid' });
+    assert.deepEqual(plain(after.allowances), plain(before.allowances));
+    assert.deepEqual(plain(f.records.get('orchestraAssignments/' + encodeURIComponent('APCS2026|winner'))), plain(assignment));
+});
+test('REGRESSION: checkout honors upgraded capacity and can sell the released source chair', async () => {
+    const f = upgradeFixture(); f.capacity().reservedByTier.presto = 9;
+    await f.upgrade();
+    const full = await f.book({ tickets: [{ id: 'presto', name: 'Presto', quantity: 1 }] });
+    assert.match(full.error.message, /capacity remains/);
+    assert.equal(f.invoices.length, 0);
+    const released = await f.book({ bookingType: 'winner', registrantId: 'winner', tickets: [{ id: 'lento', name: 'Lento', quantity: 1 }],
+        selectedSeatIds: ['old'], addOnIds: ['seat_selection_performer'] });
+    assert.ifError(released.error);
+    assert.equal(f.records.get('seatsAPCS2026/old').lockedByBookingId, released.result.bookingId);
+    assert.equal(f.records.get('seatsAPCS2026/new').bookingId, 'paid');
+    assert.equal(f.capacity().reservedByTier.presto, 10);
+    assert.equal(f.capacity().reservedByTier.lento, 2);
 });

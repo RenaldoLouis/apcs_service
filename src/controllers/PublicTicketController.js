@@ -393,6 +393,30 @@ async function reassignPaidBookingSeats(req, res, next) {
     }
 }
 
+async function getSeatChangeOptions(req, res, next) {
+    try {
+        return res.status(200).json(await TicketSeatAdminRepository.getSeatChangeOptions({ bookingId: req.body?.bookingId }, req.ticketingAdmin));
+    } catch (err) { return next(err); }
+}
+
+async function upgradePaidBookingSeat(req, res, next) {
+    try {
+        const { bookingId, fromSeatId, toSeatId, expectedSeatIds, expectedDifference, expectedRevision, expectedBalance } = req.body || {};
+        return res.status(200).json(await TicketSeatAdminRepository.upgradePaidBookingSeat({
+            bookingId, fromSeatId, toSeatId, expectedSeatIds, expectedDifference, expectedRevision, expectedBalance,
+        }, req.ticketingAdmin));
+    } catch (err) { return next(err); }
+}
+
+async function resolveSeatUpgradePayment(req, res, next) {
+    try {
+        const { bookingId, expectedRevision, expectedBalance } = req.body || {};
+        return res.status(200).json(await TicketSeatAdminRepository.resolveSeatUpgradePayment({
+            bookingId, expectedRevision, expectedBalance,
+        }, req.ticketingAdmin));
+    } catch (err) { return next(err); }
+}
+
 /** POST /api/v1/apcs/public-ticket/admin/seats/generate */
 async function generateSeatLayout(req, res, next) {
     try {
@@ -431,6 +455,9 @@ module.exports = {
     resendManualPaymentInstructions,
     assignPaidBookingSeats,
     reassignPaidBookingSeats,
+    getSeatChangeOptions,
+    upgradePaidBookingSeat,
+    resolveSeatUpgradePayment,
     generateSeatLayout,
     setSeatBlock,
     reconcileExpiredPayment,

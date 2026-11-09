@@ -108,6 +108,9 @@ router.post('/public-ticket/admin/reconcile-expired-payment', requireTicketingAd
 router.post('/public-ticket/admin/resend-manual-instructions', requireTicketingAdmin, PublicTicketController.resendManualPaymentInstructions);
 router.post('/public-ticket/admin/assign-seats', requireTicketingAdmin, PublicTicketController.assignPaidBookingSeats);
 router.post('/public-ticket/admin/reassign-seats', requireTicketingAdmin, PublicTicketController.reassignPaidBookingSeats);
+router.post('/public-ticket/admin/seat-change-options', requireTicketingAdmin, PublicTicketController.getSeatChangeOptions);
+router.post('/public-ticket/admin/upgrade-seat', requireTicketingAdmin, PublicTicketController.upgradePaidBookingSeat);
+router.post('/public-ticket/admin/resolve-seat-upgrade', requireTicketingAdmin, PublicTicketController.resolveSeatUpgradePayment);
 router.post('/public-ticket/admin/seats/generate', requireTicketingAdmin, PublicTicketController.generateSeatLayout);
 router.post('/public-ticket/admin/seats/block', requireTicketingAdmin, PublicTicketController.setSeatBlock);
 

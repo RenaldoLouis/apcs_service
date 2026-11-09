@@ -13,6 +13,113 @@ const isMasterclassTicket = ticket => ['master_class', 'masterclass'].includes(S
 const occupiedStatus = status => ['locked', 'booked', 'reserved', 'blocked'].includes(String(status || '').toLowerCase());
 const ownershipRef = key => db.collection(SEAT_OWNERSHIP_COLLECTION).doc(safeDocumentId(key));
 
+// Only recorded staff assignments (and their replacements) may move in a mixed booking.
+function staffAssignedSeatIds(booking) {
+    if (!Array.isArray(booking.addOnIds || [])) return [];
+    const current = booking.selectedSeatIds || [];
+    if (!(booking.addOnIds || []).some(id => ['seat_selection', 'seat_selection_performer'].includes(String(id).toLowerCase()))) return current;
+    const staff = new Set((booking.seatAssignments || []).flatMap(item => item.seatIds || []));
+    for (const change of booking.seatChanges || []) {
+        for (const id of change.seatIds || []) {
+            if (!(change.previousSeatIds || []).includes(id)) staff.add(id);
+        }
+    }
+    return current.filter(id => staff.has(id));
+}
+
+// Snapshot prices follow individual chairs across later moves, even if tier prices change.
+function seatPricesFor(booking, seatDocs) {
+    const remaining = (booking.tickets || []).filter(ticket => !isMasterclassTicket(ticket))
+        .map(ticket => ({ tier: String(ticket.id).toLowerCase(), quantity: ticket.quantity, price: ticket.priceEach }));
+    const prices = {};
+    for (const record of seatDocs) {
+        const saved = booking.seatPriceSnapshots?.[record.id];
+        if (saved === undefined) continue;
+        const line = remaining.find(item => item.tier === String(record.data().areaType).toLowerCase()
+            && item.price === saved && item.quantity > 0);
+        if (!line || !Number.isSafeInteger(saved) || saved < 0) throw fail('The saved ticket prices need reconciliation.');
+        line.quantity--; prices[record.id] = saved;
+    }
+    for (const record of seatDocs) {
+        if (prices[record.id] !== undefined) continue;
+        const line = remaining.find(item => item.tier === String(record.data().areaType).toLowerCase() && item.quantity > 0);
+        if (!line || !Number.isSafeInteger(line.price) || line.price < 0) throw fail('The original ticket price is missing or invalid. Reconcile this booking before upgrading.');
+        line.quantity--; prices[record.id] = line.price;
+    }
+    return prices;
+}
+const upgradeRevision = booking => {
+    const revision = booking.seatUpgradeRevision ?? 0;
+    if (!Number.isSafeInteger(revision) || revision < 0) throw fail('The seat upgrade history needs reconciliation.');
+    return revision;
+};
+const upgradeBalance = booking => {
+    const balance = booking.seatUpgradeBalance ?? 0;
+    if (!Number.isSafeInteger(balance) || balance < 0 || (booking.seatUpgrades || []).filter(item => item.status === 'pending')
+        .reduce((sum, item) => sum + item.amountDue, 0) !== balance) throw fail('The seat upgrade balance needs reconciliation.');
+    return balance;
+};
+
+async function getSeatChangeOptions({ bookingId }, actor = {}) {
+    if (!validKey(bookingId) || !actor.uid || !actor.email) throw fail('Admin authentication and a booking are required.', 400);
+    return db.runTransaction(async transaction => {
+        const snap = await transaction.get(db.collection('publicBookings').doc(bookingId));
+        if (!snap.exists) throw fail('Booking no longer exists.', 404);
+        const booking = snap.data();
+        if (!isPaid(booking) || booking.seatingMode === 'free' || booking.isOrchestra || booking.isMasterclass
+            || booking.bookingType === 'public_orchestra' || !validKey(booking.eventId)) throw fail('Select a paid numbered competition booking.');
+        const ids = booking.selectedSeatIds || [];
+        if (!Array.isArray(ids) || !ids.length || ids.length > 100 || !ids.every(validKey) || new Set(ids).size !== ids.length) throw fail('The assigned seats need reconciliation.');
+        const eventSnap = await transaction.get(db.collection('events').doc(booking.eventId));
+        const docs = await transaction.getAll(...ids.map(id => db.collection(`seats${booking.eventId}`).doc(id)));
+        if (!eventSnap.exists || docs.some(record => !record.exists || record.data().bookingId !== bookingId
+            || record.data().status !== 'booked' || record.data().venueId !== booking.venue
+            || record.data().sessionId !== `${booking.date}_${booking.session}`)) throw fail('The assigned seats changed. Refresh this booking.');
+        const prices = seatPricesFor(booking, docs);
+        const editable = staffAssignedSeatIds(booking);
+        return { bookingId, expectedSeatIds: ids, revision: upgradeRevision(booking), balance: upgradeBalance(booking),
+            seats: docs.filter(record => editable.includes(record.id)).map(record => ({ id: record.id,
+                label: record.data().seatLabel, tier: String(record.data().areaType).toLowerCase(), price: prices[record.id] })),
+            tierPrices: Object.fromEntries((eventSnap.data().ticketTiers || [])
+                .filter(tier => ['presto', 'allegro', 'lento'].includes(tier.id))
+                .map(tier => [tier.id, tier.venuePrices?.[booking.venue] ?? null])) };
+    });
+}
+
+async function upgradePaidBookingSeat({ bookingId, fromSeatId, toSeatId, expectedSeatIds, expectedDifference, expectedRevision, expectedBalance }, actor = {}) {
+    if (!validKey(fromSeatId) || !validKey(toSeatId) || fromSeatId === toSeatId
+        || !Array.isArray(expectedSeatIds) || !expectedSeatIds.includes(fromSeatId)
+        || expectedSeatIds.includes(toSeatId) || !Number.isSafeInteger(expectedDifference) || expectedDifference < 0
+        || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
+        || !Number.isSafeInteger(expectedBalance) || expectedBalance < 0) throw fail('Select one original chair and one replacement, and review the current price.', 400);
+    return reassignPaidBookingSeats({ bookingId, expectedSeatIds,
+        seatIds: expectedSeatIds.map(id => id === fromSeatId ? toSeatId : id),
+        upgrade: { fromSeatId, toSeatId, expectedDifference, expectedRevision, expectedBalance } }, actor);
+}
+
+async function resolveSeatUpgradePayment({ bookingId, expectedRevision, expectedBalance }, actor = {}) {
+    if (!validKey(bookingId) || !actor.uid || !actor.email || !Number.isSafeInteger(expectedRevision)
+        || !Number.isSafeInteger(expectedBalance) || expectedBalance <= 0) throw fail('Review the outstanding seat upgrade payment before confirming.', 400);
+    const ref = db.collection('publicBookings').doc(bookingId);
+    return db.runTransaction(async transaction => {
+        const snap = await transaction.get(ref);
+        if (!snap.exists) throw fail('Booking no longer exists.', 404);
+        const booking = snap.data();
+        if (!isPaid(booking) || upgradeRevision(booking) !== expectedRevision || upgradeBalance(booking) !== expectedBalance) {
+            throw fail('The seat upgrade payment changed. Refresh this booking before confirming.');
+        }
+        const history = booking.seatUpgrades || [];
+        if (history.filter(item => item.status === 'pending').reduce((sum, item) => sum + item.amountDue, 0) !== expectedBalance) {
+            throw fail('The seat upgrade history and balance need reconciliation.');
+        }
+        const paidAt = new Date().toISOString();
+        transaction.update(ref, { seatUpgradeBalance: 0, seatUpgradeRevision: expectedRevision + 1,
+            seatUpgrades: history.map(item => item.status === 'pending' ? { ...item, status: 'paid',
+                paidAt, paidByUid: actor.uid, paidByEmail: actor.email, paymentMethod: 'outside_system' } : item) });
+        return { bookingId, balance: 0, revision: expectedRevision + 1, resolvedAmount: expectedBalance };
+    });
+}
+
 const seatTemplatesFor = venue => (venue?.seatConfig || []).flatMap(config =>
     Array.from({ length: Number(config.seatCount || 0) }, (_, index) => ({
         seatLabel: `${config.row}${index + 1}`,
@@ -214,8 +321,8 @@ async function assignPaidBookingSeats({ bookingId, seatIds }, actor = {}) {
     });
 }
 
-/** Replace staff-assigned competition chairs without changing paid capacity or entitlements. */
-async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds }, actor = {}) {
+/** Replace staff-assigned competition chairs; upgrades also move tier capacity and record the internal balance. */
+async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds, upgrade = null }, actor = {}) {
     const validIds = ids => Array.isArray(ids) && ids.length > 0 && ids.length <= 100
         && ids.every(validKey) && new Set(ids).size === ids.length;
     if (!validKey(bookingId) || !validIds(seatIds) || !validIds(expectedSeatIds)) {
@@ -232,9 +339,9 @@ async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds },
             || booking.bookingType === 'public_orchestra') {
             throw fail('Only paid numbered competition bookings can have their seats changed.');
         }
-        if (!Array.isArray(booking.addOnIds || []) || (booking.addOnIds || [])
-            .some(id => ['seat_selection', 'seat_selection_performer'].includes(String(id).toLowerCase()))) {
-            throw fail('Seats cannot be edited for a booking with a seat-selection add-on.');
+        const editableSeatIds = staffAssignedSeatIds(booking);
+        if ((booking.selectedSeatIds || []).some(id => !seatIds.includes(id) && !editableSeatIds.includes(id))) {
+            throw fail('A buyer-selected seat with a seat-selection add-on cannot be changed. Only staff-assigned seats can move.');
         }
         const currentSeatIds = booking.selectedSeatIds || [];
         if (!validIds(currentSeatIds) || !sameIds(currentSeatIds, expectedSeatIds)) {
@@ -291,8 +398,79 @@ async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds },
             return counts;
         }, {});
         const oldCounts = countsFor(currentSeatIds), newCounts = countsFor(seatIds);
-        if (Object.keys({ ...oldCounts, ...newCounts }).some(tier => oldCounts[tier] !== newCounts[tier]
-            || oldCounts[tier] > (ticketQuantities[tier] || 0))) {
+        if (Object.keys(oldCounts).some(tier => oldCounts[tier] > (ticketQuantities[tier] || 0))) {
+            throw fail('The assigned seats exceed the purchased ticket quantities.');
+        }
+        let upgradePatch = {}, capacityWrite = null, difference = 0;
+        if (upgrade) {
+            if (upgradeRevision(booking) !== upgrade.expectedRevision) throw fail('The seat upgrade changed. Refresh the booking and review the price.');
+            const previousBalance = upgradeBalance(booking);
+            if (previousBalance !== upgrade.expectedBalance) throw fail('The seat upgrade balance changed. Refresh this booking.');
+            const source = docsById.get(upgrade.fromSeatId).data(), target = docsById.get(upgrade.toSeatId).data();
+            const fromTier = String(source.areaType).toLowerCase(), toTier = String(target.areaType).toLowerCase();
+            const ranks = { lento: 0, allegro: 1, presto: 2 };
+            if (ranks[toTier] === undefined || ranks[fromTier] === undefined || ranks[toTier] < ranks[fromTier]) throw fail('Select the same tier or a higher tier. Downgrades are not supported.');
+            const prices = seatPricesFor(booking, currentSeatIds.map(id => docsById.get(id)));
+            const originalPrice = prices[upgrade.fromSeatId];
+            const destinationPrice = fromTier === toTier ? originalPrice
+                : (event.ticketTiers || []).find(tier => tier.id === toTier)?.venuePrices?.[booking.venue];
+            if (!Number.isSafeInteger(destinationPrice) || destinationPrice < originalPrice) throw fail('The destination price is missing or below the original paid price. Reconcile pricing before upgrading.');
+            difference = destinationPrice - originalPrice;
+            if (difference !== upgrade.expectedDifference) throw fail('The upgrade price changed. Refresh the booking and review the additional amount.');
+            const tickets = (booking.tickets || []).map(ticket => ({ ...ticket }));
+            if (fromTier !== toTier) {
+                const sourceLine = tickets.find(ticket => String(ticket.id).toLowerCase() === fromTier && ticket.priceEach === originalPrice && ticket.quantity > 0);
+                if (!sourceLine) throw fail('The original ticket price needs reconciliation.');
+                sourceLine.quantity--;
+                const targetLine = tickets.find(ticket => String(ticket.id).toLowerCase() === toTier && ticket.priceEach === destinationPrice);
+                if (targetLine) targetLine.quantity++;
+                else tickets.push({ id: toTier, name: (event.ticketTiers || []).find(tier => tier.id === toTier)?.name || toTier,
+                    quantity: 1, priceEach: destinationPrice });
+                const byTier = { ...ticketQuantities, [fromTier]: ticketQuantities[fromTier] - 1, [toTier]: (ticketQuantities[toTier] || 0) + 1 };
+                const redemptionRef = db.collection('ticketRedemptions').doc(encodeURIComponent(JSON.stringify([booking.eventId, 'performance', bookingId])));
+                const redemption = (await transaction.get(redemptionRef)).data();
+                if (Object.entries(redemption?.redeemed || {}).some(([tier, quantity]) => !Number.isSafeInteger(quantity)
+                    || quantity < 0 || quantity > (byTier[tier] || 0))) throw fail('This upgrade would change tickets already redeemed. Correct the redemption before upgrading.');
+                const capacityId = capacityDocumentId(booking.eventId, booking.venue, booking.date, booking.session);
+                const capacityRef = db.collection('ticketCapacity').doc(capacityId);
+                const capacitySnap = await transaction.get(capacityRef);
+                if (!capacitySnap.exists || (booking.capacityReservation && (booking.capacityReservation.capacityId !== capacityId
+                    || Object.keys({ ...ticketQuantities, ...(booking.capacityReservation.byTier || {}) }).some(tier =>
+                        (booking.capacityReservation.byTier?.[tier] || 0) !== (ticketQuantities[tier] || 0))))) throw fail('This booking’s capacity reservation needs reconciliation before upgrading.');
+                const capacity = capacitySnap.data(), reserved = { ...(capacity.reservedByTier || {}) };
+                const ceilings = getPaidCapacityByTier(venue);
+                const blocked = await transaction.get(seats.where('venueId', '==', booking.venue).where('sessionId', '==', sessionId).where('status', '==', 'blocked'));
+                const blockedByTier = {}, seenBlocks = new Set();
+                for (const record of blocked.docs) {
+                    const key = physicalSeatKey(booking.eventId, record.data());
+                    if (seenBlocks.has(key)) continue;
+                    seenBlocks.add(key);
+                    const tier = String(record.data().areaType).toLowerCase();
+                    blockedByTier[tier] = (blockedByTier[tier] || 0) + 1;
+                }
+                if (Object.keys({ ...(capacity.blockedByTier || {}), ...blockedByTier }).some(tier =>
+                    (capacity.blockedByTier?.[tier] || 0) !== (blockedByTier[tier] || 0))) throw fail('Seat block capacity needs reconciliation before upgrading.');
+                for (const tier of [fromTier, toTier]) {
+                    if (!Number.isSafeInteger(reserved[tier] ?? 0) || (reserved[tier] ?? 0) < (ticketQuantities[tier] || 0)) throw fail('Session capacity needs reconciliation before upgrading.');
+                }
+                reserved[fromTier]--; reserved[toTier] = (reserved[toTier] || 0) + 1;
+                if (reserved[toTier] + (blockedByTier[toTier] || 0) > (ceilings[toTier] || 0)) throw fail('There is no remaining capacity in the destination tier, including tickets awaiting seats.');
+                capacityWrite = { ref: capacityRef, data: { reservedByTier: reserved, capacityByTier: ceilings,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp() } };
+                upgradePatch.tickets = tickets.filter(ticket => ticket.quantity > 0);
+                upgradePatch.capacityReservation = { capacityId, byTier };
+            }
+            delete prices[upgrade.fromSeatId]; prices[upgrade.toSeatId] = destinationPrice;
+            const revision = upgradeRevision(booking) + 1;
+            if (!Number.isSafeInteger(previousBalance + difference)) throw fail('The total upgrade balance is too large.');
+            upgradePatch = { ...upgradePatch, seatPriceSnapshots: prices, seatUpgradeRevision: revision,
+                seatUpgradeBalance: previousBalance + difference, seatUpgrades: [...(booking.seatUpgrades || []), {
+                    revision, fromSeatId: upgrade.fromSeatId, toSeatId: upgrade.toSeatId,
+                    fromSeatLabel: source.seatLabel, toSeatLabel: target.seatLabel, fromTier, toTier,
+                    originalPrice, destinationPrice, amountDue: difference, status: difference > 0 ? 'pending' : 'not_required',
+                    changedAt: new Date().toISOString(), changedByUid: actor.uid, changedByEmail: actor.email,
+                }] };
+        } else if (Object.keys({ ...oldCounts, ...newCounts }).some(tier => (oldCounts[tier] || 0) !== (newCounts[tier] || 0))) {
             throw fail('Keep the same number of assigned seats in each purchased tier.');
         }
         seatDocs.forEach((record, index) => {
@@ -322,6 +500,18 @@ async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds },
         }
         const updatedAt = admin.firestore.FieldValue.serverTimestamp();
         const buyerName = booking.buyerName || booking.userName || '';
+        if (capacityWrite) transaction.update(capacityWrite.ref, capacityWrite.data);
+        // Older same-tier callers retain individual price snapshots after a move.
+        if (!upgrade && booking.seatPriceSnapshots) {
+            const prices = { ...booking.seatPriceSnapshots };
+            const removed = currentSeatIds.filter(id => !seatIds.includes(id));
+            for (const id of seatIds.filter(id => !currentSeatIds.includes(id))) {
+                const index = removed.findIndex(oldId => String(docsById.get(oldId).data().areaType).toLowerCase() === String(docsById.get(id).data().areaType).toLowerCase());
+                const [oldId] = removed.splice(index, 1);
+                if (prices[oldId] !== undefined) { prices[id] = prices[oldId]; delete prices[oldId]; }
+            }
+            upgradePatch.seatPriceSnapshots = prices;
+        }
         seatDocs.forEach((record, index) => {
             if (currentSeatIds.includes(record.id) && seatIds.includes(record.id)) return;
             const booked = seatIds.includes(record.id);
@@ -345,6 +535,7 @@ async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds },
         });
         const seatLabels = labelsFor(seatIds);
         transaction.update(bookingRef, {
+            ...upgradePatch,
             selectedSeatIds: seatIds, performanceSeatLabels: seatLabels, seatsSelected: true,
             physicalSeatKeys: [...newKeys, ...(booking.physicalSeatKeys || []).filter(key => !oldKeys.includes(key))],
             seatChanges: [...(booking.seatChanges || []), {
@@ -352,7 +543,8 @@ async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds },
                 changedByUid: actor.uid, changedByEmail: actor.email, changedAt: new Date().toISOString(),
             }],
         });
-        return { bookingId, seatIds, seatLabels, changed: true };
+        return { bookingId, seatIds, seatLabels, changed: true,
+            ...(upgrade ? { difference, balance: upgradePatch.seatUpgradeBalance, revision: upgradePatch.seatUpgradeRevision } : {}) };
     });
 }
 
@@ -478,4 +670,5 @@ async function setSeatBlock({ eventId, venueId, sessionId, seatId, action, reaso
     });
 }
 
-module.exports = { generateSeatLayout, assignPaidBookingSeats, reassignPaidBookingSeats, setSeatBlock };
+module.exports = { generateSeatLayout, assignPaidBookingSeats, reassignPaidBookingSeats, setSeatBlock,
+    getSeatChangeOptions, upgradePaidBookingSeat, resolveSeatUpgradePayment };
