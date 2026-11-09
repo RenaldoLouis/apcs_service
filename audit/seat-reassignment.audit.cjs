@@ -443,7 +443,7 @@ test('UPGRADE: duplicate original paid callbacks preserve upgraded tickets, outs
     assert.deepEqual(plain([...f.records]), before);
 });
 test('UPGRADE: stale original seat snapshots, lower tiers and foreign-owned destinations reject without writes', async () => {
-    let f = upgradeFixture(); await upgradeRejects(f, /Select one original chair/, { expectedSeatIds: ['changed'] });
+    let f = upgradeFixture(); await upgradeRejects(f, /Select original chairs/, { expectedSeatIds: ['changed'] });
     f = upgradeFixture(); f.records.get('seatsAPCS2026/new').status = 'booked'; f.records.get('seatsAPCS2026/new').bookingId = 'other';
     await upgradeRejects(f, /no longer available/);
     f = upgradeFixture();
@@ -515,4 +515,102 @@ test('REGRESSION: checkout honors upgraded capacity and can sell the released so
     assert.equal(f.records.get('seatsAPCS2026/new').bookingId, 'paid');
     assert.equal(f.capacity().reservedByTier.presto, 10);
     assert.equal(f.capacity().reservedByTier.lento, 2);
+});
+
+test('EDIT REGRESSION: mixed-booking same-tier edits preserve buyer chairs, upgrade balance, ticket prices and capacity', async () => {
+    const f = upgradeFixture();
+    f.seat('buyer', { row: 'B', areaType: 'lento', number: 3, seatLabel: 'B3', status: 'booked', bookingId: 'paid' });
+    f.booking().selectedSeatIds = ['buyer', 'old'];
+    f.booking().addOnIds = ['seat_selection_performer'];
+    await f.upgrade({ expectedSeatIds: ['buyer', 'old'] });
+    f.seat('edited', { number: 4, seatLabel: 'A4' });
+    const original = plain(f.booking()), capacity = plain(f.capacity()), buyer = plain(f.records.get('seatsAPCS2026/buyer'));
+    await f.change({ seatIds: ['buyer', 'edited'], expectedSeatIds: ['buyer', 'new'] });
+    assert.deepEqual(plain(f.records.get('seatsAPCS2026/buyer')), buyer);
+    assert.equal(f.booking().seatPriceSnapshots.edited, 150000);
+    assert.equal(f.booking().seatPriceSnapshots.new, undefined);
+    for (const field of ['seatUpgradeBalance', 'seatUpgradeRevision', 'seatUpgrades', 'tickets', 'capacityReservation', 'totalAmount']) {
+        assert.deepEqual(plain(f.booking()[field]), original[field]);
+    }
+    assert.deepEqual(plain(f.capacity()), capacity);
+    const before = plain([...f.records]);
+    await assert.rejects(f.change({ seatIds: ['old', 'edited'], expectedSeatIds: ['buyer', 'edited'] }), /buyer-selected/);
+    assert.deepEqual(plain([...f.records]), before);
+});
+
+function batchUpgradeFixture() {
+    const f = upgradeFixture();
+    f.records.delete(f.ownerKey('old')); f.records.delete('seatsAPCS2026/old');
+    const event = f.records.get('events/APCS2026');
+    event.venues[0].seatConfig[1].areaType = 'allegro';
+    event.ticketTiers[0].venuePrices.V1 = 650000;
+    event.ticketTiers[1] = { id: 'allegro', name: 'Allegro', venuePrices: { V1: 529000 } };
+    const changes = Array.from({ length: 5 }, (_, index) => ({ fromSeatId: `original-${index}`, toSeatId: `replacement-${index}` }));
+    changes.forEach((change, index) => {
+        f.seat(change.fromSeatId, { row: 'B', areaType: 'allegro', number: index + 1, seatLabel: `B${index + 1}`, status: 'booked', bookingId: 'paid' });
+        f.seat(change.toSeatId, { number: index + 2, seatLabel: `A${index + 2}` });
+        f.seed(f.ownerKey(change.fromSeatId), { bookingId: 'paid', status: 'booked', active: true });
+    });
+    Object.assign(f.booking(), { tickets: [{ id: 'allegro', name: 'Allegro', quantity: 5, priceEach: 529000 }],
+        selectedSeatIds: changes.map(change => change.fromSeatId), performanceSeatLabels: ['B1', 'B2', 'B3', 'B4', 'B5'],
+        totalAmount: 2645000, orchestraAttendanceTickets: 5, physicalSeatKeys: [], seatAssignments: [{ seatIds: changes.map(change => change.fromSeatId) }],
+        capacityReservation: { capacityId: f.capacityId, byTier: { allegro: 5 } } });
+    f.capacity().reservedByTier = { allegro: 5, presto: 0 };
+    f.changes = changes;
+    f.batch = (patch = {}) => f.adminSeats.upgradePaidBookingSeat({ bookingId: 'paid', changes,
+        expectedSeatIds: changes.map(change => change.fromSeatId), expectedDifference: 605000, expectedRevision: 0, expectedBalance: 0, ...patch }, actor);
+    return f;
+}
+test('BATCH: all five seats upgrade atomically with one combined balance and one revision', async () => {
+    const f = batchUpgradeFixture(); await f.batch();
+    assert.deepEqual(plain(f.booking().selectedSeatIds), f.changes.map(change => change.toSeatId));
+    assert.deepEqual(plain(f.capacity().reservedByTier), { allegro: 0, presto: 5 });
+    assert.equal(f.booking().tickets.length, 1); assert.equal(f.booking().tickets[0].quantity, 5);
+    assert.equal(f.booking().seatUpgradeBalance, 605000); assert.equal(f.booking().seatUpgradeRevision, 1);
+    assert.equal(f.booking().seatUpgrades.length, 5);
+    for (const change of f.changes) {
+        assert.equal(f.records.get('seatsAPCS2026/' + change.fromSeatId).status, 'available');
+        assert.equal(f.records.get('seatsAPCS2026/' + change.toSeatId).bookingId, 'paid');
+        assert.equal(f.booking().seatPriceSnapshots[change.toSeatId], 650000);
+    }
+    assert.equal(f.booking().totalAmount, 2645000); assert.equal(f.booking().orchestraAttendanceTickets, 5);
+    assert.equal(f.invoices.length, 0);
+    await f.resolve({ expectedBalance: 605000 });
+    assert.equal(f.booking().seatUpgradeBalance, 0);
+    assert.ok(f.booking().seatUpgrades.every(item => item.status === 'paid'));
+});
+test('BATCH: one unavailable replacement or insufficient total capacity rolls back every seat', async () => {
+    for (const cause of ['booked', 'capacity']) {
+        const f = batchUpgradeFixture();
+        if (cause === 'booked') Object.assign(f.records.get('seatsAPCS2026/replacement-4'), { status: 'booked', bookingId: 'other' });
+        else f.capacity().reservedByTier.presto = 6;
+        const before = plain([...f.records]);
+        await assert.rejects(f.batch(), cause === 'booked' ? /no longer available/ : /remaining capacity/);
+        assert.deepEqual(plain([...f.records]), before);
+    }
+});
+test('BATCH: duplicate sources/targets and an incorrect total are rejected without writes', async () => {
+    for (const cause of ['source', 'target', 'price']) {
+        const f = batchUpgradeFixture(), changes = plain(f.changes);
+        if (cause === 'source') changes[4].fromSeatId = changes[0].fromSeatId;
+        if (cause === 'target') changes[4].toSeatId = changes[0].toSeatId;
+        const before = plain([...f.records]);
+        await assert.rejects(f.batch({ changes, ...(cause === 'price' ? { expectedDifference: 121000 } : {}) }), /Select original chairs|price changed/);
+        assert.deepEqual(plain([...f.records]), before);
+    }
+});
+test('BATCH: buyer-selected chairs stay protected while all five staff chairs can upgrade', async () => {
+    const f = batchUpgradeFixture();
+    f.seat('buyer', { row: 'B', areaType: 'allegro', number: 6, seatLabel: 'B6', status: 'booked', bookingId: 'paid' });
+    f.booking().selectedSeatIds.push('buyer'); f.booking().addOnIds = ['seat_selection_performer'];
+    f.booking().tickets[0].quantity = 6; f.booking().capacityReservation.byTier.allegro = 6;
+    f.capacity().reservedByTier.allegro = 6;
+    const expectedSeatIds = [...f.booking().selectedSeatIds];
+    const before = plain([...f.records]);
+    await assert.rejects(f.batch({ expectedSeatIds, changes: f.changes.map((change, index) => index === 4 ? { ...change, fromSeatId: 'buyer' } : change) }), /buyer-selected/);
+    assert.deepEqual(plain([...f.records]), before);
+    await f.batch({ expectedSeatIds });
+    assert.equal(f.records.get('seatsAPCS2026/buyer').bookingId, 'paid');
+    assert.ok(f.booking().selectedSeatIds.includes('buyer'));
+    assert.deepEqual(plain(f.capacity().reservedByTier), { allegro: 1, presto: 5 });
 });

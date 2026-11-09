@@ -401,9 +401,9 @@ async function getSeatChangeOptions(req, res, next) {
 
 async function upgradePaidBookingSeat(req, res, next) {
     try {
-        const { bookingId, fromSeatId, toSeatId, expectedSeatIds, expectedDifference, expectedRevision, expectedBalance } = req.body || {};
+        const { bookingId, changes, fromSeatId, toSeatId, expectedSeatIds, expectedDifference, expectedRevision, expectedBalance } = req.body || {};
         return res.status(200).json(await TicketSeatAdminRepository.upgradePaidBookingSeat({
-            bookingId, fromSeatId, toSeatId, expectedSeatIds, expectedDifference, expectedRevision, expectedBalance,
+            bookingId, changes, fromSeatId, toSeatId, expectedSeatIds, expectedDifference, expectedRevision, expectedBalance,
         }, req.ticketingAdmin));
     } catch (err) { return next(err); }
 }

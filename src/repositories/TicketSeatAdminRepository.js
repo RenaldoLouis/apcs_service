@@ -86,15 +86,22 @@ async function getSeatChangeOptions({ bookingId }, actor = {}) {
     });
 }
 
-async function upgradePaidBookingSeat({ bookingId, fromSeatId, toSeatId, expectedSeatIds, expectedDifference, expectedRevision, expectedBalance }, actor = {}) {
-    if (!validKey(fromSeatId) || !validKey(toSeatId) || fromSeatId === toSeatId
-        || !Array.isArray(expectedSeatIds) || !expectedSeatIds.includes(fromSeatId)
-        || expectedSeatIds.includes(toSeatId) || !Number.isSafeInteger(expectedDifference) || expectedDifference < 0
+async function upgradePaidBookingSeat({ bookingId, changes, fromSeatId, toSeatId, expectedSeatIds, expectedDifference, expectedRevision, expectedBalance }, actor = {}) {
+    const replacements = changes ?? [{ fromSeatId, toSeatId }];
+    if (!Array.isArray(replacements) || !replacements.length || replacements.length > 100
+        || (changes !== undefined && (fromSeatId !== undefined || toSeatId !== undefined))
+        || !Array.isArray(expectedSeatIds) || replacements.some(change => !change || !validKey(change.fromSeatId)
+            || !validKey(change.toSeatId) || change.fromSeatId === change.toSeatId
+            || !expectedSeatIds.includes(change.fromSeatId) || expectedSeatIds.includes(change.toSeatId))
+        || new Set(replacements.map(change => change.fromSeatId)).size !== replacements.length
+        || new Set(replacements.map(change => change.toSeatId)).size !== replacements.length
+        || !Number.isSafeInteger(expectedDifference) || expectedDifference < 0
         || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0
-        || !Number.isSafeInteger(expectedBalance) || expectedBalance < 0) throw fail('Select one original chair and one replacement, and review the current price.', 400);
+        || !Number.isSafeInteger(expectedBalance) || expectedBalance < 0) throw fail('Select original chairs and the same number of replacements, and review the total price.', 400);
+    const replacementIds = new Map(replacements.map(change => [change.fromSeatId, change.toSeatId]));
     return reassignPaidBookingSeats({ bookingId, expectedSeatIds,
-        seatIds: expectedSeatIds.map(id => id === fromSeatId ? toSeatId : id),
-        upgrade: { fromSeatId, toSeatId, expectedDifference, expectedRevision, expectedBalance } }, actor);
+        seatIds: expectedSeatIds.map(id => replacementIds.get(id) || id),
+        upgrade: { changes: replacements, expectedDifference, expectedRevision, expectedBalance } }, actor);
 }
 
 async function resolveSeatUpgradePayment({ bookingId, expectedRevision, expectedBalance }, actor = {}) {
@@ -406,27 +413,41 @@ async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds, u
             if (upgradeRevision(booking) !== upgrade.expectedRevision) throw fail('The seat upgrade changed. Refresh the booking and review the price.');
             const previousBalance = upgradeBalance(booking);
             if (previousBalance !== upgrade.expectedBalance) throw fail('The seat upgrade balance changed. Refresh this booking.');
-            const source = docsById.get(upgrade.fromSeatId).data(), target = docsById.get(upgrade.toSeatId).data();
-            const fromTier = String(source.areaType).toLowerCase(), toTier = String(target.areaType).toLowerCase();
-            const ranks = { lento: 0, allegro: 1, presto: 2 };
-            if (ranks[toTier] === undefined || ranks[fromTier] === undefined || ranks[toTier] < ranks[fromTier]) throw fail('Select the same tier or a higher tier. Downgrades are not supported.');
             const prices = seatPricesFor(booking, currentSeatIds.map(id => docsById.get(id)));
-            const originalPrice = prices[upgrade.fromSeatId];
-            const destinationPrice = fromTier === toTier ? originalPrice
-                : (event.ticketTiers || []).find(tier => tier.id === toTier)?.venuePrices?.[booking.venue];
-            if (!Number.isSafeInteger(destinationPrice) || destinationPrice < originalPrice) throw fail('The destination price is missing or below the original paid price. Reconcile pricing before upgrading.');
-            difference = destinationPrice - originalPrice;
-            if (difference !== upgrade.expectedDifference) throw fail('The upgrade price changed. Refresh the booking and review the additional amount.');
             const tickets = (booking.tickets || []).map(ticket => ({ ...ticket }));
-            if (fromTier !== toTier) {
-                const sourceLine = tickets.find(ticket => String(ticket.id).toLowerCase() === fromTier && ticket.priceEach === originalPrice && ticket.quantity > 0);
-                if (!sourceLine) throw fail('The original ticket price needs reconciliation.');
-                sourceLine.quantity--;
-                const targetLine = tickets.find(ticket => String(ticket.id).toLowerCase() === toTier && ticket.priceEach === destinationPrice);
-                if (targetLine) targetLine.quantity++;
-                else tickets.push({ id: toTier, name: (event.ticketTiers || []).find(tier => tier.id === toTier)?.name || toTier,
-                    quantity: 1, priceEach: destinationPrice });
-                const byTier = { ...ticketQuantities, [fromTier]: ticketQuantities[fromTier] - 1, [toTier]: (ticketQuantities[toTier] || 0) + 1 };
+            const byTier = { ...ticketQuantities }, involvedTiers = new Set(), entries = [];
+            const revision = upgradeRevision(booking) + 1;
+            const ranks = { lento: 0, allegro: 1, presto: 2 };
+            for (const change of upgrade.changes) {
+                const source = docsById.get(change.fromSeatId).data(), target = docsById.get(change.toSeatId).data();
+                const fromTier = String(source.areaType).toLowerCase(), toTier = String(target.areaType).toLowerCase();
+                if (ranks[toTier] === undefined || ranks[fromTier] === undefined || ranks[toTier] < ranks[fromTier]) throw fail('Select the same tier or a higher tier. Downgrades are not supported.');
+                const originalPrice = prices[change.fromSeatId];
+                const destinationPrice = fromTier === toTier ? originalPrice
+                    : (event.ticketTiers || []).find(tier => tier.id === toTier)?.venuePrices?.[booking.venue];
+                if (!Number.isSafeInteger(destinationPrice) || destinationPrice < originalPrice) throw fail('The destination price is missing or below the original paid price. Reconcile pricing before upgrading.');
+                const amountDue = destinationPrice - originalPrice;
+                difference += amountDue;
+                if (fromTier !== toTier) {
+                    involvedTiers.add(fromTier); involvedTiers.add(toTier);
+                    const sourceLine = tickets.find(ticket => String(ticket.id).toLowerCase() === fromTier && ticket.priceEach === originalPrice && ticket.quantity > 0);
+                    if (!sourceLine) throw fail('The original ticket price needs reconciliation.');
+                    sourceLine.quantity--;
+                    const targetLine = tickets.find(ticket => String(ticket.id).toLowerCase() === toTier && ticket.priceEach === destinationPrice);
+                    if (targetLine) targetLine.quantity++;
+                    else tickets.push({ id: toTier, name: (event.ticketTiers || []).find(tier => tier.id === toTier)?.name || toTier,
+                        quantity: 1, priceEach: destinationPrice });
+                    byTier[fromTier]--; byTier[toTier] = (byTier[toTier] || 0) + 1;
+                }
+                delete prices[change.fromSeatId]; prices[change.toSeatId] = destinationPrice;
+                entries.push({ revision, fromSeatId: change.fromSeatId, toSeatId: change.toSeatId,
+                    fromSeatLabel: source.seatLabel || `${source.row}${source.number}`,
+                    toSeatLabel: target.seatLabel || `${target.row}${target.number}`, fromTier, toTier,
+                    originalPrice, destinationPrice, amountDue, status: amountDue > 0 ? 'pending' : 'not_required',
+                    changedAt: new Date().toISOString(), changedByUid: actor.uid, changedByEmail: actor.email });
+            }
+            if (!Number.isSafeInteger(difference) || difference !== upgrade.expectedDifference) throw fail('The upgrade price changed. Refresh the booking and review the additional amount.');
+            if (involvedTiers.size) {
                 const redemptionRef = db.collection('ticketRedemptions').doc(encodeURIComponent(JSON.stringify([booking.eventId, 'performance', bookingId])));
                 const redemption = (await transaction.get(redemptionRef)).data();
                 if (Object.entries(redemption?.redeemed || {}).some(([tier, quantity]) => !Number.isSafeInteger(quantity)
@@ -450,26 +471,20 @@ async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds, u
                 }
                 if (Object.keys({ ...(capacity.blockedByTier || {}), ...blockedByTier }).some(tier =>
                     (capacity.blockedByTier?.[tier] || 0) !== (blockedByTier[tier] || 0))) throw fail('Seat block capacity needs reconciliation before upgrading.');
-                for (const tier of [fromTier, toTier]) {
+                for (const tier of involvedTiers) {
                     if (!Number.isSafeInteger(reserved[tier] ?? 0) || (reserved[tier] ?? 0) < (ticketQuantities[tier] || 0)) throw fail('Session capacity needs reconciliation before upgrading.');
+                    reserved[tier] = (reserved[tier] || 0) + (byTier[tier] || 0) - (ticketQuantities[tier] || 0);
+                    if (reserved[tier] > (capacity.reservedByTier?.[tier] || 0)
+                        && reserved[tier] + (blockedByTier[tier] || 0) > (ceilings[tier] || 0)) throw fail('There is no remaining capacity in the destination tier, including tickets awaiting seats.');
                 }
-                reserved[fromTier]--; reserved[toTier] = (reserved[toTier] || 0) + 1;
-                if (reserved[toTier] + (blockedByTier[toTier] || 0) > (ceilings[toTier] || 0)) throw fail('There is no remaining capacity in the destination tier, including tickets awaiting seats.');
                 capacityWrite = { ref: capacityRef, data: { reservedByTier: reserved, capacityByTier: ceilings,
                     updatedAt: admin.firestore.FieldValue.serverTimestamp() } };
                 upgradePatch.tickets = tickets.filter(ticket => ticket.quantity > 0);
                 upgradePatch.capacityReservation = { capacityId, byTier };
             }
-            delete prices[upgrade.fromSeatId]; prices[upgrade.toSeatId] = destinationPrice;
-            const revision = upgradeRevision(booking) + 1;
             if (!Number.isSafeInteger(previousBalance + difference)) throw fail('The total upgrade balance is too large.');
             upgradePatch = { ...upgradePatch, seatPriceSnapshots: prices, seatUpgradeRevision: revision,
-                seatUpgradeBalance: previousBalance + difference, seatUpgrades: [...(booking.seatUpgrades || []), {
-                    revision, fromSeatId: upgrade.fromSeatId, toSeatId: upgrade.toSeatId,
-                    fromSeatLabel: source.seatLabel, toSeatLabel: target.seatLabel, fromTier, toTier,
-                    originalPrice, destinationPrice, amountDue: difference, status: difference > 0 ? 'pending' : 'not_required',
-                    changedAt: new Date().toISOString(), changedByUid: actor.uid, changedByEmail: actor.email,
-                }] };
+                seatUpgradeBalance: previousBalance + difference, seatUpgrades: [...(booking.seatUpgrades || []), ...entries] };
         } else if (Object.keys({ ...oldCounts, ...newCounts }).some(tier => (oldCounts[tier] || 0) !== (newCounts[tier] || 0))) {
             throw fail('Keep the same number of assigned seats in each purchased tier.');
         }
