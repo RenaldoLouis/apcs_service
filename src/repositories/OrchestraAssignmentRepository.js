@@ -1,6 +1,7 @@
 const { db, admin } = require('../configs/firebase-init');
 const idFor = (eventId, registrantId) => encodeURIComponent(`${eventId}|${registrantId}`);
 const isPaid = booking => ['PAID', 'paid'].includes(booking.paymentStatus);
+const isPerformanceBooking = booking => booking.ticketingVersion === 2 && booking.orchestraAttendanceTickets > 0;
 const ticketCount = booking => (booking.tickets || []).reduce((sum, ticket) => sum + Number(ticket.quantity || 0), 0);
 const fail = message => Object.assign(new Error(message), { statusCode: 409, isOperational: true });
 const validateKey = value => typeof value === 'string' && value.length > 0 && value.length < 200 && !value.includes('/');
@@ -18,6 +19,33 @@ const validateIdentity = (eventId, registrantId) => {
     if (!validateKey(eventId) || !validateKey(registrantId)) throw fail('Event and winner are required.');
 };
 
+function ticketTierCounts(booking) {
+    const quantities = { presto: 0, allegro: 0 };
+    for (const ticket of booking.tickets || []) {
+        const tier = String(ticket.id || ticket.name || '').trim().toLowerCase();
+        if (tier === 'presto' || tier === 'allegro') {
+            quantities[tier] += Number(ticket.quantity || 0);
+        }
+    }
+    return quantities;
+}
+
+function summarizePaidBookings(bookings) {
+    const ticketTierTotals = { presto: 0, allegro: 0 };
+    const bookingBreakdown = bookings.map(booking => {
+        const quantities = ticketTierCounts(booking);
+        ticketTierTotals.presto += quantities.presto;
+        ticketTierTotals.allegro += quantities.allegro;
+        return {
+            bookingId: booking.id,
+            buyerName: booking.buyerName || booking.userName || null,
+            paidTicketCount: ticketCount(booking),
+            ...quantities,
+        };
+    });
+    return { ticketTierTotals, bookingBreakdown };
+}
+
 // Read all purchases for this specific performance (including pending records).
 // The transaction then observes a concurrent payment before saving an assignment.
 async function readGroup(eventId, registrantId, transaction) {
@@ -29,7 +57,7 @@ async function readGroup(eventId, registrantId, transaction) {
         read(db.collection('orchestraAssignments').doc(idFor(eventId, registrantId))),
     ]);
     const allPaid = bookingsSnap.docs.map(doc => ({ ...doc.data(), id: doc.id })).filter(isPaid);
-    const bookings = allPaid.filter(booking => booking.ticketingVersion === 2 && booking.orchestraAttendanceTickets > 0);
+    const bookings = allPaid.filter(isPerformanceBooking);
     const registration = registrationSnap.exists ? registrationSnap.data() : null;
     const winnerBookings = bookings.filter(booking => booking.bookingType !== 'public_competition');
     const performerCount = winnerBookings.length
@@ -59,7 +87,7 @@ async function listGroups({ eventId, cursor }) {
     }
     const page = await query.get();
     const ids = [...new Set(page.docs.map(doc => doc.data()).filter(booking =>
-        booking.ticketingVersion === 2 && booking.registrantId && booking.orchestraAttendanceTickets > 0)
+        booking.registrantId && isPerformanceBooking(booking))
         .map(booking => booking.registrantId))];
     const groups = await Promise.all(ids.map(id => readGroup(eventId, id)));
     const plannedByRegistrant = new Map();
@@ -94,75 +122,172 @@ async function listGroups({ eventId, cursor }) {
         }
     }
     return { groups: groups.map(({ bookings, ...group }) => ({ ...group, bookingCount: bookings.length,
-        plannedSession: plannedByRegistrant.get(group.registrantId) || null })),
+        ...summarizePaidBookings(bookings), plannedSession: plannedByRegistrant.get(group.registrantId) || null })),
         nextCursor: page.docs.length === 25 ? page.docs[page.docs.length - 1].id : null };
 }
 
-async function assignGroup({ eventId, registrantId, sessionId }, actor) {
-    validateIdentity(eventId, registrantId);
-    if (!validateKey(sessionId)) throw fail('Select an orchestra session.');
+async function readSessionImportData(eventId) {
+    if (!validateKey(eventId)) throw fail('Event is required.');
+    const [eventSnap, paid, assignments] = await Promise.all([
+        db.collection('events').doc(eventId).get(),
+        db.collection('publicBookings').where('eventId', '==', eventId)
+            .where('paymentStatus', 'in', ['PAID', 'paid'])
+            .select('registrantId', 'registrantName', 'ticketingVersion', 'orchestraAttendanceTickets', 'complimentaryTickets').get(),
+        db.collection('orchestraAssignments').where('eventId', '==', eventId)
+            .select('registrantId', 'venueName', 'date', 'time').get(),
+    ]);
+    if (!eventSnap.exists) throw fail('Event no longer exists.');
+    const byId = new Map();
+    const legacyIds = new Set();
+    for (const document of paid.docs) {
+        const booking = document.data();
+        if (!validateKey(booking.registrantId)) continue;
+        if (isPerformanceBooking(booking)) {
+            const candidate = byId.get(booking.registrantId) || { id: booking.registrantId, names: [] };
+            if (booking.registrantName && !candidate.names.includes(booking.registrantName)) {
+                candidate.names.push(booking.registrantName);
+            }
+            byId.set(candidate.id, candidate);
+        } else if (booking.ticketingVersion !== 2 && Number(booking.complimentaryTickets || 0) > 0) {
+            legacyIds.add(booking.registrantId);
+        }
+    }
+    const currentAssignments = new Map(assignments.docs.map(document => {
+        const assignment = document.data();
+        return [assignment.registrantId, assignment];
+    }));
+    const candidates = [...byId.values()];
+    for (let start = 0; start < candidates.length; start += 100) {
+        const batch = candidates.slice(start, start + 100);
+        const registrations = await db.getAll(...batch.map(candidate => db.collection('Registrants2025').doc(candidate.id)),
+            { fieldMask: ['name', 'performers'] });
+        for (const registration of registrations) {
+            const candidate = byId.get(registration.id);
+            const record = registration.data();
+            const members = Array.isArray(record?.performers) ? record.performers.map(performer =>
+                typeof performer === 'string' ? performer : performer?.fullName ||
+                `${performer?.firstName || ''} ${performer?.lastName || ''}`.trim() || performer?.name) : [];
+            candidate.names.push(...members.filter(Boolean), record?.name);
+            candidate.assignment = currentAssignments.get(candidate.id) || null;
+            candidate.legacyConflict = legacyIds.has(candidate.id);
+        }
+    }
+    return { event: eventSnap.data(), candidates };
+}
+
+async function prepareAssignment(transaction, event, sessions, { eventId, registrantId, sessionId, expectedSession }, actor) {
+    const group = await readGroup(eventId, registrantId, transaction);
+    if (!group.quantity) throw fail('Only paid performance-linked purchases can receive an orchestra assignment.');
+    if (group.legacyConflict) throw fail('This winner has legacy orchestra allocations. Reconcile those records before assigning new attendance.');
+    const target = sessions.find(session => session.id === sessionId);
+    if (!target) throw fail('Orchestra session no longer exists.');
+    const venue = (event.venues || []).find(item => item.id === target.venue);
+    if (!venue) throw fail('Orchestra venue no longer exists.');
+    // Staff-managed capacity: neither the competition seat layout nor the informational
+    // performance quota limits orchestra assignment. Counters below stay exact.
+    const old = group.assignment;
+    if (expectedSession) {
+        if (old) throw fail('An orchestra assignment already exists. Preview the CSV again.');
+        if (target.venue !== expectedSession.venue || target.date !== expectedSession.date || target.time !== expectedSession.time
+            || (venue.label || venue.id) !== expectedSession.venueName) {
+            throw fail('The orchestra timetable changed. Preview the CSV again.');
+        }
+    }
+    if (old?.notificationLease?.expiresAt > Date.now()) throw fail('Assignment emails are being sent. Please retry shortly.');
+    const oldSession = old && sessions.find(session => session.id === old.sessionId);
+    if (old && (!oldSession || Number(oldSession.freeSeatingAssigned || 0) < old.quantity)) {
+        throw fail('Previous session attendance counter needs reconciliation.');
+    }
+    const bookingIds = group.bookings.map(booking => booking.id).sort();
+    // Redemption belongs to the allowance, not an assignment revision. Do not move
+    // tickets already handed over into another orchestra session.
+    const coveredIds = [...new Set([...(old?.bookingIds || []), ...bookingIds])];
+    const redemptionStates = await Promise.all([
+        ...coveredIds.map(id => transaction.get(db.collection('ticketRedemptions')
+            .doc(encodeURIComponent(JSON.stringify([eventId, 'orchestra', id]))))),
+        transaction.get(db.collection('ticketRedemptions')
+            .doc(encodeURIComponent(JSON.stringify([eventId, 'performers', registrantId])))),
+    ]);
+    const claimed = snapshot => snapshot.exists
+        && Object.values(snapshot.data().redeemed || {}).some(quantity => Number(quantity) > 0);
+    if (old && old.sessionId !== sessionId && redemptionStates.some(claimed)) {
+        throw fail('Orchestra tickets have already been redeemed. Undo those claims in Ticket Redemption before changing the session.');
+    }
+    if (coveredIds.some((id, index) => !bookingIds.includes(id) && claimed(redemptionStates[index])) ||
+        Number(redemptionStates[coveredIds.length].data()?.redeemed?.performers || 0) > group.performerCount) {
+        throw fail('The new assignment would remove redeemed entitlements. Review Ticket Redemption first.');
+    }
+    const unchanged = old && old.sessionId === sessionId && old.quantity === group.quantity
+        && JSON.stringify(old.bookingIds) === JSON.stringify(bookingIds)
+        && old.venueName === (venue.label || venue.id) && old.date === target.date && old.time === target.time;
+    if (unchanged) return { group, assignment: old, changed: false };
+    const assignment = {
+        eventId, registrantId, sessionId, venue: venue.id, venueName: venue.label || venue.id,
+        date: target.date, time: target.time, quantity: group.quantity,
+        performerCount: group.performerCount, paidTicketCount: group.paidTicketCount,
+        publicTicketCount: group.publicTicketCount, winnerTicketCount: group.winnerTicketCount,
+        bookingIds, revision: Number(old?.revision || 0) + 1, notifiedBookingIds: [],
+        assignedBy: actor.email, assignedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+    return { group, assignment, changed: true };
+}
+
+async function saveAssignments(eventId, requests, actor) {
     return db.runTransaction(async transaction => {
         const eventRef = db.collection('events').doc(eventId);
         const eventSnap = await transaction.get(eventRef);
         if (!eventSnap.exists) throw fail('Event no longer exists.');
         const event = eventSnap.data();
-        const group = await readGroup(eventId, registrantId, transaction);
-        if (!group.quantity) throw fail('Only paid performance-linked purchases can receive an orchestra assignment.');
-        if (group.legacyConflict) throw fail('This winner has legacy orchestra allocations. Reconcile those records before assigning new attendance.');
         const sessions = event.orchestraSessions || [];
-        const target = sessions.find(session => session.id === sessionId);
-        if (!target) throw fail('Orchestra session no longer exists.');
-        const venue = (event.venues || []).find(item => item.id === target.venue);
-        if (!venue) throw fail('Orchestra venue no longer exists.');
-        // Staff-managed capacity: neither the competition seat layout nor the informational
-        // performance quota limits orchestra assignment. Counters below stay exact.
-        const old = group.assignment;
-        if (old?.notificationLease?.expiresAt > Date.now()) throw fail('Assignment emails are being sent. Please retry shortly.');
-        const oldSession = old && sessions.find(session => session.id === old.sessionId);
-        if (old && (!oldSession || Number(oldSession.freeSeatingAssigned || 0) < old.quantity)) {
-            throw fail('Previous session attendance counter needs reconciliation.');
+        const prepared = await Promise.all(requests.map(async request => {
+            try {
+                return await prepareAssignment(transaction, event, sessions, { ...request, eventId }, actor);
+            } catch (error) {
+                if (request.expectedSession && error.isOperational) {
+                    throw fail(`${request.name}: ${error.message}`);
+                }
+                throw error;
+            }
+        }));
+        const changes = prepared.filter(item => item.changed);
+        if (!changes.length) return prepared;
+
+        const released = new Map();
+        const added = new Map();
+        for (const { group, assignment } of changes) {
+            const old = group.assignment;
+            if (old) released.set(old.sessionId, (released.get(old.sessionId) || 0) + Number(old.quantity));
+            added.set(assignment.sessionId, (added.get(assignment.sessionId) || 0) + assignment.quantity);
         }
-        const bookingIds = group.bookings.map(booking => booking.id).sort();
-        // Redemption belongs to the allowance, not an assignment revision. Do not move
-        // tickets already handed over into another orchestra session.
-        const coveredIds = [...new Set([...(old?.bookingIds || []), ...bookingIds])];
-        const redemptionStates = await Promise.all([
-            ...coveredIds.map(id => transaction.get(db.collection('ticketRedemptions')
-                .doc(encodeURIComponent(JSON.stringify([eventId, 'orchestra', id]))))),
-            transaction.get(db.collection('ticketRedemptions')
-                .doc(encodeURIComponent(JSON.stringify([eventId, 'performers', registrantId])))),
-        ]);
-        const claimed = snapshot => snapshot.exists
-            && Object.values(snapshot.data().redeemed || {}).some(quantity => Number(quantity) > 0);
-        if (old && old.sessionId !== sessionId && redemptionStates.some(claimed)) {
-            throw fail('Orchestra tickets have already been redeemed. Undo those claims in Ticket Redemption before changing the session.');
-        }
-        if (coveredIds.some((id, index) => !bookingIds.includes(id) && claimed(redemptionStates[index])) ||
-            Number(redemptionStates[coveredIds.length].data()?.redeemed?.performers || 0) > group.performerCount) {
-            throw fail('The new assignment would remove redeemed entitlements. Review Ticket Redemption first.');
-        }
-        const unchanged = old && old.sessionId === sessionId && old.quantity === group.quantity
-            && JSON.stringify(old.bookingIds) === JSON.stringify(bookingIds)
-            && old.venueName === (venue.label || venue.id) && old.date === target.date && old.time === target.time;
-        if (unchanged) return { ...group, assignment: old };
-        const assignment = {
-            eventId, registrantId, sessionId, venue: venue.id, venueName: venue.label || venue.id,
-            date: target.date, time: target.time, quantity: group.quantity,
-            performerCount: group.performerCount, paidTicketCount: group.paidTicketCount,
-            publicTicketCount: group.publicTicketCount, winnerTicketCount: group.winnerTicketCount,
-            bookingIds, revision: Number(old?.revision || 0) + 1, notifiedBookingIds: [],
-            assignedBy: actor.email, assignedAt: admin.firestore.FieldValue.serverTimestamp(),
-        };
         const updatedSessions = sessions.map(session => {
-            let count = Number(session.freeSeatingAssigned || 0);
-            if (old?.sessionId === session.id) count -= old.quantity;
-            if (session.id === sessionId) count += group.quantity;
-            return { ...session, freeSeatingAssigned: count };
+            if (!released.has(session.id) && !added.has(session.id)) return session;
+            const count = Number(session.freeSeatingAssigned || 0);
+            const removed = released.get(session.id) || 0;
+            if (count < removed) throw fail('Previous session attendance counter needs reconciliation.');
+            return { ...session, freeSeatingAssigned: count - removed + (added.get(session.id) || 0) };
         });
         transaction.update(eventRef, { orchestraSessions: updatedSessions });
-        transaction.set(db.collection('orchestraAssignments').doc(group.id), assignment);
-        return { ...group, assignment };
+        for (const { group, assignment } of changes) {
+            transaction.set(db.collection('orchestraAssignments').doc(group.id), assignment);
+        }
+        return prepared;
     });
+}
+
+async function assignGroup({ eventId, registrantId, sessionId }, actor) {
+    validateIdentity(eventId, registrantId);
+    if (!validateKey(sessionId)) throw fail('Select an orchestra session.');
+    const [{ group, assignment }] = await saveAssignments(eventId, [{ registrantId, sessionId }], actor);
+    return { ...group, assignment };
+}
+
+async function confirmImportedAssignments(eventId, requests, actor) {
+    if (!requests.length || requests.some(request => !request.expectedSession)
+        || new Set(requests.map(request => request.registrantId)).size !== requests.length) {
+        throw fail('Preview the CSV before confirming unique assignments.');
+    }
+    const results = await saveAssignments(eventId, requests, actor);
+    return { saved: results.length };
 }
 
 async function markNotified(groupId, revision, bookingId, token) {
@@ -277,14 +402,16 @@ async function releaseNotification(groupId, token) {
         if (snap.exists && snap.data().notificationLease?.token === token) transaction.update(ref, { notificationLease: null });
     });
 }
+const sessionBookings = (eventId, session) => db.collection('publicBookings').where('eventId', '==', eventId)
+    .where('venue', '==', session.venue).where('date', '==', session.date).where('session', '==', session.time);
+
 async function sessionOverview({ eventId }) {
     if (!validateKey(eventId)) throw fail('Event is required.');
     const eventSnap = await db.collection('events').doc(eventId).get();
     if (!eventSnap.exists) throw fail('Event no longer exists.');
     const event = eventSnap.data();
     const sessions = await Promise.all((event.orchestraSessions || []).map(async session => {
-        const bookings = await db.collection('publicBookings').where('eventId', '==', eventId)
-            .where('venue', '==', session.venue).where('date', '==', session.date).where('session', '==', session.time).get();
+        const bookings = await sessionBookings(eventId, session).get();
         const paidPublicCount = bookings.docs.map(doc => doc.data()).filter(isPaid).reduce((sum, booking) => sum + ticketCount(booking), 0);
         const heldPublicCount = bookings.docs.map(doc => doc.data()).filter(booking => booking.paymentStatus === 'pending'
             || (booking.paymentStatus === 'failed' && booking.checkoutFailure?.cleanupStatus !== 'complete'))
@@ -294,4 +421,50 @@ async function sessionOverview({ eventId }) {
     }));
     return { ...event, orchestraSessions: sessions };
 }
-module.exports = { sessionOverview, claimNotification, releaseNotification, readGroup, listGroups, assignGroup, markNotified, saveSession, idFor, ticketCount };
+
+async function sessionTierBreakdown({ eventId, sessionId }) {
+    if (!validateKey(eventId) || !validateKey(sessionId)) throw fail('Event and orchestra session are required.');
+    const event = (await db.collection('events').doc(eventId).get()).data();
+    const session = event?.orchestraSessions?.find(item => item.id === sessionId);
+    if (!session) throw fail('Orchestra session no longer exists.');
+
+    const [direct, saved] = await Promise.all([
+        sessionBookings(eventId, session).select('paymentStatus', 'tickets', 'ticketingVersion', 'orchestraAttendanceTickets').get(),
+        db.collection('orchestraAssignments').where('eventId', '==', eventId).where('sessionId', '==', sessionId)
+            .select('venue', 'date', 'time', 'registrantId', 'bookingIds', 'performerCount').get(),
+    ]);
+    const paidBookings = direct.docs.map(document => document.data())
+        .filter(booking => isPaid(booking) && !isPerformanceBooking(booking));
+    const covered = new Map();
+    let performerPlaces = 0;
+    for (const document of saved.docs) {
+        const assignment = document.data();
+        if (assignment.venue !== session.venue || assignment.date !== session.date || assignment.time !== session.time) continue;
+        performerPlaces += Number(assignment.performerCount || 0);
+        for (const id of assignment.bookingIds || []) {
+            if (validateKey(id)) covered.set(id, assignment.registrantId);
+        }
+    }
+    const bookingIds = [...covered.keys()];
+    for (let start = 0; start < bookingIds.length; start += 100) {
+        const refs = bookingIds.slice(start, start + 100).map(id => db.collection('publicBookings').doc(id));
+        const documents = await db.getAll(...refs, {
+            fieldMask: ['eventId', 'registrantId', 'paymentStatus', 'tickets', 'ticketingVersion', 'orchestraAttendanceTickets'],
+        });
+        for (const document of documents) {
+            const booking = document.data();
+            if (booking?.eventId === eventId && booking.registrantId === covered.get(document.id)
+                && isPaid(booking) && isPerformanceBooking(booking)) paidBookings.push(booking);
+        }
+    }
+    const totals = { presto: 0, allegro: 0, otherTickets: 0, performerPlaces };
+    for (const booking of paidBookings) {
+        const { presto, allegro } = ticketTierCounts(booking);
+        totals.presto += presto;
+        totals.allegro += allegro;
+        totals.otherTickets += ticketCount(booking) - presto - allegro;
+    }
+    return totals;
+}
+module.exports = { sessionOverview, claimNotification, releaseNotification, readGroup, listGroups, assignGroup, markNotified,
+    saveSession, sessionTierBreakdown, readSessionImportData, confirmImportedAssignments, idFor, ticketCount };

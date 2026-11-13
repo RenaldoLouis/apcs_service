@@ -1,6 +1,8 @@
 const repository = require('../repositories/OrchestraAssignmentRepository');
 const emailService = require('../services/EmailService');
 const { db } = require('../configs/firebase-init');
+const { createOrchestraSessionImporter } = require('../services/OrchestraSessionImport');
+const sessionImporter = createOrchestraSessionImporter(repository);
 
 async function notifyGroup(group) {
     const assignment = group.assignment;
@@ -44,4 +46,13 @@ const saveSession = async (req, res, next) => {
 const sessions = async (req, res, next) => {
     try { res.json(await repository.sessionOverview(req.body)); } catch (error) { next(error); }
 };
-module.exports = { sessions, list, assign, notify, saveSession };
+const sessionTiers = async (req, res, next) => {
+    try { res.json(await repository.sessionTierBreakdown(req.body)); } catch (error) { next(error); }
+};
+const previewImport = async (req, res, next) => {
+    try { res.json(await sessionImporter.preview(req.body)); } catch (error) { next(error); }
+};
+const applyImport = async (req, res, next) => {
+    try { res.json(await sessionImporter.apply(req.body, req.ticketingAdmin)); } catch (error) { next(error); }
+};
+module.exports = { sessions, sessionTiers, list, assign, notify, saveSession, previewImport, applyImport };

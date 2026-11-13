@@ -130,9 +130,12 @@ const OrchestraAssignmentController = require('../controllers/OrchestraAssignmen
 router.post('/public-ticket/admin/orchestra/list', requireTicketingAdmin, OrchestraAssignmentController.list);
 router.post('/public-ticket/admin/orchestra/assign', requireTicketingAdmin, OrchestraAssignmentController.assign);
 router.post('/public-ticket/admin/orchestra/notify', requireTicketingAdmin, OrchestraAssignmentController.notify);
+router.post('/public-ticket/admin/orchestra/import-preview', requireTicketingAdmin, OrchestraAssignmentController.previewImport);
+router.post('/public-ticket/admin/orchestra/import-apply', requireTicketingAdmin, OrchestraAssignmentController.applyImport);
 router.post('/public-ticket/admin/orchestra/session', requireTicketingAdmin, OrchestraAssignmentController.saveSession);
 
 router.post('/public-ticket/admin/orchestra/sessions', requireTicketingAdmin, OrchestraAssignmentController.sessions);
+router.post('/public-ticket/admin/orchestra/session-tiers', requireTicketingAdmin, OrchestraAssignmentController.sessionTiers);
 
 const CompetitionPlanningController = require('../controllers/CompetitionPlanningController');
 router.post('/competition-planning/:eventId/groups', requireTicketingAdmin, CompetitionPlanningController.saveGroup);

@@ -73,6 +73,7 @@ function fixture(options = {}) {
         __query: true,
         doc: id => ref(`${name}/${id || `booking-${++sequence}`}`),
         where: (field, operator, value) => collection(name, [...filters, [field, operator, value]], queryOptions),
+        select: () => collection(name, filters, queryOptions),
         orderBy: field => collection(name, filters, { ...queryOptions, order: field }),
         limit: count => collection(name, filters, { ...queryOptions, limit: count }),
         startAfter: cursor => collection(name, filters, { ...queryOptions, cursor: typeof cursor === 'string' ? cursor : cursor.id }),
@@ -85,7 +86,8 @@ function fixture(options = {}) {
             return { docs, empty: docs.length === 0 };
         },
     });
-    const db = { collection, batch: () => writer(false), runTransaction: async callback => {
+    const db = { collection, getAll: async (...targets) => targets.filter(target => target.path).map(target => snapshot(target.path)),
+        batch: () => writer(false), runTransaction: async callback => {
         if (options.beforeTransaction) await options.beforeTransaction({ records, seed });
         const transaction = writer(true);
         const result = await callback(transaction);

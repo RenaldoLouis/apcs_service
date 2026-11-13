@@ -262,7 +262,7 @@ test('ORCHESTRA: sender uses the requested assignment subject and rendered body'
 
 test('ORCHESTRA: every new admin endpoint enforces whitelist authentication', () => {
     const routes = fs.readFileSync(path.join(__dirname, '../src/routes/PaymentRoute.js'), 'utf8');
-    for (const action of ['list', 'assign', 'notify', 'session', 'sessions']) assert.ok(routes.includes(`'/public-ticket/admin/orchestra/${action}', requireTicketingAdmin,`));
+    for (const action of ['list', 'assign', 'notify', 'session', 'sessions', 'session-tiers', 'import-preview', 'import-apply']) assert.ok(routes.includes(`'/public-ticket/admin/orchestra/${action}', requireTicketingAdmin,`));
     for (const action of ['release-booking', 'mark-manual-paid', 'resend-manual-instructions']) {
         assert.ok(routes.includes(`'/public-ticket/admin/${action}', requireTicketingAdmin,`));
     }
@@ -275,6 +275,38 @@ test('ORCHESTRA: paginated discovery still counts all paid purchases for each vi
     assert.equal(first.groups.length, 1); assert.equal(first.groups[0].quantity, 9); assert.ok(first.nextCursor);
     const second = await repo(f).listGroups({ eventId: 'APCS2026', cursor: first.nextCursor });
     assert.equal(second.nextCursor, null);
+});
+
+test('ORCHESTRA: paid tier breakdown keeps separate orders and excludes unrelated tickets and performer places', async () => {
+    const f = fixture();
+    const winner = { eventId: 'APCS2026', registrantId: 'winner', registrantName: 'Performer',
+        paymentStatus: 'PAID', bookingType: 'winner', ticketingVersion: 2, orchestraAttendanceTickets: 4,
+        performerCount: 3, buyerName: 'Parent', userEmail: 'parent@example.invalid',
+        tickets: [{ id: 'presto', quantity: 1 }, { id: 'PRESTO', quantity: 1 },
+            { id: 'allegro', quantity: 1 }, { id: 'lento', quantity: 1 }] };
+    f.seed('publicBookings/first', winner);
+    f.seed('publicBookings/second', { ...winner, paymentStatus: 'paid', bookingType: 'public_competition',
+        performerCount: 0, buyerName: '', userName: 'Parent', orchestraAttendanceTickets: 2,
+        tickets: [{ name: 'Allegro', quantity: 2 }] });
+    f.seed('publicBookings/pending', { ...winner, paymentStatus: 'pending' });
+    f.seed('publicBookings/other-event', { ...winner, eventId: 'APCS2025' });
+    f.seed('publicBookings/direct', { ...winner, bookingType: 'public_orchestra', orchestraAttendanceTickets: 0 });
+    const before = JSON.stringify([...f.records]);
+
+    const { groups } = await repo(f).listGroups({ eventId: 'APCS2026' });
+    assert.equal(groups.length, 1);
+    const [group] = groups;
+    assert.equal(group.bookingCount, 2);
+    assert.equal(group.paidTicketCount, 6);
+    assert.equal(group.performerCount, 3);
+    assert.equal(group.quantity, 9);
+    assert.deepEqual(JSON.parse(JSON.stringify(group.ticketTierTotals)), { presto: 2, allegro: 3 });
+    assert.deepEqual(JSON.parse(JSON.stringify(group.bookingBreakdown)), [
+        { bookingId: 'first', buyerName: 'Parent', paidTicketCount: 4, presto: 2, allegro: 1 },
+        { bookingId: 'second', buyerName: 'Parent', paidTicketCount: 2, presto: 0, allegro: 2 },
+    ]);
+    assert.equal(group.bookings, undefined);
+    assert.equal(JSON.stringify([...f.records]), before);
 });
 
 test('ORCHESTRA: overview separates paid attendance, pending holds and legacy quota', async () => {
@@ -290,11 +322,45 @@ test('ORCHESTRA: overview separates paid attendance, pending holds and legacy qu
     assert.equal(overview.orchestraSessions[0].heldPublicCount, 1);
 });
 
+test('ORCHESTRA: session tiers combine direct and covered paid tickets and keep performer places separate', async () => {
+    const f = fixture();
+    const repository = repo(f);
+    const session = f.records.get('events/APCS2026').orchestraSessions[0];
+    session.complimentaryClaimed = 3;
+    const linked = { eventId: request.eventId, registrantId: request.registrantId, paymentStatus: 'PAID',
+        ticketingVersion: 2, bookingType: 'winner', orchestraAttendanceTickets: 5, performerCount: 2,
+        tickets: [{ id: 'presto', quantity: 2 }, { id: 'Allegro', quantity: 3 }] };
+    f.seed('publicBookings/winner', linked);
+    f.seed('publicBookings/public', { ...linked, bookingType: 'public_competition', orchestraAttendanceTickets: 1,
+        performerCount: 0, tickets: [{ id: 'allegro', quantity: 1 }] });
+    await repository.assignGroup(request, actor);
+    f.seed('publicBookings/later', linked);
+    const direct = { eventId: request.eventId, venue: session.venue, date: session.date, session: session.time,
+        paymentStatus: 'paid', bookingType: 'public_orchestra', ticketingVersion: 2, orchestraAttendanceTickets: 0,
+        tickets: [{ id: 'presto', quantity: 4 }, { name: 'Allegro', quantity: 2 }, { id: 'lento', quantity: 1 }] };
+    f.seed('publicBookings/direct', direct);
+    f.seed('publicBookings/hold', { ...direct, paymentStatus: 'pending' });
+    f.seed('publicBookings/other-event', { ...direct, eventId: 'APCS2025' });
+    const otherSession = { ...session, id: 'orch2', time: '20:00-21:00', complimentaryClaimed: 0 };
+    f.records.get('events/APCS2026').orchestraSessions.push(otherSession);
+    f.seed('publicBookings/other-session', { ...direct, session: otherSession.time });
+    const before = JSON.stringify([...f.records]);
+
+    const tiers = await repository.sessionTierBreakdown(request);
+    assert.deepEqual({ ...tiers }, { presto: 6, allegro: 6, otherTickets: 1, performerPlaces: 2 });
+    assert.deepEqual({ ...await repository.sessionTierBreakdown({ ...request, sessionId: otherSession.id }) },
+        { presto: 4, allegro: 2, otherTickets: 1, performerPlaces: 0 });
+    const overview = await repository.sessionOverview(request);
+    assert.equal(Object.values(tiers).reduce((total, quantity) => total + quantity, 0), overview.orchestraSessions[0].confirmedAttendance);
+    assert.equal(JSON.stringify([...f.records]), before);
+});
+
 test('ORCHESTRA: notification failure keeps assignment and retry sends only missing emails', async () => {
     const f = fixture(); const firstId = await purchase(f, 2); const secondId = await purchase(f, 1);
     const repository = repo(f); const sent = []; let failEmail = true;
     const controllerContext = { module: { exports: {} }, require: name => {
         if (name.endsWith('/OrchestraAssignmentRepository')) return repository;
+        if (name.endsWith('/OrchestraSessionImport')) return require('../src/services/OrchestraSessionImport');
         if (name.endsWith('/firebase-init')) return { db: f.db };
         if (name.endsWith('/EmailService')) return { sendOrchestraAssignmentEmail: async booking => {
             if (booking.id === secondId && failEmail) throw new Error('SMTP unavailable');
