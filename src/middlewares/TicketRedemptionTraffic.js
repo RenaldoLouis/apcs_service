@@ -1,9 +1,9 @@
 const rateLimit = require('express-rate-limit');
 
-// Only these three registered POST routes use the separate staff request budget.
+// Only registered redemption and attendance POST routes use the separate staff request budget.
 // Unknown paths and all purchase/payment routes retain the global limiter.
 const isTicketRedemptionRequest = req => req.method === 'POST'
-    && /^\/api\/v1\/apcs\/public-ticket\/admin\/redemption\/(list|detail|claim)\/?$/i.test(req.path);
+    && /^\/api\/v1\/apcs\/public-ticket\/admin\/redemption\/(list|detail|claim|attendance\/(list|candidates|mark-present))\/?$/i.test(req.path);
 
 const redemptionLimiter = rateLimit({
     windowMs: 60 * 1000,

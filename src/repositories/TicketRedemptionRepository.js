@@ -94,7 +94,7 @@ async function list({ eventId, search = '', cursor }) {
 
 async function claim(input, actor) {
     validateIdentity(input);
-    const { eventId, bookingId, channel, requestId, expectedRevision, sessionKey, action = 'redeem', quantities, targetClaimId, reason } = input;
+    const { eventId, bookingId, channel, requestId, expectedRevision, sessionKey, action = 'redeem', quantities, targetClaimId, reason, note } = input;
     if (!['performance', 'orchestra', 'performers'].includes(channel) || !model.validateKey(requestId) ||
         !model.count(expectedRevision) || !['redeem', 'undo'].includes(action) || typeof sessionKey !== 'string' || sessionKey.length > 1000) {
         throw new AppError('Invalid redemption request.', 400);
@@ -108,8 +108,14 @@ async function claim(input, actor) {
     if (action === 'undo' && (!model.validateKey(targetClaimId) || typeof reason !== 'string' || !reason.trim() || reason.length > 500)) {
         throw new AppError('Select a claim and enter a correction reason (maximum 500 characters).', 400);
     }
+    if (action === 'redeem' && note !== undefined && (typeof note !== 'string' || note.length > 500)) {
+        throw new AppError('Enter a redemption note of at most 500 characters.', 400);
+    }
+    const claimNote = action === 'redeem' ? note?.trim() : '';
+    // Keep the original signature for note-free claims so older saved requests can still replay.
     const signature = JSON.stringify([eventId, bookingId, channel, action, sessionKey,
-        action === 'redeem' ? Object.entries(quantities).sort(([a], [b]) => a.localeCompare(b)) : [targetClaimId, reason.trim()]]);
+        action === 'redeem' ? Object.entries(quantities).sort(([a], [b]) => a.localeCompare(b)) : [targetClaimId, reason.trim()],
+        ...(claimNote ? [claimNote] : [])]);
     return db.runTransaction(async transaction => {
         const context = await contextFor(input, transaction);
         const allowance = context.allowances.find(item => item.channel === channel);
@@ -158,7 +164,8 @@ async function claim(input, actor) {
         const result = { redemptionId: allowance.id, claimId, revision, redeemed };
         const record = { revision, action, quantities: amounts, bookingId, channel, session: action === 'undo' ? target.session : allowance.session,
             actorUid: actor.uid, actorEmail: actor.email, claimedAt, requestId,
-            ...(action === 'undo' ? { targetClaimId, reason: reason.trim() } : {}) };
+            ...(action === 'undo' ? { targetClaimId, reason: reason.trim() } : {}),
+            ...(claimNote ? { note: claimNote } : {}) };
         // Every read above precedes all writes. The stable allowance ID survives assignment revisions.
         transaction.set(stateRef, { eventId, bookingId: channel === 'performers' ? '' : bookingId,
             registrantId: context.booking.registrantId || '', channel, redeemed, revision,

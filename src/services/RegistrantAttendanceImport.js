@@ -215,4 +215,4 @@ function createAttendanceImporter(db, { secret = process.env.REGISTRANT_ATTENDAN
     return { preview, apply };
 }
 
-module.exports = { classifyAttendance, parseSheetRows, buildPlan, createAttendanceImporter };
+module.exports = { classifyAttendance, parseSheetRows, buildPlan, createAttendanceImporter, performerNames };

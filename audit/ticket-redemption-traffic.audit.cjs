@@ -11,9 +11,10 @@ const context = { module: { exports: {} }, require: name => {
 } };
 vm.runInNewContext(fs.readFileSync(filename, 'utf8'), context, { filename });
 const { isTicketRedemptionRequest } = context.module.exports;
+const routes = ['list', 'detail', 'claim', 'attendance/list', 'attendance/candidates', 'attendance/mark-present'];
 
 test('REDEMPTION TRAFFIC: only registered redemption POST paths leave the purchase request budget', () => {
-    for (const action of ['list', 'detail', 'claim']) {
+    for (const action of routes) {
         for (const suffix of ['', '/']) assert.equal(isTicketRedemptionRequest({ method: 'POST', path: `/api/v1/apcs/public-ticket/admin/redemption/${action}${suffix}` }), true);
     }
     assert.equal(isTicketRedemptionRequest({ method: 'POST', path: '/API/V1/APCS/PUBLIC-TICKET/ADMIN/REDEMPTION/CLAIM' }), true);
@@ -32,7 +33,7 @@ test('REDEMPTION TRAFFIC: staff requests retain a separate finite limit before a
     const source = fs.readFileSync(path.join(__dirname, '../src/routes/PaymentRoute.js'), 'utf8');
     const limiter = source.indexOf("router.use('/public-ticket/admin/redemption', redemptionLimiter)");
     assert.ok(limiter > 0);
-    for (const action of ['list', 'detail', 'claim']) {
+    for (const action of routes) {
         const registration = source.indexOf(`router.post('/public-ticket/admin/redemption/${action}', requireTicketingAdmin`);
         assert.ok(registration > limiter, 'Every supported route is limited before token/whitelist verification');
     }

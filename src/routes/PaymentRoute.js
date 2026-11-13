@@ -120,6 +120,9 @@ router.use('/public-ticket/admin/redemption', redemptionLimiter);
 router.post('/public-ticket/admin/redemption/list', requireTicketingAdmin, TicketRedemptionController.list);
 router.post('/public-ticket/admin/redemption/detail', requireTicketingAdmin, TicketRedemptionController.detail);
 router.post('/public-ticket/admin/redemption/claim', requireTicketingAdmin, TicketRedemptionController.claim);
+router.post('/public-ticket/admin/redemption/attendance/list', requireTicketingAdmin, TicketRedemptionController.listAttendance);
+router.post('/public-ticket/admin/redemption/attendance/candidates', requireTicketingAdmin, TicketRedemptionController.attendanceCandidates);
+router.post('/public-ticket/admin/redemption/attendance/mark-present', requireTicketingAdmin, TicketRedemptionController.markPresent);
 
 // --- System Settings ---
 router.get('/systemSettings/global', SystemSettingsController.getGlobalSettings);

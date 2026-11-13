@@ -7,6 +7,7 @@ const vm = require('node:vm');
 const fixtureFile = path.join(__dirname, 'public-ticket.audit.cjs');
 const fixtureSource = fs.readFileSync(fixtureFile, 'utf8').split("test('CONTROL:")[0]
     .replace('return { records, seed, timestamp', 'return { db, records, seed, timestamp')
+    .replace('path: key, id: key.split', 'collection: name => collection(`${key}/${name}`), path: key, id: key.split')
     .replace('orderBy: field => collection(name, filters, { ...queryOptions, order: field })',
         'orderBy: (field, direction) => collection(name, filters, { ...queryOptions, order: field, direction })')
     .replace('a.id.localeCompare(b.id));', 'queryOptions.direction === "desc" ? b.id.localeCompare(a.id) : a.id.localeCompare(b.id));')
@@ -25,6 +26,8 @@ function setup() {
     };
     const f = context.module.exports({ extraRequire: (name, load) => {
         if (name.endsWith('/TicketRedemptionModel')) return load('src/services/TicketRedemptionModel.js');
+        if (name.endsWith('/RegistrantAttendanceImport')) return require('../src/services/RegistrantAttendanceImport');
+        if (name === 'node:crypto') return require(name);
         if (name.endsWith('/ErrorHandlerMiddleware')) return load('src/middlewares/ErrorHandlerMiddleware.js');
         if (modules[name]) return load(modules[name]);
         if (name === './EmailService') return { sendPublicBookingConfirmationEmail: async booking => emails.push(booking) };
@@ -212,6 +215,95 @@ test('REDEMPTION: replay is exactly once, mismatched replay and stale staff requ
     assert.equal((await f.allowance('orchestra')).history.length, 2);
     await assert.rejects(f.repo.claim({ ...request, quantities: { orchestra: 1 } }, actor), /different claim/);
     await assert.rejects(f.repo.claim(stale, actor), /Another staff member/);
+});
+
+test('REDEMPTION: a partial handover note stays with its claim through replay, a later claim and undo', async () => {
+    const f = setup();
+    const note = 'Mom and friend collected two. Dad will collect the last ticket.';
+    const request = await f.request('performance', { presto: 2 }, { note: `  ${note}  ` });
+    const first = await f.repo.claim(request, actor);
+    const afterFirst = await f.allowance('performance');
+    assert.equal(afterFirst.remaining.presto, 1);
+    assert.equal(afterFirst.history[0].note, note);
+    assert.equal((await f.repo.claim({ ...request, note }, actor)).replayed, true);
+    await assert.rejects(f.repo.claim({ ...request, note: 'Changed note' }, actor), /different claim/);
+    await assert.rejects(f.repo.claim({ ...request, note: undefined }, actor), /different claim/);
+
+    const last = await f.request('performance', { presto: 1 });
+    await f.repo.claim(last, actor);
+    assert.equal((await f.repo.claim({ ...last, note: '  ' }, actor)).replayed, true);
+    const afterLast = await f.allowance('performance');
+    assert.equal(afterLast.remaining.presto, 0);
+    assert.equal(afterLast.history.length, 2);
+    assert.equal(afterLast.history[0].note, undefined);
+    assert.equal(afterLast.history[1].note, note);
+
+    await f.repo.claim(await f.request('performance', null, { action: 'undo', targetClaimId: first.claimId, reason: 'Wrong party' }), actor);
+    const corrected = await f.allowance('performance');
+    assert.equal(corrected.remaining.presto, 2);
+    assert.equal(corrected.history[0].reason, 'Wrong party');
+    assert.equal(corrected.history[0].note, undefined);
+    assert.equal(corrected.history.find(item => item.id === first.claimId).note, note);
+});
+
+test('REDEMPTION: invalid notes cannot change claim history or remaining quantities', async () => {
+    const f = setup();
+    const request = await f.request('performance', { presto: 1 });
+    for (const note of [null, 42, { text: 'Note' }, 'a'.repeat(501)]) {
+        await assert.rejects(f.repo.claim({ ...request, note }, actor), /at most 500 characters/);
+    }
+    const current = await f.allowance('performance');
+    assert.equal(current.remaining.presto, 3);
+    assert.equal(current.history.length, 0);
+});
+
+test('PERFORMER ATTENDANCE: individual roster members without paid bookings can be marked present once', async () => {
+    const f = setup();
+    const attendance = f.load('src/repositories/PerformerAttendanceRepository.js');
+    const eventId = input.eventId;
+    f.seed('Registrants2025/duet', { eventId, name: 'Parent Name', willAttend: false,
+        performers: [{ fullName: 'Alice Example' }, { firstName: 'Ben', lastName: 'Example' }] });
+    f.seed('Registrants2025/winner', { eventId, performers: ['Paid Student'] });
+    f.seed('Registrants2025/guest', { eventId: 'APCS2025', performers: ['Other Event'] });
+    f.seed('publicBookings/pending', { eventId, registrantId: 'duet', paymentStatus: 'pending' });
+    const { performers } = await attendance.candidates({ eventId });
+    assert.deepEqual(Array.from(performers, person => person.name), ['Alice Example', 'Ben Example']);
+    const request = { eventId, registrantId: 'duet', performerId: performers[0].id };
+    const before = businessState(f);
+    const first = (await attendance.markPresent(request, actor)).attendance;
+    assert.equal(first.name, 'Alice Example');
+    assert.equal(first.actorEmail, actor.email);
+    assert.ok(first.markedAt > 0);
+    assert.deepEqual(businessState(f), before);
+    const replay = await attendance.markPresent(request, { uid: 'different', email: 'different@example.invalid' });
+    assert.deepEqual(replay.attendance, first);
+    assert.deepEqual(Array.from((await attendance.candidates({ eventId })).performers, person => person.name), ['Ben Example']);
+    assert.equal((await attendance.list({ eventId, search: 'alice' })).attendance.length, 1);
+    assert.equal((await attendance.list({ eventId, search: 'ben' })).attendance.length, 0);
+    assert.equal((await attendance.list({ eventId: 'APCS2025' })).attendance.length, 0);
+
+    f.records.get('publicBookings/pending').paymentStatus = 'paid';
+    await assert.rejects(attendance.markPresent({ ...request, performerId: performers[1].id }, actor), /now has a paid booking/);
+    await assert.rejects(attendance.markPresent({ ...request, performerId: 'a'.repeat(64) }, actor), /no longer available/);
+    await assert.rejects(attendance.markPresent(request, {}), /administrator/);
+    assert.equal((await attendance.list({ eventId })).attendance.length, 1);
+});
+
+test('PERFORMER ATTENDANCE: roster search continues after a page with no matches', async () => {
+    const f = setup();
+    const attendance = f.load('src/repositories/PerformerAttendanceRepository.js');
+    const eventId = input.eventId;
+    for (let index = 0; index < 25; index += 1) {
+        f.seed(`Registrants2025/early-${index}`, { eventId, performers: ['Other Student'] });
+    }
+    f.seed('Registrants2025/late', { eventId, performers: ['Late Student'] });
+    const query = { eventId, search: 'late student' };
+    const first = await attendance.candidates(query);
+    assert.equal(first.performers.length, 0);
+    assert.ok(first.nextCursor);
+    const second = await attendance.candidates({ ...query, cursor: first.nextCursor });
+    assert.deepEqual(Array.from(second.performers, person => person.name), ['Late Student']);
+    assert.equal(second.nextCursor, null);
 });
 
 test('REDEMPTION: zero, negative, fractional, excess and forged tier quantities are rejected atomically', async () => {
