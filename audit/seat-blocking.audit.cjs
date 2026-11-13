@@ -55,6 +55,38 @@ for (const status of ['locked', 'booked', 'reserved']) {
     });
 }
 
+test('BLOCK NOTE: edits all aliases in place, keeps capacity, and rejects stale edits or unblocks', async () => {
+    const f = fixture();
+    f.seat('legacy-alias');
+    await assert.rejects(f.block({ action: 'editNote' }), /booked, held/);
+    const block = await f.block();
+    const capacity = f.capacity();
+    const originalBlock = f.chair().seatBlock;
+    const editor = { uid: 'staff-2', email: 'editor@example.invalid' };
+    const edit = { ...request, action: 'editNote', reason: '  Audio equipment  ', expectedRevision: block.revision };
+    const result = await f.adminSeats.setSeatBlock(edit, editor);
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.revision, block.revision + 1);
+    for (const id of ['seat-1', 'legacy-alias']) {
+        const seat = f.chair(id);
+        assert.equal(seat.status, 'blocked');
+        assert.equal(seat.seatBlock.reason, 'Audio equipment');
+        assert.equal(seat.seatBlock.blockedByUid, originalBlock.blockedByUid);
+        assert.equal(seat.seatBlock.blockedAt.toDate().getTime(), originalBlock.blockedAt.toDate().getTime());
+        assert.equal(seat.seatBlock.noteEditedByUid, editor.uid);
+        assert.equal(seat.seatBlockRevision, result.revision);
+    }
+    assert.equal(f.capacity(), capacity, 'The transaction does not write the capacity document');
+    await assert.rejects(f.block({ action: 'editNote', expectedRevision: block.revision }), /block changed/);
+    await assert.rejects(f.block({ action: 'unblock', expectedRevision: block.revision }), /block changed/);
+    for (const reason of ['  ', 'x'.repeat(501)]) {
+        await assert.rejects(f.block({ action: 'editNote', reason, expectedRevision: result.revision }), /Enter a reason/);
+    }
+    await f.block({ action: 'unblock', expectedRevision: result.revision });
+    assert.equal(f.capacity().blockedByTier.presto, 0);
+    assert.equal(f.chair().lastSeatBlock.reason, 'Audio equipment');
+});
+
 test('BLOCK: canonical active ownership and stale booking pointers protect otherwise available chairs', async () => {
     const f = fixture();
     const key = f.repo.physicalSeatKey('APCS2026', f.chair());
@@ -239,7 +271,8 @@ test('BLOCK: inconsistent ownership or counters prevent unsafe unblocking', asyn
 
 test('BLOCK: public seat listing includes unavailable status without exposing staff notes or identity', async () => {
     const f = fixture();
-    const result = await f.block();
+    const block = await f.block();
+    const result = await f.block({ action: 'editNote', reason: 'Camera', expectedRevision: block.revision });
     let seats;
     await f.repo.getPublicTicketSeats({ venueId: 'V1', sessionId: scope.sessionId }, (error, data) => {
         assert.ifError(error); seats = data;

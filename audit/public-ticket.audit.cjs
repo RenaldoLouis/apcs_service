@@ -701,6 +701,40 @@ test('ADMIN RELEASE: an unknown invoice outcome requires explicit Paper verifica
     assert.equal(booking.checkoutFailure.invoiceCancellationStatus, 'manually_verified_no_active_invoice');
 });
 
+test('ADMIN RELEASE: a failed checkout without selected chairs releases only its held capacity', async () => {
+    const f = fixture();
+    const bookingId = 'booking-capacity-only';
+    const capacityPath = 'ticketCapacity/session-paid';
+    f.seed(capacityPath, { reservedByTier: { presto: 41, allegro: 23 }, blockedByTier: { presto: 7 } });
+    f.seed(`publicBookings/${bookingId}`, {
+        eventId: 'APCS2026', paymentStatus: 'failed', paymentMode: 'paper_id',
+        selectedSeatIds: [], orchestraSelectedSeatIds: [], physicalSeatKeys: [],
+        capacityReservation: { capacityId: 'session-paid', byTier: { presto: 2 } },
+        createdAt: f.timestamp(Date.parse('2026-09-06T03:00:00Z')),
+        checkoutFailure: { cleanupStatus: 'awaiting_cancellation', invoiceCancellationStatus: 'unknown' },
+    });
+    const service = f.load('src/services/PublicTicketAdminReleaseService.js');
+    const options = { reason: 'no_response_after_one_hour', manualProviderConfirmation: true };
+    const actor = { uid: 'admin-1', email: 'admin@example.invalid' };
+
+    await assert.rejects(service.releasePublicTicketBooking(bookingId, {
+        ...options, manualProviderConfirmation: false,
+    }, actor), { code: 'MANUAL_CONFIRMATION_REQUIRED' });
+    assert.equal(f.records.get(capacityPath).reservedByTier.presto, 41);
+
+    assert.equal((await service.releasePublicTicketBooking(bookingId, options, actor)).released, true);
+    const booking = f.records.get(`publicBookings/${bookingId}`);
+    assert.equal(booking.checkoutFailure.cleanupStatus, 'complete');
+    assert.equal(booking.adminRelease.releasedByUid, actor.uid);
+    await assert.rejects(service.releasePublicTicketBooking(bookingId, options, actor), {
+        code: 'BOOKING_ALREADY_RECONCILED',
+    });
+    const capacity = f.records.get(capacityPath);
+    assert.equal(capacity.reservedByTier.presto, 39);
+    assert.equal(capacity.reservedByTier.allegro, 23);
+    assert.equal(capacity.blockedByTier.presto, 7);
+});
+
 test('ADMIN RELEASE: no-response reason is blocked until the booking is one hour old', async () => {
     const f = fixture();
     f.seat('seat-1', { status: 'locked', lockedByBookingId: 'booking-too-new' });

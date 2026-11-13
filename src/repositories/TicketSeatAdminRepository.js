@@ -563,15 +563,15 @@ async function reassignPaidBookingSeats({ bookingId, seatIds, expectedSeatIds, u
     });
 }
 
-/** Keep an unused competition chair out of sale, including tickets sold without seat selection. */
+/** Manage an operational block on a numbered competition chair. */
 async function setSeatBlock({ eventId, venueId, sessionId, seatId, action, reason, expectedRevision }, actor = {}) {
     if (![eventId, venueId, sessionId, seatId].every(validKey)
-        || !['block', 'unblock'].includes(action)
+        || !['block', 'unblock', 'editNote'].includes(action)
         || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
         throw fail('A seat, session, action and current block revision are required.', 400);
     }
     const note = typeof reason === 'string' ? reason.trim() : '';
-    if (action === 'block' && (!note || note.length > 500)) {
+    if (action !== 'unblock' && (!note || note.length > 500)) {
         throw fail('Enter a reason for the block (up to 500 characters).', 400);
     }
     if (!actor.uid || !actor.email) throw fail('Admin authentication is required.', 401);
@@ -582,9 +582,11 @@ async function setSeatBlock({ eventId, venueId, sessionId, seatId, action, reaso
     const seats = db.collection(`seats${eventId}`);
     const seatRef = seats.doc(seatId);
     const capacityRef = db.collection('ticketCapacity').doc(capacityDocumentId(eventId, venueId, date, session));
+    const isEditingNote = action === 'editNote';
+    const isBlocking = action === 'block';
 
     return db.runTransaction(async transaction => {
-        const [eventSnap, seatSnap, capacitySnap] = await transaction.getAll(eventRef, seatRef, capacityRef);
+        const [eventSnap, seatSnap] = await transaction.getAll(eventRef, seatRef);
         if (!eventSnap.exists || !seatSnap.exists) throw fail('The event or seat no longer exists.', 404);
         const event = eventSnap.data();
         const venue = (event.venues || []).find(item => item.id === venueId);
@@ -609,14 +611,6 @@ async function setSeatBlock({ eventId, venueId, sessionId, seatId, action, reaso
         const ownerSnap = await transaction.get(ownerRef);
         const aliases = await transaction.get(seats.where('venueId', '==', venueId).where('sessionId', '==', sessionId)
             .where('row', '==', seat.row).where('number', '==', seat.number));
-        const blockedSeats = await transaction.get(seats.where('venueId', '==', venueId)
-            .where('sessionId', '==', sessionId).where('status', '==', 'blocked'));
-        const sessionBookings = !capacitySnap.exists
-            ? await transaction.get(db.collection('publicBookings').where('eventId', '==', eventId)
-                .where('venue', '==', venueId).where('date', '==', date).where('session', '==', session))
-            : { docs: [] };
-
-        const isBlocking = action === 'block';
         const expectedStatus = isBlocking ? 'available' : 'blocked';
         if (!aliases.docs.length || aliases.docs.some(alias => {
             const data = alias.data();
@@ -633,6 +627,31 @@ async function setSeatBlock({ eventId, venueId, sessionId, seatId, action, reaso
                 || owner.bookingId || owner.seatBlockRevision !== expectedRevision)) {
             throw fail('The physical chair ownership changed. Refresh or reconcile it before trying again.');
         }
+
+        const updatedAt = admin.firestore.FieldValue.serverTimestamp();
+        const revision = Math.max(...aliases.docs.map(alias => alias.data().seatBlockRevision || 0)) + 1;
+        if (isEditingNote) {
+            aliases.docs.forEach(alias => transaction.update(alias.ref, {
+                seatBlockRevision: revision,
+                seatBlock: {
+                    ...alias.data().seatBlock,
+                    reason: note,
+                    noteEditedByUid: actor.uid,
+                    noteEditedByEmail: actor.email,
+                    noteEditedAt: updatedAt,
+                },
+            }));
+            transaction.update(ownerRef, { seatBlockRevision: revision, updatedAt });
+            return { seatId, status: 'blocked', revision };
+        }
+
+        const capacitySnap = await transaction.get(capacityRef);
+        const blockedSeats = await transaction.get(seats.where('venueId', '==', venueId)
+            .where('sessionId', '==', sessionId).where('status', '==', 'blocked'));
+        const sessionBookings = !capacitySnap.exists
+            ? await transaction.get(db.collection('publicBookings').where('eventId', '==', eventId)
+                .where('venue', '==', venueId).where('date', '==', date).where('session', '==', session))
+            : { docs: [] };
         const blockedByTier = {};
         const blockedKeys = new Set();
         blockedSeats.docs.forEach(record => {
@@ -660,8 +679,6 @@ async function setSeatBlock({ eventId, venueId, sessionId, seatId, action, reaso
             throw fail(`This chair is needed for existing paid or held ${tierId} tickets. There is no spare capacity to block it.`);
         }
 
-        const updatedAt = admin.firestore.FieldValue.serverTimestamp();
-        const revision = Math.max(...aliases.docs.map(alias => alias.data().seatBlockRevision || 0)) + 1;
         const block = { reason: note, blockedByUid: actor.uid, blockedByEmail: actor.email, blockedAt: updatedAt };
         const lastSeatBlock = !isBlocking ? {
             ...seat.seatBlock, unblockedByUid: actor.uid, unblockedByEmail: actor.email, unblockedAt: updatedAt,
