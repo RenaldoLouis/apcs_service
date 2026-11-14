@@ -153,11 +153,33 @@ test('REDEMPTION: performance categories, orchestra benefit and shared performer
     assert.equal(history[0].bookingId, input.bookingId); assert.ok(history[0].claimedAt);
 });
 
+test('REDEMPTION: detail shows the current linked registrant note for a guest booking', async () => {
+    const f = setup();
+    f.seed('Registrants2025/winner', { eventId: 'APCS2025', adminNote: '  First line\nSecond line  ' });
+    f.records.get('publicBookings/order-1').adminNote = 'Booking note';
+    const linked = await f.repo.detail(input);
+    assert.equal(linked.registrantNote, 'First line\nSecond line');
+    assert.equal(linked.bookingAdminNote, 'Booking note');
+    assert.equal(Object.hasOwn((await f.repo.list({ eventId: input.eventId })).bookings[0], 'registrantNote'), false);
+
+    for (const adminNote of ['Updated note', '  ', undefined, 42]) {
+        f.records.get('Registrants2025/winner').adminNote = adminNote;
+        const detail = await f.repo.detail(input);
+        assert.equal(detail.registrantNote, adminNote === 'Updated note' ? adminNote : '');
+        assert.equal(detail.allowances.length, 3);
+    }
+    f.records.delete('Registrants2025/winner');
+    assert.equal((await f.repo.detail(input)).registrantNote, '');
+});
+
 test('REDEMPTION: direct orchestra respects purchased categories and free seating without a registrant', async () => {
     const f = setup();
     Object.assign(f.records.get('publicBookings/order-1'), { bookingType: 'public_orchestra', isOrchestra: true,
-        seatingMode: 'free', registrantId: '', orchestraAttendanceTickets: 0, session: '19:00-20:00' });
+        seatingMode: 'free', registrantId: '', orchestraAttendanceTickets: 0, session: '19:00-20:00',
+        adminNote: '  Imported booking note\nSecond line  ' });
     const detail = await f.repo.detail(input);
+    assert.equal(detail.bookingAdminNote, 'Imported booking note\nSecond line');
+    assert.equal(detail.registrantNote, '');
     assert.equal(detail.allowances.length, 1); assert.equal(detail.allowances[0].channel, 'orchestra');
     await f.repo.claim(await f.request('orchestra', { presto: 3, allegro: 1 }), actor);
     assert.equal((await f.allowance('orchestra')).remaining.allegro, 1);

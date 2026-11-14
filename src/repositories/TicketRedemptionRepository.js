@@ -38,16 +38,22 @@ async function contextFor({ eventId, bookingId }, transaction) {
 }
 
 async function detail(input) {
-    const context = await contextFor(input);
-    const allowances = await Promise.all(context.allowances.map(async allowance => {
+    const { booking, allowances } = await contextFor(input);
+    const registrantRead = model.validateKey(booking.registrantId)
+        ? db.collection('Registrants2025').doc(booking.registrantId).get() : null;
+    const allowanceReads = allowances.map(async allowance => {
         const [state, history] = await Promise.all([
             db.collection('ticketRedemptions').doc(allowance.id).get(),
             db.collection(`ticketRedemptions/${allowance.id}/claims`).orderBy('revision', 'desc').limit(20).get(),
         ]);
         return { ...model.withState(allowance, state.exists ? state.data() : null),
             history: history.docs.map(doc => ({ id: doc.id, ...doc.data(), claimedAt: milliseconds(doc.data().claimedAt) })) };
-    }));
-    return { booking: customer(context.booking), allowances };
+    });
+    const [registrant, allowanceDetails] = await Promise.all([registrantRead, Promise.all(allowanceReads)]);
+    const adminNote = registrant?.data()?.adminNote;
+    const registrantNote = typeof adminNote === 'string' ? adminNote.trim() : '';
+    const bookingAdminNote = typeof booking.adminNote === 'string' ? booking.adminNote.trim() : '';
+    return { booking: customer(booking), allowances: allowanceDetails, registrantNote, bookingAdminNote };
 }
 
 // Explicit staff searches scan bounded, event-scoped pages. Continue from the last examined document.
